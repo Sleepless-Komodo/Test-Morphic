@@ -1,0 +1,46 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+.next/
+out/
+dist/
+build/
+*.tsbuildinfo
+apps/web/.next/
+apps/api/dist/
+
+# Caches
+.turbo/
+coverage/
+.eslintcache
+*.swp
+
+# Environment & secrets — only .env.example is committed
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+
+# Database & local data
+pgdata/
+*.sqlite
+*.db
+
+# Logs
+*.log
+logs/
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Docker volumes (local)
+docker-data/

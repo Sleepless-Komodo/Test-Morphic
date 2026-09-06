@@ -1,0 +1,24 @@
+{
+  "name": "morphic",
+  "private": true,
+  "packageManager": "pnpm@10.33.0",
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "db:generate": "pnpm --filter @morphic/db generate",
+    "db:migrate": "pnpm --filter @morphic/db migrate",
+    "db:seed": "pnpm --filter @morphic/db seed",
+    "db:studio": "pnpm --filter @morphic/db studio",
+    "db:e2e": "pnpm --filter @morphic/db e2e"
+  },
+  "devDependencies": {
+    "turbo": "^2.5.0",
+    "typescript": "^5.9.0",
+    "prettier": "^3.6.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild", "unrs-resolver", "sharp"]
+  }
+}
