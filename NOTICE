@@ -1,0 +1,14 @@
+Morphic
+Copyright 2026 Morphic Authors
+
+This product includes software developed under the Apache License, Version 2.0
+(see LICENSE).
+
+Third-party components:
+- Next.js (MIT) — https://github.com/vercel/next.js
+- Hono (MIT) — https://github.com/honojs/hono
+- Drizzle ORM (Apache-2.0) — https://github.com/drizzle-team/drizzle-orm
+- Better Auth (MIT) — https://github.com/better-auth/better-auth
+- Tailwind CSS (MIT) — https://github.com/tailwindlabs/tailwindcss
+- Zod (MIT) — https://github.com/colinhacks/zod
+- ioredis (MIT) — https://github.com/redis/ioredis

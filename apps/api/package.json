@@ -1,0 +1,31 @@
+{
+  "name": "@morphic/api",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --env-file-if-exists=../../.env src/index.ts",
+    "build": "tsc --noEmit && tsup",
+    "start": "node --env-file-if-exists=../../.env dist/index.js",
+    "lint": "eslint src",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.15.0",
+    "hono": "^4.9.0",
+    "drizzle-orm": "^0.44.0",
+    "@morphic/db": "workspace:*",
+    "@morphic/shared": "workspace:*",
+    "ioredis": "^5.7.0",
+    "zod": "^4.1.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.20.0",
+    "tsup": "^8.5.0",
+    "typescript": "^5.9.0",
+    "@types/node": "^24.0.0",
+    "eslint": "^9.30.0",
+    "@eslint/js": "^9.30.0",
+    "typescript-eslint": "^8.40.0"
+  }
+}
