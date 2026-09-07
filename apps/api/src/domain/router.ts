@@ -57,21 +57,54 @@ export interface UpstreamRequest {
 }
 
 /**
- * Generic OpenAI-compatible adapter. All providers (DeepSeek/Qwen/Kimi)
- * expose /chat/completions with the same shape, so one adapter covers all.
+ * OOP Strategy Interface for Upstream AI Providers
+ */
+export interface IAiProviderAdapter {
+  dispatchRequest(req: UpstreamRequest): Promise<Response>;
+}
+
+/**
+ * Standard OpenAI-Compatible Adapter
+ * Serves DeepSeek, Qwen (DashScope), Moonshot (Kimi), SiliconFlow, etc.
+ */
+export class OpenAiCompatibleAdapter implements IAiProviderAdapter {
+  async dispatchRequest(req: UpstreamRequest): Promise<Response> {
+    const { route, body, stream, signal } = req;
+    const url = `${route.baseUrl.replace(/\/$/, '')}/chat/completions`;
+    const payload = { ...body, model: route.providerModelId, stream };
+
+    const headers: Record<string, string> = { 'content-type': 'application/json' };
+    if (route.credential) headers['authorization'] = `Bearer ${route.credential}`;
+
+    return fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload),
+      signal,
+    });
+  }
+}
+
+/**
+ * Provider Adapter Factory (encapsulates adapter instantiation & provides Open/Closed extensibility)
+ */
+export class ProviderAdapterFactory {
+  private static defaultAdapter: IAiProviderAdapter = new OpenAiCompatibleAdapter();
+  private static adapters: Map<string, IAiProviderAdapter> = new Map();
+
+  public static registerAdapter(providerName: string, adapter: IAiProviderAdapter): void {
+    this.adapters.set(providerName.toLowerCase(), adapter);
+  }
+
+  public static getAdapter(providerName: string): IAiProviderAdapter {
+    return this.adapters.get(providerName.toLowerCase()) ?? this.defaultAdapter;
+  }
+}
+
+/**
+ * Facade entrypoint for dispatching requests to upstream providers
  */
 export async function callProvider(req: UpstreamRequest): Promise<Response> {
-  const { route, body, stream, signal } = req;
-  const url = `${route.baseUrl.replace(/\/$/, '')}/chat/completions`;
-  const payload = { ...body, model: route.providerModelId, stream };
-
-  const headers: Record<string, string> = { 'content-type': 'application/json' };
-  if (route.credential) headers['authorization'] = `Bearer ${route.credential}`;
-
-  return fetch(url, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(payload),
-    signal,
-  });
+  const adapter = ProviderAdapterFactory.getAdapter(req.route.providerName);
+  return adapter.dispatchRequest(req);
 }
