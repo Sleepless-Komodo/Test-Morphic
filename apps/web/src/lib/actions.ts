@@ -10,6 +10,13 @@ import { auth } from '@/lib/auth';
 
 async function requireUser() {
   const session = await auth.api.getSession({ headers: await headers() });
+  if (!session && process.env.NODE_ENV === 'development') {
+    return {
+      id: 'dev-preview-user',
+      name: 'Developer (Preview)',
+      email: 'dev@morphic.local',
+    };
+  }
   if (!session) redirect('/login');
   return session.user;
 }

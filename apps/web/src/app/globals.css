@@ -1,18 +1,97 @@
 @import 'tailwindcss';
 
+@theme {
+  --font-sans: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-heading: 'DM Sans', sans-serif;
+  --font-body: 'DM Sans', sans-serif;
+}
+
 :root {
-  --background: #09090b;
-  --foreground: #fafafa;
-  --card: #18181b;
-  --border: #27272a;
-  --muted: #a1a1aa;
-  --accent: #818cf8;
+  --background: #fafafa;
+  --foreground: #09090b;
+  --card: #ffffff;
+  --border: #e4e4e7;
+  --muted: #71717a;
+  --accent: #18181b;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html {
+  overflow-x: hidden;
+  height: 100%;
 }
 
 body {
+  min-height: 100%;
+  min-height: 100svh;
+}
+
+body {
+  font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
   background: var(--background);
   color: var(--foreground);
-  font-family: ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: -0.015em;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'DM Sans', sans-serif;
+  letter-spacing: -0.03em;
+  font-weight: 700;
+}
+
+.font-heading {
+  font-family: 'DM Sans', sans-serif;
+  letter-spacing: -0.03em;
+}
+
+.font-body {
+  font-family: 'DM Sans', sans-serif;
+}
+
+/* High-performance hardware accelerated Liquid Glass effect for light mode */
+@layer components {
+  .liquid-glass-strong {
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(228, 228, 231, 0.9);
+    box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.05),
+      0 1px 3px rgba(0, 0, 0, 0.03),
+      inset 0 1px 1px rgba(255, 255, 255, 0.9);
+    position: relative;
+    overflow: hidden;
+    transform: translateZ(0);
+    backface-visibility: hidden;
+  }
+
+  .liquid-glass-strong::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.9) 0%,
+      rgba(228, 228, 231, 0.5) 50%,
+      rgba(255, 255, 255, 0.9) 100%
+    );
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+  }
+
+  .content-deferred {
+    content-visibility: auto;
+    contain-intrinsic-size: 1px 600px;
+  }
 }
 
 .card {
@@ -20,6 +99,8 @@ body {
   border: 1px solid var(--border);
   border-radius: 0.75rem;
   padding: 1.25rem;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.03);
+  transform: translateZ(0);
 }
 
 .btn {
@@ -32,24 +113,28 @@ body {
   font-weight: 500;
   border: 1px solid transparent;
   cursor: pointer;
-  transition: opacity 0.15s;
+  transition: all 0.15s ease-out;
+  transform: translateZ(0);
 }
-.btn:hover { opacity: 0.85; }
-.btn-primary { background: var(--accent); color: #0b0b0f; }
-.btn-ghost { border-color: var(--border); color: var(--foreground); background: transparent; }
+.btn:hover { opacity: 0.9; }
+.btn-primary { background: #09090b; color: #ffffff; }
+.btn-primary:hover { background: #27272a; }
+.btn-ghost { border-color: var(--border); color: var(--foreground); background: #ffffff; }
+.btn-ghost:hover { background: #f4f4f5; }
 .btn-danger { background: #dc2626; color: white; }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .input {
   width: 100%;
-  background: var(--background);
+  background: #ffffff;
   border: 1px solid var(--border);
   border-radius: 0.5rem;
   padding: 0.5rem 0.75rem;
   font-size: 0.875rem;
   color: var(--foreground);
+  transition: border-color 0.15s ease-out;
 }
-.input:focus { outline: 1px solid var(--accent); }
+.input:focus { outline: none; border-color: #09090b; box-shadow: 0 0 0 1px #09090b; }
 
 .badge {
   display: inline-block;
@@ -57,9 +142,10 @@ body {
   padding: 0.125rem 0.625rem;
   font-size: 0.75rem;
   border: 1px solid var(--border);
+  background: #f4f4f5;
   color: var(--muted);
 }
-.badge-active { color: #4ade80; border-color: #166534; }
+.badge-active { color: #15803d; border-color: #bbf7d0; background: #f0fdf4; }
 
 table.data { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
 table.data th { text-align: left; color: var(--muted); font-weight: 500; padding: 0.5rem; border-bottom: 1px solid var(--border); }
