@@ -9,6 +9,11 @@ const app = new Hono();
 
 app.use('*', cors());
 
+app.onError((err, c) => {
+  console.error('[API Error]:', err);
+  return c.json({ error: { message: err.message || 'Internal Server Error', type: 'internal_error' } }, 500);
+});
+
 app.get('/health', (c) => c.json({ ok: true }));
 app.route('/v1', v1);
 app.route('/webhooks', webhooks);
