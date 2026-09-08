@@ -2,10 +2,10 @@ import { auth } from '@/lib/auth';
 import { headers } from 'next/headers';
 import Navbar from '@/components/Navbar';
 import HeroOpening from '@/components/HeroOpening';
-import ModelCatalog from '@/components/ModelCatalog';
 import HowItWorksSteps from '@/components/HowItWorksSteps';
-import MarketingProblemSolution from '@/components/MarketingProblemSolution';
-import QuickstartSnippet from '@/components/QuickstartSnippet';
+import MagicTerminal from '@/components/MagicTerminal';
+import ModelCatalogTeaser from '@/components/ModelCatalogTeaser';
+import LandingApiCta from '@/components/LandingApiCta';
 import MarketingFaq from '@/components/MarketingFaq';
 import Footer from '@/components/Footer';
 
@@ -14,28 +14,28 @@ export default async function Home() {
 
   return (
     <main className="min-h-screen bg-[#fafafa] text-neutral-900 selection:bg-neutral-900 selection:text-white relative flex flex-col justify-between overflow-x-hidden">
-      {/* Floating Capsule Navbar */}
+      {/* 1. Capsule Floating Navbar */}
       <Navbar session={session} />
 
-      {/* 1. Opening Section: Hero */}
+      {/* 2. Focused Hero Section */}
       <HeroOpening isLoggedIn={!!session} />
 
-      {/* 2. Model Catalog & AI Capabilities (Without public pricing card layout) */}
-      <ModelCatalog isLoggedIn={!!session} />
-
-      {/* 3. Step-by-Step Guide */}
+      {/* 3. 4 Langkah Mudah Menggunakan API Key AI (Integrasi IDE) */}
       <HowItWorksSteps isLoggedIn={!!session} />
 
-      {/* 4. Marketing Comparison: Old Problems vs Morphic Solution */}
-      <MarketingProblemSolution />
+      {/* 4. Interactive Multi-IDE Terminal (Separate Section) */}
+      <MagicTerminal />
 
-      {/* 5. Developer Integration: Quickstart Code Snippets */}
-      <QuickstartSnippet />
+      {/* 5. Small Curated Model Showcase */}
+      <ModelCatalogTeaser isLoggedIn={!!session} />
 
-      {/* 6. Marketing FAQ */}
+      {/* 5. Direct API Key CTA Area */}
+      <LandingApiCta isLoggedIn={!!session} />
+
+      {/* 6. Minimal FAQ */}
       <MarketingFaq />
 
-      {/* 7. Bottom Minimal Footer */}
+      {/* 7. Footer with Morphic Interactive Hover Effect */}
       <Footer />
     </main>
   );
