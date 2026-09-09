@@ -10,13 +10,6 @@ import { auth } from '@/lib/auth';
 
 async function requireUser() {
   const session = await auth.api.getSession({ headers: await headers() });
-  if (!session && process.env.NODE_ENV === 'development') {
-    return {
-      id: 'dev-preview-user',
-      name: 'Developer (Preview)',
-      email: 'dev@morphic.local',
-    };
-  }
   if (!session) redirect('/login');
   return session.user;
 }
@@ -49,17 +42,8 @@ export async function listApiKeys() {
       .where(and(eq(s.apiKeys.userId, user.id), eq(s.apiKeys.status, 'active')))
       .orderBy(desc(s.apiKeys.createdAt));
   } catch (err) {
-    console.warn('[listApiKeys] Database offline or unreachable, providing fallback key for preview:', err);
-    return [
-      {
-        id: 'k-preview-1',
-        name: 'Cursor & Cline Dev Key',
-        keyPrefix: 'mp-live-9f82a4d',
-        status: 'active',
-        lastUsedAt: new Date(),
-        createdAt: new Date(),
-      },
-    ];
+    console.warn('[listApiKeys] Error fetching api keys:', err);
+    return [];
   }
 }
 
@@ -159,17 +143,18 @@ export async function redeemCode(_prev: { ok: boolean; message: string }, formDa
       return { ok: true, message: 'Code redeemed' };
     });
   } catch (err) {
-    console.warn('[redeemCode] Database offline or transaction failed, providing mock redemption:', err);
-    if (code.startsWith('MP-') || code.length >= 4) {
-      return { ok: true, message: '+10,000 credits (Preview Mode)' };
-    }
-    return { ok: false, message: 'Invalid or expired code' };
+    console.error('[redeemCode] Failed to redeem voucher code:', err);
+    return { ok: false, message: 'Gagal memproses kode voucher. Pastikan kode valid atau coba beberapa saat lagi.' };
   }
 }
 
 // ── Billing / Payments (mock) ─────────────────────────
 
 export async function createMockPayment(formData: FormData) {
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('Mock payments are strictly disabled in production environment.');
+  }
+
   const packageId = String(formData.get('packageId'));
   const externalId = `mock_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   
@@ -197,26 +182,28 @@ export async function createMockPayment(formData: FormData) {
         packageName: pkg.name,
       };
     }
+    throw new Error('Package not found or inactive');
   } catch (err) {
-    console.warn('[createMockPayment] Database offline, running in mock simulation mode:', err);
+    console.error('[createMockPayment] Error creating payment record:', err);
+    throw new Error('Gagal membuat tagihan pembayaran. Silakan hubungi support.');
   }
-
-  return {
-    paymentId: `pay_${Date.now()}`,
-    externalId,
-    qrPayload: `MORPHIC:PAY:${externalId}:5000`,
-    amountCents: 5000,
-    packageName: 'Pass Harian (Simulation)',
-  };
 }
 
 export async function simulatePaymentWebhook(formData: FormData) {
-  const user = await requireUser();
+  if (process.env.NODE_ENV === 'production') {
+    return { ok: false, message: 'Simulated payment webhooks are strictly disabled in production.' };
+  }
+
+  await requireUser();
   const externalId = String(formData.get('externalId'));
   const eventId = `evt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const payload = JSON.stringify({ event_id: eventId, payment_id: externalId, status: 'paid' });
   const { createHmac } = await import('node:crypto');
-  const signature = createHmac('sha256', process.env.MOCK_PAYMENT_WEBHOOK_SECRET!).update(payload).digest('hex');
+  const secret = process.env.MOCK_PAYMENT_WEBHOOK_SECRET;
+  if (!secret) {
+    return { ok: false, message: 'Webhook secret is not configured' };
+  }
+  const signature = createHmac('sha256', secret).update(payload).digest('hex');
 
   const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8787';
   const res = await fetch(`${apiUrl}/webhooks/mock`, {
@@ -224,6 +211,6 @@ export async function simulatePaymentWebhook(formData: FormData) {
     headers: { 'content-type': 'application/json', 'x-webhook-signature': signature },
     body: payload,
   });
-  if (!res.ok) return { ok: false, message: `webhook failed: ${res.status}` };
+  if (!res.ok) return { ok: false, message: `Webhook failed: ${res.status}` };
   return { ok: true, message: 'Payment confirmed' };
 }
