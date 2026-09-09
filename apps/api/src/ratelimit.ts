@@ -1,16 +1,90 @@
-import Redis from 'ioredis';
+export interface IRateLimitStore {
+  /** Increments counter for a key, setting TTL if new. Returns updated count. */
+  increment(key: string, ttlSeconds: number): Promise<number>;
+  /** Cleans tokens older than minTimestampMs and returns remaining concurrency count. */
+  getConcurrency(setKey: string, minTimestampMs: number): Promise<number>;
+  /** Adds an active concurrency token. */
+  addConcurrency(setKey: string, token: string, timestampMs: number): Promise<void>;
+  /** Removes a concurrency token. */
+  removeConcurrency(setKey: string, token: string): Promise<void>;
+}
 
-const redis = process.env.REDIS_URL ? new Redis(process.env.REDIS_URL) : null;
+export class InMemoryRateLimitStore implements IRateLimitStore {
+  private counters = new Map<string, { count: number; expiresAt: number }>();
+  private concurrencySets = new Map<string, Map<string, number>>();
+
+  async increment(key: string, ttlSeconds: number): Promise<number> {
+    const now = Date.now();
+    this.cleanExpiredCounters(now);
+
+    const entry = this.counters.get(key);
+    if (!entry || entry.expiresAt <= now) {
+      const newEntry = { count: 1, expiresAt: now + ttlSeconds * 1000 };
+      this.counters.set(key, newEntry);
+      return 1;
+    }
+
+    entry.count += 1;
+    return entry.count;
+  }
+
+  async getConcurrency(setKey: string, minTimestampMs: number): Promise<number> {
+    const tokens = this.concurrencySets.get(setKey);
+    if (!tokens) return 0;
+
+    for (const [token, ts] of tokens.entries()) {
+      if (ts < minTimestampMs) {
+        tokens.delete(token);
+      }
+    }
+
+    if (tokens.size === 0) {
+      this.concurrencySets.delete(setKey);
+      return 0;
+    }
+
+    return tokens.size;
+  }
+
+  async addConcurrency(setKey: string, token: string, timestampMs: number): Promise<void> {
+    let tokens = this.concurrencySets.get(setKey);
+    if (!tokens) {
+      tokens = new Map<string, number>();
+      this.concurrencySets.set(setKey, tokens);
+    }
+    tokens.set(token, timestampMs);
+  }
+
+  async removeConcurrency(setKey: string, token: string): Promise<void> {
+    const tokens = this.concurrencySets.get(setKey);
+    if (tokens) {
+      tokens.delete(token);
+      if (tokens.size === 0) {
+        this.concurrencySets.delete(setKey);
+      }
+    }
+  }
+
+  private cleanExpiredCounters(now: number): void {
+    if (this.counters.size > 1000) {
+      for (const [k, v] of this.counters.entries()) {
+        if (v.expiresAt <= now) {
+          this.counters.delete(k);
+        }
+      }
+    }
+  }
+}
+
+export const rateLimitStore: IRateLimitStore = new InMemoryRateLimitStore();
 
 const RATE_WINDOW_SECONDS = 60;
 const CONCURRENCY_TTL_SECONDS = 300;
 
 export async function checkRateLimit(keyId: string, rpm: number): Promise<boolean> {
-  if (!redis) return true; // fail-open when Redis absent (dev)
   const bucket = Math.floor(Date.now() / (RATE_WINDOW_SECONDS * 1000));
   const key = `rl:${keyId}:${bucket}`;
-  const count = await redis.incr(key);
-  if (count === 1) await redis.expire(key, RATE_WINDOW_SECONDS * 2);
+  const count = await rateLimitStore.increment(key, RATE_WINDOW_SECONDS * 2);
   return count <= rpm;
 }
 
@@ -19,17 +93,19 @@ export async function trackConcurrency(
   max: number,
 ): Promise<{ acquired: boolean; token: string }> {
   const token = `${Date.now()}:${Math.random().toString(36).slice(2)}`;
-  if (!redis) return { acquired: true, token };
   const setKey = `cc:${keyId}`;
-  await redis.zremrangebyscore(setKey, 0, Date.now() - CONCURRENCY_TTL_SECONDS * 1000);
-  const current = await redis.zcard(setKey);
-  if (current >= max) return { acquired: false, token };
-  await redis.zadd(setKey, Date.now(), token);
-  await redis.expire(setKey, CONCURRENCY_TTL_SECONDS * 2);
+  const now = Date.now();
+  const minTimestamp = now - CONCURRENCY_TTL_SECONDS * 1000;
+
+  const current = await rateLimitStore.getConcurrency(setKey, minTimestamp);
+  if (current >= max) {
+    return { acquired: false, token };
+  }
+
+  await rateLimitStore.addConcurrency(setKey, token, now);
   return { acquired: true, token };
 }
 
 export async function releaseConcurrency(keyId: string, token: string): Promise<void> {
-  if (!redis) return;
-  await redis.zrem(`cc:${keyId}`, token);
+  await rateLimitStore.removeConcurrency(`cc:${keyId}`, token);
 }

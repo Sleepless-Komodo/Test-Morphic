@@ -16,7 +16,6 @@
     "drizzle-orm": "^0.44.0",
     "@morphic/db": "workspace:*",
     "@morphic/shared": "workspace:*",
-    "ioredis": "^5.7.0",
     "zod": "^4.1.0"
   },
   "devDependencies": {
