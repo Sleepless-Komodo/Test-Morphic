@@ -35,13 +35,10 @@ export function BillingView({
   };
 
   return (
-    <div className="max-w-6xl mx-auto px-4 md:px-8 py-8 space-y-8">
+    <div className="w-full space-y-8">
       {/* Header & Balance Card */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-neutral-200/70">
         <div>
-          <div suppressHydrationWarning className="text-[11px] font-mono uppercase tracking-wider text-neutral-400 font-semibold mb-1">
-            {locale === 'en' ? 'Morphic Developer Console / Billing' : 'Konsol Pengembang Morphic / Tagihan'}
-          </div>
           <h1 suppressHydrationWarning className="text-2xl md:text-3xl font-heading font-extrabold text-neutral-950 tracking-tight">
             {t.dashboard.billingPageTitle}
           </h1>
@@ -127,8 +124,8 @@ export function BillingView({
 
       {/* QRIS Modal */}
       {showModal && selectedPkg && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
-          <div className="bg-white rounded-3xl border border-neutral-200 max-w-sm w-full p-6 text-center shadow-2xl space-y-4">
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl border border-neutral-200 max-w-sm w-full p-6 text-center shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-200 ease-out">
             <div className="flex items-center justify-between border-b pb-3">
               <div suppressHydrationWarning className="text-xs font-bold text-neutral-500 uppercase font-mono">{t.dashboard.checkoutQris}</div>
               <button onClick={() => setShowModal(false)} className="text-neutral-400 hover:text-black text-sm cursor-pointer">

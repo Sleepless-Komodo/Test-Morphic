@@ -22,31 +22,28 @@ export default function Navbar({ session }: NavbarProps) {
 
   const navLinks = [
     { href: '/models', label: t.nav.models, isRoute: true },
-    { href: '/#integration', label: t.nav.integration, isRoute: false },
-    { href: '/#keunggulan', label: t.nav.features, isRoute: false },
-    { href: '/#faq', label: t.nav.faq, isRoute: false },
+    { href: '/pricing', label: t.nav.price, isRoute: true },
+    { href: '/docs', label: t.nav.docs, isRoute: true },
   ];
+
+  const isLinkActive = (href: string, isRoute: boolean) =>
+    isRoute
+      ? pathname === href || pathname.startsWith(`${href}/`)
+      : pathname === '/';
 
   return (
     <header className="fixed top-4 sm:top-5 left-1/2 -translate-x-1/2 z-50 w-[92%] max-w-4xl transform-gpu translate-z-0">
       <div className="bg-white/92 backdrop-blur-xl text-neutral-900 border border-neutral-200/90 rounded-full px-4 sm:px-6 py-2.5 shadow-[0_4px_24px_rgba(0,0,0,0.04)] flex items-center justify-between transition-all duration-200">
         {/* Left: Brand Logo */}
         <Link href="/" className="flex items-center gap-2.5 group">
-          <div className="w-7 h-7 rounded-full bg-neutral-950 flex items-center justify-center text-white transition-transform group-hover:scale-105 transform-gpu shadow-xs">
-            <svg
-              className="w-3.5 h-3.5 text-white"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <circle cx="8" cy="12" r="5" />
-              <path d="M12 12h5a4 4 0 0 1 4 4v0a4 4 0 0 1-4 4h-5" />
-              <path d="M12 7v5" />
-            </svg>
-          </div>
+          <Image
+            src="/morphic-symbol.jpg"
+            alt="Morphic logo"
+            width={28}
+            height={28}
+            priority
+            className="w-7 h-7 rounded-full object-cover ring-1 ring-neutral-200 shadow-xs transition-transform group-hover:scale-105 transform-gpu"
+          />
           <span className="font-heading font-extrabold text-base tracking-tight text-neutral-950">
             Morphic
           </span>
@@ -55,15 +52,16 @@ export default function Navbar({ session }: NavbarProps) {
         {/* Center: Clean Concise Links */}
         <nav className="hidden md:flex items-center gap-7 text-xs font-semibold text-neutral-600">
           {navLinks.map((link) => {
-            const isActive = link.isRoute && pathname === link.href;
+            const isActive = isLinkActive(link.href, link.isRoute);
             return (
               <Link
                 key={link.href}
                 href={link.href}
-                className={`transition-colors py-1 ${
+                aria-current={isActive ? 'page' : undefined}
+                className={`relative py-1 transition-colors after:absolute after:left-0 after:bottom-0 after:h-[1.5px] after:w-full after:origin-left after:bg-neutral-950 after:transition-transform after:duration-200 ${
                   isActive
-                    ? 'text-neutral-950 font-bold'
-                    : 'hover:text-neutral-950'
+                    ? 'text-neutral-950 font-bold after:scale-x-100'
+                    : 'after:scale-x-0 hover:text-neutral-950 hover:after:scale-x-100'
                 }`}
               >
                 <span suppressHydrationWarning>{link.label}</span>
@@ -132,17 +130,24 @@ export default function Navbar({ session }: NavbarProps) {
 
       {/* Mobile Slideout Menu */}
       {mobileMenuOpen && (
-        <div className="sm:hidden mt-2 bg-white/95 backdrop-blur-md border border-neutral-200/90 rounded-3xl p-4 shadow-2xl text-neutral-800 flex flex-col gap-2 animate-in fade-in duration-150 transform-gpu">
-          {navLinks.map((link) => (
-            <Link
-              key={link.href}
-              href={link.href}
-              onClick={() => setMobileMenuOpen(false)}
-              className="px-3 py-2 rounded-xl hover:bg-neutral-100 font-semibold text-xs text-neutral-800"
-            >
-              {link.label}
-            </Link>
-          ))}
+        <div className="sm:hidden mt-2 bg-white/95 backdrop-blur-md border border-neutral-200/90 rounded-3xl p-4 shadow-2xl text-neutral-800 flex flex-col gap-2 animate-in fade-in slide-in-from-top-2 duration-200 ease-out transform-gpu">
+          {navLinks.map((link) => {
+            const isActive = isLinkActive(link.href, link.isRoute);
+            return (
+              <Link
+                key={link.href}
+                href={link.href}
+                onClick={() => setMobileMenuOpen(false)}
+                className={`px-3 py-2 rounded-xl font-semibold text-xs ${
+                  isActive
+                    ? 'bg-neutral-100 text-neutral-950'
+                    : 'hover:bg-neutral-100 text-neutral-800'
+                }`}
+              >
+                {link.label}
+              </Link>
+            );
+          })}
           <div className="pt-2 border-t border-neutral-100 flex flex-col gap-2">
             {session ? (
               <Link

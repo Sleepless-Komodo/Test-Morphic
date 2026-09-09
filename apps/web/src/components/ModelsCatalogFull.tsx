@@ -3,7 +3,6 @@
 import React, { useState, useMemo } from 'react';
 import { ALL_MODELS, ModelItem } from '@/lib/models-data';
 import ModelCard from './ModelCard';
-import MemberPricingBanner from './MemberPricingBanner';
 import { useTranslation } from '@/lib/i18n';
 import { Search, SlidersHorizontal, Sparkles } from 'lucide-react';
 
@@ -123,11 +122,6 @@ export default function ModelsCatalogFull({ isLoggedIn = false }: { isLoggedIn?:
             </button>
           </div>
         )}
-      </div>
-
-      {/* Member Pricing Banner */}
-      <div className="mt-14">
-        <MemberPricingBanner isLoggedIn={isLoggedIn} />
       </div>
     </div>
   );

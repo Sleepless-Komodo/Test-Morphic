@@ -57,11 +57,11 @@ export default function Footer() {
         {/* MASSIVE 3D WIREFRAME "Morphic" TEXT - Clean outline geometry, no collision */}
         <div
           ref={textContainerRef}
-          className="w-full relative overflow-hidden select-none flex items-end justify-center"
+          className="w-full relative overflow-hidden select-none flex items-end justify-center mb-16"
         >
           {/* Layer 1: Dark 3D Wireframe Base Layer (Always visible, deep dark 3D bevel) */}
           <svg
-            viewBox="0 0 1000 110"
+            viewBox="0 0 1000 230"
             className="w-full h-auto max-w-full block select-none pointer-events-none"
             xmlns="http://www.w3.org/2000/svg"
           >
@@ -106,6 +106,40 @@ export default function Footer() {
             </text>
           </svg>
 
+          {/* Layer 1.5: Ambient Glow (Subtle but always visible even without hover) */}
+          <svg
+            viewBox="0 0 1000 230"
+            className="absolute inset-0 w-full h-auto max-w-full block select-none pointer-events-none opacity-20"
+            xmlns="http://www.w3.org/2000/svg"
+            aria-hidden="true"
+          >
+            <defs>
+              <linearGradient id="ambientStroke" x1="0%" y1="0%" x2="0%" y2="100%">
+                <stop offset="0%" stopColor="#ffffff" />
+                <stop offset="100%" stopColor="#a1a1aa" />
+              </linearGradient>
+              <filter id="ambientBloom" x="-20%" y="-20%" width="140%" height="140%">
+                <feGaussianBlur stdDeviation="5" result="glow" />
+                <feComposite in="SourceGraphic" in2="glow" operator="over" />
+              </filter>
+            </defs>
+            <text
+              x="50%"
+              y="175"
+              textAnchor="middle"
+              fill="none"
+              stroke="url(#ambientStroke)"
+              strokeWidth="1.8"
+              strokeLinejoin="round"
+              filter="url(#ambientBloom)"
+              className="font-heading font-black"
+              fontSize="225"
+              style={{ letterSpacing: '-0.02em' }}
+            >
+              Morphic
+            </text>
+          </svg>
+
           {/* Layer 2: Glowing 3D Cursor Spotlight Mask (Lights up dynamically with high clarity!) */}
           <div
             className="absolute inset-0 w-full h-full pointer-events-none transition-opacity duration-200 flex items-end justify-center"
@@ -116,7 +150,7 @@ export default function Footer() {
             }}
           >
             <svg
-              viewBox="0 0 1000 110"
+              viewBox="0 0 1000 230"
               className="w-full h-auto max-w-full block select-none pointer-events-none"
               xmlns="http://www.w3.org/2000/svg"
             >
@@ -154,8 +188,8 @@ export default function Footer() {
           </div>
         </div>
 
-        {/* Clear-Background Floating Horizon Bar (Matching user image: 100% transparent, no border divider, overlays seamlessly at bottom) */}
-        <div className="relative sm:absolute inset-x-0 bottom-4 w-full flex flex-col sm:flex-row items-center justify-between gap-4 text-xs font-body text-neutral-500 px-4 sm:px-6 md:px-8 pointer-events-none z-20 pb-4 sm:pb-0">
+        {/* Clear-Background Horizon Bar — rendered in normal flow BELOW the big text (no overlap) */}
+        <div className="relative w-full flex flex-col sm:flex-row items-center justify-between gap-4 text-xs font-body text-neutral-500 px-4 sm:px-6 md:px-8 pointer-events-none z-20 pb-4">
           {/* Left: Copyright & Brand Tagline (Matching user reference image) */}
           <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2.5 text-center sm:text-left pointer-events-auto bg-transparent">
             <Link
@@ -172,22 +206,22 @@ export default function Footer() {
             </p>
           </div>
 
-          {/* Right: Navigation Links (Matching user reference image) */}
+          {/* Right: Navigation Links (Matching navbar) */}
           <div className="flex flex-wrap items-center justify-center sm:justify-end gap-5 text-neutral-400 text-xs font-body pointer-events-auto bg-transparent">
-            <a href="#models" className="hover:text-white transition-colors">
-              {locale === 'id' ? 'Katalog Model' : 'Model Catalog'}
-            </a>
-            <a href="#integration" className="hover:text-white transition-colors">
-              {locale === 'id' ? 'Integrasi IDE' : 'IDE Integration'}
-            </a>
-            <a href="#features" className="hover:text-white transition-colors">
-              {locale === 'id' ? 'Keunggulan' : 'Features'}
-            </a>
+            <Link href="/models" className="hover:text-white transition-colors">
+              <span suppressHydrationWarning>{t.nav.models}</span>
+            </Link>
+            <Link href="/pricing" className="hover:text-white transition-colors">
+              <span suppressHydrationWarning>{t.nav.price}</span>
+            </Link>
+            <Link href="/docs" className="hover:text-white transition-colors">
+              <span suppressHydrationWarning>{t.nav.docs}</span>
+            </Link>
             <a href="#faq" className="hover:text-white transition-colors">
               FAQ
             </a>
             <Link href="/dashboard" className="hover:text-white transition-colors">
-              Dashboard
+              <span suppressHydrationWarning>{t.nav.dashboard}</span>
             </Link>
           </div>
         </div>
