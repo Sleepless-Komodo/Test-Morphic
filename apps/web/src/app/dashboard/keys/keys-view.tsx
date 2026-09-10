@@ -68,12 +68,9 @@ export function KeysView({ initialKeys }: { initialKeys: KeyItem[] }) {
   };
 
   return (
-    <div className="max-w-6xl mx-auto px-4 md:px-8 py-8 space-y-8">
+    <div className="w-full space-y-8">
       {/* Header */}
       <div className="border-b border-neutral-200/70 pb-4">
-        <div suppressHydrationWarning className="text-[11px] font-mono uppercase tracking-wider text-neutral-400 font-semibold mb-1">
-          {locale === 'en' ? 'Morphic Developer Console / Authentication' : 'Morphic Developer Console / Autentikasi'}
-        </div>
         <h1 suppressHydrationWarning className="text-2xl md:text-3xl font-heading font-extrabold text-neutral-950 tracking-tight">
           {t.dashboard.keysPageTitle}
         </h1>
@@ -104,7 +101,7 @@ export function KeysView({ initialKeys }: { initialKeys: KeyItem[] }) {
 
         {/* Revealed Key Banner */}
         {createdRawKey && (
-          <div className="p-4 rounded-2xl bg-neutral-900 text-white border border-neutral-800 shadow-md space-y-3 animate-in fade-in">
+          <div className="p-4 rounded-2xl bg-neutral-900 text-white border border-neutral-800 shadow-md space-y-3 animate-in fade-in slide-in-from-top-3 duration-250 ease-out">
             <div className="flex items-center gap-2 text-xs font-mono text-emerald-400 font-bold">
               <Sparkles className="h-4 w-4" />
               <span>{t.dashboard.revealKeyPrompt}</span>

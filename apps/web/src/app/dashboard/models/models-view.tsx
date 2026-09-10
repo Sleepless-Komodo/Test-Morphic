@@ -33,13 +33,10 @@ export function ModelsView({ initialModels }: { initialModels: any[] }) {
   }, [initialModels, search, selectedCap]);
 
   return (
-    <div className="max-w-6xl mx-auto px-4 md:px-8 py-8 space-y-8">
+    <div className="w-full space-y-8">
       {/* Header */}
       <div className="border-b border-neutral-200/70 pb-4 flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
-          <div suppressHydrationWarning className="text-[11px] font-mono uppercase tracking-wider text-neutral-400 font-semibold mb-1">
-            {locale === 'en' ? 'Morphic Developer Console / Models' : 'Morphic Developer Console / Model AI'}
-          </div>
           <h1 suppressHydrationWarning className="text-2xl md:text-3xl font-heading font-extrabold text-neutral-950 tracking-tight">
             {t.dashboard.modelsPageTitle}
           </h1>

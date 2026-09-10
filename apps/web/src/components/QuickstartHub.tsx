@@ -1,0 +1,178 @@
+'use client';
+
+import { useState } from 'react';
+import { Check, Copy, Terminal } from 'lucide-react';
+import { useTranslation } from '@/lib/i18n';
+
+const BASE_URL = 'https://api.morphic.sh/v1';
+
+type TabId = 'ide' | 'curl' | 'sdk';
+
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-700 bg-neutral-800 px-2.5 py-1 text-[11px] font-semibold text-neutral-300 transition-colors hover:bg-neutral-700 hover:text-white cursor-pointer shrink-0"
+    >
+      {copied ? (
+        <Check className="h-3 w-3 text-emerald-400" />
+      ) : (
+        <Copy className="h-3 w-3" />
+      )}
+      <span suppressHydrationWarning>{copied ? 'Copied' : 'Copy'}</span>
+    </button>
+  );
+}
+
+export default function QuickstartHub() {
+  const { t, locale } = useTranslation();
+  const [activeTab, setActiveTab] = useState<TabId>('ide');
+
+  const tabs: Array<{ id: TabId; label: string }> = [
+    { id: 'ide', label: t.dashboard.quickstartTabIde },
+    { id: 'curl', label: t.dashboard.quickstartTabCurl },
+    { id: 'sdk', label: t.dashboard.quickstartTabSdk },
+  ];
+
+  const curlSnippet = `curl ${BASE_URL}/chat/completions \\
+  -H "Authorization: Bearer $MORPHIC_API_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{"model": "deepseek-v4", "messages": [{"role": "user", "content": "Hello Morphic"}]}'`;
+
+  const nodeSnippet = `import OpenAI from "openai";
+
+const client = new OpenAI({
+  baseURL: "${BASE_URL}",
+  apiKey: process.env.MORPHIC_API_KEY,
+});
+
+const res = await client.chat.completions.create({
+  model: "deepseek-v4",
+  messages: [{ role: "user", content: "Hello Morphic" }],
+});`;
+
+  const pythonSnippet = `import os
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="${BASE_URL}",
+    api_key=os.environ["MORPHIC_API_KEY"],
+)
+
+res = client.chat.completions.create(
+    model="deepseek-v4",
+    messages=[{"role": "user", "content": "Hello Morphic"}],
+)`;
+
+  return (
+    <div className="rounded-3xl border border-neutral-200/90 bg-white shadow-xs overflow-hidden">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-6 pt-6 pb-4">
+        <div className="flex items-center gap-2">
+          <Terminal className="h-4 w-4 text-neutral-500" />
+          <h2 suppressHydrationWarning className="font-heading font-bold text-base text-neutral-950">
+            {t.dashboard.quickstartHubTitle}
+          </h2>
+        </div>
+        <div className="flex items-center gap-1 bg-neutral-100 p-1 rounded-xl overflow-x-auto">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
+                activeTab === tab.id
+                  ? 'bg-neutral-950 text-white shadow-xs'
+                  : 'text-neutral-600 hover:text-neutral-950'
+              }`}
+            >
+              <span suppressHydrationWarning>{tab.label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="px-6 pb-6">
+        <p suppressHydrationWarning className="text-xs text-neutral-500 mb-4">
+          {activeTab === 'ide' && t.dashboard.quickstartIdeDesc}
+          {activeTab === 'curl' && t.dashboard.quickstartCurlDesc}
+          {activeTab === 'sdk' && t.dashboard.quickstartSdkDesc}
+        </p>
+
+        {activeTab === 'ide' && (
+          <div className="rounded-2xl bg-neutral-950 border border-neutral-800 p-4 sm:p-5">
+            <div className="flex items-start justify-between gap-3 mb-3">
+              <span suppressHydrationWarning className="text-[11px] text-neutral-400">
+                {locale === 'id'
+                  ? 'Buka Settings AI di Cursor / Cline, lalu isi:'
+                  : 'Open the AI settings in Cursor / Cline, then fill in:'}
+              </span>
+              <CopyButton
+                text={`Base URL: ${BASE_URL}\nModel: deepseek-v4\nAPI Key: mp-live-xxxxxxxx`}
+              />
+            </div>
+            <div className="space-y-2.5 font-mono text-xs">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 rounded-lg bg-neutral-900 border border-neutral-800 px-3 py-2">
+                <span className="text-neutral-500">Base URL</span>
+                <span className="text-emerald-400 break-all">{BASE_URL}</span>
+              </div>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 rounded-lg bg-neutral-900 border border-neutral-800 px-3 py-2">
+                <span className="text-neutral-500">Model</span>
+                <span className="text-emerald-400">deepseek-v4</span>
+              </div>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 rounded-lg bg-neutral-900 border border-neutral-800 px-3 py-2">
+                <span className="text-neutral-500">API Key</span>
+                <span className="text-neutral-300">mp-live-xxxxxxxx</span>
+              </div>
+            </div>
+            <p suppressHydrationWarning className="text-[11px] text-neutral-500 mt-3">
+              {t.dashboard.quickstartIdeKeyHint}
+            </p>
+          </div>
+        )}
+
+        {activeTab === 'curl' && (
+          <div className="rounded-2xl bg-neutral-950 border border-neutral-800 p-4 sm:p-5">
+            <div className="flex justify-end mb-2">
+              <CopyButton text={curlSnippet} />
+            </div>
+            <pre className="text-xs font-mono text-neutral-200 leading-relaxed overflow-x-auto">
+              {curlSnippet}
+            </pre>
+          </div>
+        )}
+
+        {activeTab === 'sdk' && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className="rounded-2xl bg-neutral-950 border border-neutral-800 p-4 sm:p-5">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[11px] font-mono text-neutral-400">Node.js / TypeScript</span>
+                <CopyButton text={nodeSnippet} />
+              </div>
+              <pre className="text-xs font-mono text-neutral-200 leading-relaxed overflow-x-auto">
+                {nodeSnippet}
+              </pre>
+            </div>
+            <div className="rounded-2xl bg-neutral-950 border border-neutral-800 p-4 sm:p-5">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[11px] font-mono text-neutral-400">Python</span>
+                <CopyButton text={pythonSnippet} />
+              </div>
+              <pre className="text-xs font-mono text-neutral-200 leading-relaxed overflow-x-auto">
+                {pythonSnippet}
+              </pre>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

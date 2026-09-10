@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { ChevronDown, HelpCircle } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 import { useTranslation } from '@/lib/i18n';
 
 interface FaqItem {
@@ -71,13 +71,12 @@ export default function MarketingFaq() {
   };
 
   return (
-    <section id="faq" className="relative z-10 py-20 px-4 sm:px-6 bg-[#fafafa] text-neutral-900 border-t border-neutral-200/90">
+    <section id="faq" className="relative z-10 pt-20 pb-28 sm:pb-36 px-4 sm:px-6 bg-[#fafafa] text-neutral-900">
       <div className="max-w-4xl mx-auto">
         {/* Header */}
         <div className="text-center max-w-2xl mx-auto mb-12">
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-neutral-100 border border-neutral-200 text-neutral-800 text-xs font-semibold mb-4 shadow-sm">
-            <HelpCircle className="h-3.5 w-3.5 text-neutral-900" />
-            <span suppressHydrationWarning>{t.faq.badge}</span>
+          <div className="text-[11px] font-mono uppercase tracking-[0.2em] text-neutral-400 font-bold mb-4">
+            {t.faq.badge}
           </div>
 
           <h2 suppressHydrationWarning className="text-3xl sm:text-4xl font-heading font-extrabold tracking-tight mb-3 text-neutral-950">
@@ -99,7 +98,11 @@ export default function MarketingFaq() {
             return (
               <div
                 key={idx}
-                className="rounded-2xl border border-neutral-200/90 bg-white overflow-hidden transition-all duration-200 hover:border-neutral-300 shadow-xs"
+                className={`rounded-2xl border bg-white overflow-hidden transition-all duration-300 ${
+                  isOpen
+                    ? 'border-neutral-300 shadow-[0_8px_24px_-12px_rgba(9,9,11,0.15)]'
+                    : 'border-neutral-200 shadow-xs hover:border-neutral-300 hover:-translate-y-0.5'
+                }`}
               >
                 <button
                   onClick={() => toggle(idx)}
@@ -114,11 +117,18 @@ export default function MarketingFaq() {
                   />
                 </button>
 
-                {isOpen && (
-                  <div suppressHydrationWarning className="px-5 sm:px-6 pb-6 text-xs sm:text-sm text-neutral-600 font-body leading-relaxed border-t border-neutral-100 pt-4 bg-white">
-                    {answer}
+                {/* Smooth height transition via CSS Grid rows — prevents footer jump */}
+                <div
+                  className={`grid transition-[grid-template-rows,opacity] duration-300 ease-out ${
+                    isOpen ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'
+                  }`}
+                >
+                  <div className="overflow-hidden">
+                    <div suppressHydrationWarning className="px-5 sm:px-6 pb-6 text-xs sm:text-sm text-neutral-600 font-body leading-relaxed border-t border-neutral-100 pt-4 bg-white">
+                      {answer}
+                    </div>
                   </div>
-                )}
+                </div>
               </div>
             );
           })}
