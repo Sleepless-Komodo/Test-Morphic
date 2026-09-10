@@ -44,3 +44,7 @@ Thumbs.db
 
 # Docker volumes (local)
 docker-data/
+
+# Markdown Farros
+PRD-n-SPEC.md
+inspection_and_planning.md
