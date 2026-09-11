@@ -2,17 +2,30 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
+import { motion } from 'framer-motion';
 import { ArrowUpRight, Zap, ShieldCheck, Plug, Wallet, Clock } from 'lucide-react';
 import { useTranslation } from '@/lib/i18n';
+import { useReducedMotionSafe } from '@/lib/use-reduced-motion-safe';
 
-export default function PricingPlans({ isLoggedIn = false }: { isLoggedIn?: boolean }) {
-  const { t } = useTranslation();
+const EASE = [0.16, 1, 0.3, 1] as const;
+
+interface PricingPlansProps {
+  isLoggedIn?: boolean;
+  showPricingHubLink?: boolean;
+}
+
+export default function PricingPlans({
+  isLoggedIn = false,
+  showPricingHubLink = true,
+}: PricingPlansProps) {
+  const { t, locale } = useTranslation();
   const [activeTab, setActiveTab] = useState<'credits' | 'daily'>('credits');
+  const reduced = useReducedMotionSafe();
 
   const targetUrl = isLoggedIn ? '/dashboard/billing' : '/login';
 
   return (
-    <section className="relative z-10 pt-32 pb-24 px-4 sm:px-6">
+    <section id="pricing" className="relative z-10 py-16 lg:py-24 px-4 sm:px-6 border-t border-neutral-200/70 scroll-mt-20 sm:scroll-mt-24">
       {/* Neutral ambient gradient — monochrome, no blue tint */}
       <div
         className="absolute inset-x-0 top-0 h-72 pointer-events-none -z-10"
@@ -24,23 +37,49 @@ export default function PricingPlans({ isLoggedIn = false }: { isLoggedIn?: bool
       />
 
       <div className="max-w-7xl mx-auto">
-        {/* Header — eyebrow text, no pill badge */}
-        <div className="text-center max-w-3xl mx-auto mb-10">
-          <div className="text-[11px] font-mono uppercase tracking-[0.2em] text-neutral-400 font-bold mb-4">
-            {t.pricing.badge}
+        {/* Header */}
+        <motion.div
+          initial={reduced ? false : { opacity: 0, y: 14, filter: 'blur(4px)' }}
+          whileInView={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+          viewport={{ once: true, margin: '-50px' }}
+          transition={{ duration: 0.5, ease: EASE }}
+          className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-12"
+        >
+          <div>
+            <div className="text-xs sm:text-sm font-mono uppercase tracking-[0.2em] text-neutral-400 font-bold mb-3">
+              {t.pricing.badge}
+            </div>
+
+            <h2 className="text-4xl sm:text-5xl lg:text-6xl font-heading font-extrabold tracking-tight text-neutral-950">
+              {t.pricing.title}
+            </h2>
+
+            <p className="mt-4 text-neutral-600 font-body text-sm md:text-base max-w-2xl leading-relaxed">
+              {t.pricing.desc}
+            </p>
           </div>
 
-          <h1 className="text-3xl sm:text-4xl md:text-5xl font-heading font-extrabold tracking-tight mb-4 text-neutral-950">
-            {t.pricing.title}
-          </h1>
+          {showPricingHubLink && (
+            <div className="flex items-center gap-3 self-start md:self-auto shrink-0">
+              <Link
+                href="/pricing"
+                className="inline-flex items-center gap-2 rounded-full border border-neutral-300 hover:border-neutral-950 px-5 sm:px-6 py-2.5 sm:py-3 text-xs sm:text-sm font-bold transition-all hover:bg-neutral-950 hover:text-white shadow-2xs group cursor-pointer"
+              >
+                <span>{locale === 'en' ? 'Full Pricing & Calculator' : 'Detail Harga & Kalkulator'}</span>
+                <ArrowUpRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+              </Link>
+            </div>
+          )}
+        </motion.div>
 
-          <p className="text-neutral-600 font-body text-sm md:text-base max-w-2xl mx-auto leading-relaxed">
-            {t.pricing.desc}
-          </p>
-        </div>
-
-        {/* Purchase Mode Tab Switcher */}
-        <div className="flex flex-col items-center gap-3 mb-12">
+        {/* Purchase Mode Tab Switcher & Cards */}
+        <motion.div
+          initial={reduced ? false : { opacity: 0, y: 16, filter: 'blur(4px)' }}
+          whileInView={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+          viewport={{ once: true, margin: '-40px' }}
+          transition={{ duration: 0.55, delay: 0.1, ease: EASE }}
+        >
+          <div className="flex flex-col items-center gap-3 mb-12">
           <div className="inline-flex items-center p-1 rounded-full border border-neutral-200 bg-neutral-100 text-xs select-none shadow-xs">
             <button
               type="button"
@@ -192,16 +231,16 @@ export default function PricingPlans({ isLoggedIn = false }: { isLoggedIn?: bool
                   {/* Spec strip */}
                   <div className="mb-6 divide-y divide-neutral-100 border-y border-neutral-100 text-[11px] font-mono text-neutral-600">
                     <div className="py-2 flex justify-between">
-                      <span className="text-neutral-400">Duration</span>
-                      <span className="font-semibold">24 jam</span>
+                      <span className="text-neutral-400">{locale === 'en' ? 'Duration' : 'Durasi'}</span>
+                      <span className="font-semibold">{locale === 'en' ? '24 hours' : '24 jam'}</span>
                     </div>
                     <div className="py-2 flex justify-between">
-                      <span className="text-neutral-400">Requests</span>
-                      <span className="font-semibold">Unlimited</span>
+                      <span className="text-neutral-400">{locale === 'en' ? 'Requests' : 'Permintaan'}</span>
+                      <span className="font-semibold">{locale === 'en' ? 'Unlimited' : 'Tak Terbatas'}</span>
                     </div>
                     <div className="py-2 flex justify-between">
-                      <span className="text-neutral-400">Activation</span>
-                      <span className="font-semibold">QRIS · Instan</span>
+                      <span className="text-neutral-400">{locale === 'en' ? 'Activation' : 'Aktivasi'}</span>
+                      <span className="font-semibold">{locale === 'en' ? 'QRIS · Instant' : 'QRIS · Instan'}</span>
                     </div>
                   </div>
 
@@ -226,9 +265,32 @@ export default function PricingPlans({ isLoggedIn = false }: { isLoggedIn?: bool
             </p>
           </div>
         )}
+        </motion.div>
+
+        {showPricingHubLink && (
+          <div className="mt-8 text-center">
+            <Link
+              href="/pricing"
+              className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-neutral-600 hover:text-neutral-950 transition-colors group cursor-pointer"
+            >
+              <span>
+                {locale === 'en'
+                  ? 'Compare all plan limits, models & calculate savings in Full Pricing Hub'
+                  : 'Bandingkan batas limit, model & kalkulator penghematan di Halaman Harga Lengkap'}
+              </span>
+              <ArrowUpRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+            </Link>
+          </div>
+        )}
 
         {/* Trust & Security Strip — integrated, monochrome */}
-        <div className="mt-16 pt-8 border-t border-neutral-200">
+        <motion.div
+          initial={reduced ? false : { opacity: 0, y: 12, filter: 'blur(4px)' }}
+          whileInView={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+          viewport={{ once: true, margin: '-20px' }}
+          transition={{ duration: 0.45, delay: 0.15, ease: EASE }}
+          className="mt-16 pt-8 border-t border-neutral-200"
+        >
           <div className="flex flex-wrap items-center justify-center gap-x-10 gap-y-4 text-xs text-neutral-600">
             {t.pricing.trustItems.map((item, idx) => {
               const icons = [Zap, ShieldCheck, Plug];
@@ -241,7 +303,7 @@ export default function PricingPlans({ isLoggedIn = false }: { isLoggedIn?: bool
               );
             })}
           </div>
-        </div>
+        </motion.div>
       </div>
     </section>
   );

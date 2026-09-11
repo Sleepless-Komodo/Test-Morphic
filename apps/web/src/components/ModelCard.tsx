@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { ModelItem } from '@/lib/models-data';
+import { ModelItem, getModelDailyRate, getModelBadge } from '@/lib/models-data';
 import { ModelProviderLogo } from './ProviderLogos';
 import { useTranslation } from '@/lib/i18n';
 import { Check, Copy, ArrowUpRight, Clock } from 'lucide-react';
@@ -25,6 +25,8 @@ export default function ModelCard({ model, isLoggedIn = false }: ModelCardProps)
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const badgeText = getModelBadge(model, locale);
+
   return (
     <div className="rounded-2xl border border-neutral-200 bg-white p-6 flex flex-col justify-between hover:border-neutral-300 hover:shadow-xl transition-all duration-200 group relative">
       {/* Top Bar: Provider Logo + Provider Name + Optional Badge */}
@@ -39,7 +41,7 @@ export default function ModelCard({ model, isLoggedIn = false }: ModelCardProps)
             </span>
           </div>
 
-          {model.badge && (
+          {badgeText && (
             <span
               className={`shrink-0 whitespace-nowrap px-2.5 py-0.5 rounded-full text-[10px] font-mono font-medium tracking-wide ${
                 model.badgeType === 'pro' || model.badgeType === 'popular' || model.badgeType === 'flagship'
@@ -47,7 +49,7 @@ export default function ModelCard({ model, isLoggedIn = false }: ModelCardProps)
                   : 'bg-neutral-100 text-neutral-700 border border-neutral-200/90'
               }`}
             >
-              {model.badge}
+              {badgeText}
             </span>
           )}
         </div>
@@ -83,7 +85,7 @@ export default function ModelCard({ model, isLoggedIn = false }: ModelCardProps)
               {t.models.priceLabel}
             </span>
             <span className="text-xs font-bold text-neutral-900 font-mono">
-              {model.dailyRate}
+              {getModelDailyRate(model, locale)}
             </span>
           </div>
 

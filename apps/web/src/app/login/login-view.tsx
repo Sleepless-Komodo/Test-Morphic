@@ -34,8 +34,57 @@ export default function LoginView({ googleConfigured, githubConfigured }: LoginV
 
   const [showKeyInput, setShowKeyInput] = useState(false);
   const [apiKey, setApiKey] = useState('');
-  const [keyError, setKeyError] = useState('');
   const [keyLoading, setKeyLoading] = useState(false);
+  const [keyError, setKeyError] = useState<string | null>(null);
+  const [keySuccess, setKeySuccess] = useState(false);
+
+  const handleKeySignIn = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = apiKey.trim();
+    if (!trimmed) {
+      setKeyError(locale === 'id' ? 'Masukkan API key Anda' : 'Please enter your API key');
+      return;
+    }
+    if (!trimmed.startsWith('mp-')) {
+      setKeyError(
+        locale === 'id'
+          ? 'Format API key tidak valid (harus diawali mp-)'
+          : 'Invalid key format (must start with mp-)'
+      );
+      return;
+    }
+
+    try {
+      setKeyLoading(true);
+      setKeyError(null);
+      const res = await fetch('/api/auth/sign-in/api-key', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apiKey: trimmed }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setKeyError(
+          data?.message ||
+            (locale === 'id'
+              ? 'API Key tidak valid atau telah dinonaktifkan.'
+              : 'Invalid or revoked API Key.')
+        );
+        setKeyLoading(false);
+        return;
+      }
+      // Official Better Auth session cookie is set, smoothly navigate to dashboard
+      router.push('/dashboard');
+      router.refresh();
+    } catch {
+      setKeyError(
+        locale === 'id'
+          ? 'Terjadi gangguan jaringan saat memverifikasi key.'
+          : 'Network error during verification.'
+      );
+      setKeyLoading(false);
+    }
+  };
 
   const handleSocialLogin = async (provider: 'google' | 'github') => {
     setAuthError(null);
@@ -62,38 +111,10 @@ export default function LoginView({ googleConfigured, githubConfigured }: LoginV
         );
         setLoadingProvider(null);
       }
-      // Sukses: browser otomatis di-redirect ke provider OAuth
     } catch (err) {
       console.error('Sign-in error:', err);
       setAuthError(t.login.authGenericError);
       setLoadingProvider(null);
-    }
-  };
-
-  const handleKeySignIn = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const trimmed = apiKey.trim();
-    if (!trimmed) {
-      setKeyError(locale === 'id' ? 'Masukkan API key Anda' : 'Please enter your API key');
-      return;
-    }
-    if (!trimmed.startsWith('mp-')) {
-      setKeyError(
-        locale === 'id'
-          ? 'Format API key tidak valid (harus diawali mp-)'
-          : 'Invalid key format (must start with mp-)'
-      );
-      return;
-    }
-
-    setKeyLoading(true);
-    setKeyError('');
-    // Store API key locally for quick-fill/session use & redirect to dashboard
-    try {
-      localStorage.setItem('morphic_active_key', trimmed);
-      router.push('/dashboard');
-    } catch {
-      router.push('/dashboard');
     }
   };
 
@@ -275,50 +296,74 @@ export default function LoginView({ googleConfigured, githubConfigured }: LoginV
                   {/* Enter with API Key Button */}
                   <button
                     type="button"
-                    onClick={() => setShowKeyInput(true)}
+                    onClick={() => {
+                      setShowKeyInput(true);
+                      setKeyError(null);
+                    }}
                     className="w-full py-3 px-4 rounded-2xl border border-neutral-200 bg-neutral-50 hover:bg-neutral-100 hover:border-neutral-300 text-neutral-800 text-xs sm:text-sm font-semibold flex items-center justify-center gap-2.5 transition-all cursor-pointer shadow-2xs group"
                   >
                     <KeyRound className="h-4 w-4 text-neutral-600 transition-transform group-hover:rotate-12" />
-                    <span suppressHydrationWarning>{t.login.keyOption}</span>
+                    <span>{locale === 'id' ? 'Masuk dengan API Key' : 'Sign in with API Key'}</span>
                   </button>
                 </div>
               ) : (
-                /* Key Input Mode */
-                <form onSubmit={handleKeySignIn} className="space-y-3 text-left">
+                /* Real API Key Input Mode */
+                <form onSubmit={handleKeySignIn} className="space-y-4 text-left animate-in fade-in zoom-in-95 duration-150">
                   <div>
-                    <label suppressHydrationWarning className="text-xs font-bold text-neutral-800 block mb-1.5">
-                      {t.login.keyTitle}
+                    <label className="text-xs font-bold text-neutral-800 block mb-1.5">
+                      {locale === 'id' ? 'Kunci Rahasia API Key' : 'API Key Secret'}
                     </label>
                     <input
                       type="text"
+                      autoFocus
                       value={apiKey}
                       onChange={(e) => {
                         setApiKey(e.target.value);
-                        setKeyError('');
+                        setKeyError(null);
                       }}
-                      placeholder={t.login.keyPlaceholder}
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-neutral-300 text-xs font-mono text-neutral-900 bg-white placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-950 transition-all"
+                      placeholder="mp-live-xxxxxxxxxxxxxxxxxxxx"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-neutral-300 text-xs font-mono text-neutral-900 bg-white placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-950 transition-all select-all"
                     />
                     {keyError && (
-                      <p className="text-[11px] text-rose-600 mt-1 font-medium">{keyError}</p>
+                      <div className="p-2.5 mt-2 rounded-xl bg-rose-50 border border-rose-200 text-[11px] text-rose-700 font-medium leading-relaxed">
+                        {keyError}
+                      </div>
                     )}
+                    {keySuccess && (
+                      <div className="p-2.5 mt-2 rounded-xl bg-emerald-50 border border-emerald-200 text-[11px] text-emerald-800 font-semibold flex items-center gap-2">
+                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                        <span>{locale === 'id' ? 'Kunci valid! Mengalihkan ke dashboard...' : 'Valid key! Redirecting to dashboard...'}</span>
+                      </div>
+                    )}
+                    <p className="text-[11px] text-neutral-500 mt-1.5 leading-relaxed">
+                      {locale === 'id'
+                        ? 'Kunci API (format mp-...) yang aktif pada akun Anda akan diverifikasi langsung oleh gateway.'
+                        : 'Your active API key (mp-...) will be securely verified by the gateway.'}
+                    </p>
                   </div>
 
                   <button
                     type="submit"
-                    disabled={keyLoading}
-                    className="w-full py-2.5 px-4 rounded-xl bg-neutral-950 hover:bg-neutral-800 text-white text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer"
+                    disabled={keyLoading || keySuccess || !apiKey.trim()}
+                    className="w-full py-2.5 px-4 rounded-xl bg-neutral-950 hover:bg-neutral-800 disabled:opacity-60 text-white text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer shadow-xs"
                   >
                     {keyLoading && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                    <span suppressHydrationWarning>{t.login.keySubmit}</span>
+                    <span>
+                      {keyLoading
+                        ? (locale === 'id' ? 'Memverifikasi...' : 'Verifying...')
+                        : (locale === 'id' ? 'Verifikasi & Masuk Dashboard' : 'Verify & Enter Dashboard')}
+                    </span>
                   </button>
 
                   <button
                     type="button"
-                    onClick={() => setShowKeyInput(false)}
+                    onClick={() => {
+                      setShowKeyInput(false);
+                      setKeyError(null);
+                    }}
                     className="w-full py-2 text-center text-xs text-neutral-500 hover:text-neutral-800 font-medium cursor-pointer"
                   >
-                    <span suppressHydrationWarning>{t.login.keyCancel}</span>
+                    <span>{locale === 'id' ? 'Kembali ke Pilihan Akun' : 'Back to Account Options'}</span>
                   </button>
                 </form>
               )}

@@ -60,7 +60,7 @@ export function ModelsView({ initialModels }: { initialModels: any[] }) {
 
       {/* Filter Tabs */}
       <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-2xl bg-white border border-neutral-200/90 shadow-2xs">
-        <div className="flex items-center gap-1.5 overflow-x-auto text-xs">
+        <div className="flex items-center gap-1.5 overflow-x-auto text-xs py-0.5">
           {[
             { id: 'All', label: t.dashboard.filterAllCap },
             { id: 'coding', label: locale === 'en' ? 'Code' : 'Coding' },
@@ -71,7 +71,7 @@ export function ModelsView({ initialModels }: { initialModels: any[] }) {
             <button
               key={cap.id}
               onClick={() => setSelectedCap(cap.id)}
-              className={`px-3 py-1.5 rounded-xl font-semibold transition-all cursor-pointer ${
+              className={`px-3 py-1.5 rounded-xl font-semibold transition-all active:scale-95 cursor-pointer ${
                 selectedCap === cap.id
                   ? 'bg-neutral-950 text-white shadow-2xs'
                   : 'text-neutral-600 hover:text-black hover:bg-neutral-100'
@@ -81,7 +81,7 @@ export function ModelsView({ initialModels }: { initialModels: any[] }) {
             </button>
           ))}
         </div>
-        <div suppressHydrationWarning className="text-xs font-mono text-neutral-400 pl-2">
+        <div suppressHydrationWarning className="text-xs font-mono text-neutral-500 font-medium pl-2">
           {filtered.length} {t.dashboard.activeModelsSuffix}
         </div>
       </div>

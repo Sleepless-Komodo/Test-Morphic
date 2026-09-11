@@ -20,12 +20,26 @@ export function formatTokenEstimate(n: number): string {
   return Math.round(n).toString();
 }
 
-export function timeAgo(date: Date | string | null): string {
-  if (!date) return 'never';
+export function timeAgo(date: Date | string | null, locale: string = 'en'): string {
+  const isId = locale === 'id';
+  if (!date) return isId ? 'belum pernah' : 'never';
   const d = typeof date === 'string' ? new Date(date) : date;
   const secs = Math.floor((Date.now() - d.getTime()) / 1000);
-  if (secs < 60) return 'just now';
-  if (secs < 3600) return `${Math.floor(secs / 60)}m ago`;
-  if (secs < 86400) return `${Math.floor(secs / 3600)}h ago`;
-  return `${Math.floor(secs / 86400)}d ago`;
+  if (secs < 60) return isId ? 'baru saja' : 'just now';
+  if (secs < 3600) {
+    const mins = Math.floor(secs / 60);
+    return isId ? `${mins} mnt lalu` : `${mins}m ago`;
+  }
+  if (secs < 86400) {
+    const hours = Math.floor(secs / 3600);
+    return isId ? `${hours} jam lalu` : `${hours}h ago`;
+  }
+  const days = Math.floor(secs / 86400);
+  return isId ? `${days} hari lalu` : `${days}d ago`;
 }
+
+export const API_BASE_URL =
+  (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_API_URL)
+    ? `${process.env.NEXT_PUBLIC_API_URL.replace(/\/+$/, '')}/v1`
+    : 'https://api.morphic.sh/v1';
+

@@ -3,6 +3,8 @@ import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { db } from '@morphic/db';
 import * as schema from '@morphic/db/schema';
 
+import { apiKeyAuth } from './auth-api-key';
+
 const authSecret = process.env.BETTER_AUTH_SECRET;
 if (process.env.NODE_ENV === 'production') {
   if (!authSecret || authSecret === 'change-me-32+chars-random-secret' || authSecret.length < 32) {
@@ -46,6 +48,7 @@ export const auth = betterAuth({
   advanced: {
     database: { generateId: false },
   },
+  plugins: [apiKeyAuth()],
 });
 
 export type Session = typeof auth.$Infer.Session;
