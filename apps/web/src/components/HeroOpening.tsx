@@ -1,326 +1,163 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useRef } from 'react';
 import Link from 'next/link';
-import { ArrowUpRight, Sparkles } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { ArrowUpRight, Sparkles, CheckCircle2 } from 'lucide-react';
 import { useTranslation } from '@/lib/i18n';
+import { useReducedMotionSafe } from '@/lib/use-reduced-motion-safe';
+import ParallaxBackground from '@/components/ParallaxBackground';
 
 interface HeroOpeningProps {
   isLoggedIn?: boolean;
 }
 
-interface Particle {
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-  baseVx: number;
-  baseVy: number;
-  r: number;
-  pulsePhase: number;
-}
+const containerVariants = {
+  hidden: { opacity: 0 },
+  visible: {
+    opacity: 1,
+    transition: {
+      staggerChildren: 0.12,
+      delayChildren: 0.08,
+    },
+  },
+};
+
+const itemVariants = {
+  hidden: { opacity: 0, y: 24, filter: 'blur(8px)' },
+  visible: {
+    opacity: 1,
+    y: 0,
+    filter: 'blur(0px)',
+    transition: {
+      duration: 0.7,
+      ease: [0.16, 1, 0.3, 1] as const,
+    },
+  },
+};
 
 export default function HeroOpening({ isLoggedIn = false }: HeroOpeningProps) {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const sectionRef = useRef<HTMLElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const reduced = useReducedMotionSafe();
 
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    const section = sectionRef.current;
-    if (!canvas || !section) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+  const fallbackSubheadline =
+    locale === 'id'
+      ? 'Akses Claude 3.5, DeepSeek V4, Qwen, dan Kimi tanpa ribet kartu kredit internasional. Hemat biaya token hingga 70% dengan pembayaran QRIS lokal instan.'
+      : 'Access Claude 3.5, DeepSeek V4, Qwen and Kimi without international credit card friction. Save up to 70% with instant local QRIS top-up.';
 
-    let width = 0;
-    let height = 0;
-    let raf = 0;
-    let running = false;
-    let particles: Particle[] = [];
-    const mouse = { x: -9999, y: -9999 };
-    const LINK_DIST = 145;
-    const LINK_DIST2 = LINK_DIST * LINK_DIST;
-    const MOUSE_R = 200;
-    const MOUSE_R2 = MOUSE_R * MOUSE_R;
-    const CURSOR_LINK = 210;
-    const CURSOR_LINK2 = CURSOR_LINK * CURSOR_LINK;
-
-    const resize = () => {
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      width = section.clientWidth;
-      height = section.clientHeight;
-      if (width <= 0 || height <= 0) return;
-
-      canvas.width = Math.max(1, Math.floor(width * dpr));
-      canvas.height = Math.max(1, Math.floor(height * dpr));
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
-      // Higher density: ~150 particles on desktop for a rich, vivid constellation
-      const count = Math.min(155, Math.max(65, Math.floor((width * height) / 9500)));
-      particles = Array.from({ length: count }, () => {
-        const angle = Math.random() * Math.PI * 2;
-        // Natural visible drift speed (0.45 - 0.90 px/frame)
-        const baseSpeed = Math.random() * 0.45 + 0.45;
-        const vx = Math.cos(angle) * baseSpeed;
-        const vy = Math.sin(angle) * baseSpeed;
-        return {
-          x: Math.random() * width,
-          y: Math.random() * height,
-          vx,
-          vy,
-          baseVx: vx,
-          baseVy: vy,
-          r: Math.random() * 1.8 + 1.8, // 1.8px to 3.6px - crisp and prominent
-          pulsePhase: Math.random() * Math.PI * 2,
-        };
-      });
-    };
-
-    const draw = () => {
-      ctx.clearRect(0, 0, width, height);
-
-      // 1. Constellation links between particles (crisper contrast)
-      for (let i = 0; i < particles.length; i++) {
-        const a = particles[i];
-        for (let j = i + 1; j < particles.length; j++) {
-          const b = particles[j];
-          const dx = a.x - b.x;
-          const dy = a.y - b.y;
-          const d2 = dx * dx + dy * dy;
-          if (d2 < LINK_DIST2) {
-            const alpha = (1 - Math.sqrt(d2) / LINK_DIST) * 0.28;
-            ctx.strokeStyle = `rgba(15, 23, 42, ${alpha.toFixed(3)})`;
-            ctx.lineWidth = 1.1;
-            ctx.beginPath();
-            ctx.moveTo(a.x, a.y);
-            ctx.lineTo(b.x, b.y);
-            ctx.stroke();
-          }
-        }
-      }
-
-      // 2. Cursor connection lines and interactive cursor focal indicator
-      if (mouse.x > -999 && mouse.y > -999) {
-        for (const p of particles) {
-          const dx = p.x - mouse.x;
-          const dy = p.y - mouse.y;
-          const d2 = dx * dx + dy * dy;
-          if (d2 < CURSOR_LINK2) {
-            const dist = Math.sqrt(d2);
-            const alpha = (1 - dist / CURSOR_LINK) * 0.58;
-            ctx.strokeStyle = `rgba(15, 23, 42, ${alpha.toFixed(3)})`;
-            ctx.lineWidth = 1.4;
-            ctx.beginPath();
-            ctx.moveTo(p.x, p.y);
-            ctx.lineTo(mouse.x, mouse.y);
-            ctx.stroke();
-          }
-        }
-
-        // Center focal dot on cursor
-        ctx.beginPath();
-        ctx.arc(mouse.x, mouse.y, 4.5, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
-        ctx.fill();
-
-        // Outer magnetic pulse ring
-        ctx.beginPath();
-        ctx.arc(mouse.x, mouse.y, 12, 0, Math.PI * 2);
-        ctx.strokeStyle = 'rgba(15, 23, 42, 0.28)';
-        ctx.lineWidth = 1.2;
-        ctx.stroke();
-      }
-
-      // 3. Render particle dots (crisp & clearly visible)
-      for (const p of particles) {
-        const pulse = Math.sin(p.pulsePhase) * 0.2 + 0.95;
-        ctx.fillStyle = 'rgba(15, 23, 42, 0.72)';
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.r * pulse, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    };
-
-    const step = () => {
-      for (const p of particles) {
-        // Elastic return towards base natural drift
-        p.vx += (p.baseVx - p.vx) * 0.035;
-        p.vy += (p.baseVy - p.vy) * 0.035;
-
-        // Smooth cursor repulsion
-        if (mouse.x > -999 && mouse.y > -999) {
-          const dx = p.x - mouse.x;
-          const dy = p.y - mouse.y;
-          const d2 = dx * dx + dy * dy;
-          if (d2 < MOUSE_R2 && d2 > 0.01) {
-            const d = Math.sqrt(d2);
-            const f = Math.pow(1 - d / MOUSE_R, 1.4) * 3.2;
-            p.vx += (dx / d) * f * 0.2;
-            p.vy += (dy / d) * f * 0.2;
-          }
-        }
-
-        // Speed governor to prevent wild scattering
-        const speed = Math.hypot(p.vx, p.vy);
-        const maxSpeed = 3.2;
-        if (speed > maxSpeed) {
-          p.vx = (p.vx / speed) * maxSpeed;
-          p.vy = (p.vy / speed) * maxSpeed;
-        }
-
-        p.x += p.vx;
-        p.y += p.vy;
-
-        // Seamless screen wrap
-        if (p.x < -20) p.x = width + 20;
-        else if (p.x > width + 20) p.x = -20;
-        if (p.y < -20) p.y = height + 20;
-        else if (p.y > height + 20) p.y = -20;
-
-        p.pulsePhase += 0.025;
-      }
-
-      draw();
-      raf = requestAnimationFrame(step);
-    };
-
-    const start = () => {
-      if (running) return;
-      running = true;
-      raf = requestAnimationFrame(step);
-    };
-
-    const stop = () => {
-      if (!running) return;
-      running = false;
-      cancelAnimationFrame(raf);
-    };
-
-    resize();
-    start();
-
-    const onResize = () => {
-      resize();
-      draw();
-    };
-
-    // Track pointer across the viewport and translate to canvas coordinates
-    const onMove = (e: PointerEvent) => {
-      const rect = canvas.getBoundingClientRect();
-      if (
-        e.clientX >= rect.left &&
-        e.clientX <= rect.right &&
-        e.clientY >= rect.top &&
-        e.clientY <= rect.bottom
-      ) {
-        mouse.x = e.clientX - rect.left;
-        mouse.y = e.clientY - rect.top;
-        if (!running) start();
-      } else {
-        mouse.x = -9999;
-        mouse.y = -9999;
-      }
-    };
-
-    const onLeave = () => {
-      mouse.x = -9999;
-      mouse.y = -9999;
-    };
-
-    let observer: IntersectionObserver | null = null;
-    if (typeof IntersectionObserver !== 'undefined') {
-      observer = new IntersectionObserver(
-        ([entry]) => {
-          if (entry.isIntersecting) {
-            start();
-          } else {
-            stop();
-          }
-        },
-        { threshold: 0 },
-      );
-      observer.observe(section);
-    }
-
-    const onVisibility = () => {
-      if (document.hidden) stop();
-      else start();
-    };
-
-    window.addEventListener('resize', onResize);
-    window.addEventListener('pointermove', onMove, { passive: true });
-    window.addEventListener('blur', onLeave);
-    document.addEventListener('visibilitychange', onVisibility);
-
-    return () => {
-      stop();
-      observer?.disconnect();
-      window.removeEventListener('resize', onResize);
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('blur', onLeave);
-      document.removeEventListener('visibilitychange', onVisibility);
-    };
-  }, []);
+  const headline1 = t?.hero?.headline || (locale === 'id' ? 'Satu Kunci API' : 'One Single API Key');
+  const headline2 = t?.hero?.headlineSub || (locale === 'id' ? 'untuk Semua Model AI Terbaik.' : 'for the Best AI Models.');
+  const subheadline = t?.hero?.subheadline || fallbackSubheadline;
 
   return (
     <section
       ref={sectionRef}
-      className="hero-section relative w-full px-4 sm:px-6 text-center overflow-hidden flex flex-col items-center justify-center min-h-screen"
-      style={{ minHeight: '100svh' }}
+      className="hero-section relative w-full overflow-x-clip flex flex-col items-center justify-center min-h-[90vh] sm:min-h-screen pt-28 sm:pt-36 pb-20 sm:pb-28"
     >
-      {/* Animated background: soft light gradient + drifting aurora + interactive particle network canvas */}
-      <div className="hero-bg" aria-hidden="true">
-        <div className="hero-aurora hero-aurora-1" />
-        <div className="hero-aurora hero-aurora-2" />
-        <canvas ref={canvasRef} className="hero-bg-canvas" />
-      </div>
+      {/* Parallax visual background — blends seamlessly into #fafafa */}
+      <ParallaxBackground sectionRef={sectionRef} />
 
-      {/* Soft fade into the next section */}
-      <div className="absolute bottom-0 left-0 right-0 z-[1] pointer-events-none h-24 bg-gradient-to-t from-[#fafafa] to-transparent" />
+      {/* Foreground — Grand Centered Developer Hero with Orchestrated Stagger Entrance */}
+      <motion.div
+        initial={reduced ? false : 'hidden'}
+        animate="visible"
+        variants={containerVariants}
+        className="relative z-10 max-w-5xl mx-auto w-full flex flex-col items-center justify-center text-center px-4 sm:px-6 my-auto"
+      >
+        {/* 1. Badge */}
+        <motion.div
+          variants={itemVariants}
+          className="inline-flex items-center gap-2.5 px-4 py-1.5 sm:px-5 sm:py-2 rounded-full bg-white/95 border border-neutral-200/90 text-neutral-900 text-xs sm:text-sm md:text-base font-semibold mb-6 shadow-2xs"
+        >
+          <Sparkles className="h-4 w-4 sm:h-4.5 sm:w-4.5 text-neutral-950 shrink-0" />
+          <span suppressHydrationWarning>
+            {t?.hero?.badge || (locale === 'id' ? 'Satu API untuk Berbagai Model AI' : 'One API for Multiple AI Models')}
+          </span>
+        </motion.div>
 
-      {/* Hero Content */}
-      <div className="hero-font relative z-10 max-w-4xl mx-auto w-full flex flex-col items-center justify-center pt-28 pb-16 sm:pt-32 sm:pb-20">
-        {/* Glass panel blurs the animated background behind badge + headline for readability */}
-        <div className="hero-headline-glass relative flex flex-col items-center w-full mb-6">
-          <div className="hero-headline-glass-blur" aria-hidden="true" />
+        {/* 2. Grand Headline (100% Original Text, Line-by-Line Stagger Reveal) */}
+        <h1
+          suppressHydrationWarning
+          className="text-4xl sm:text-5xl md:text-6xl lg:text-[4.75rem] font-extrabold tracking-tight leading-[1.08] max-w-4xl mx-auto mb-6 font-heading transform-gpu"
+        >
+          <motion.span
+            variants={itemVariants}
+            className="block text-neutral-950"
+          >
+            {headline1}
+          </motion.span>
+          <motion.span
+            variants={itemVariants}
+            className="block text-neutral-500 font-bold mt-1.5 sm:mt-2.5"
+          >
+            {headline2}
+          </motion.span>
+        </h1>
 
-          <div className="relative inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/70 backdrop-blur-sm border border-white/80 text-neutral-800 text-xs font-semibold mb-6 shadow-xs">
-            <Sparkles className="h-3.5 w-3.5 text-neutral-900" />
-            <span>{t.hero.badge}</span>
-          </div>
+        {/* 3. Subheadline Paragraph */}
+        <motion.p
+          suppressHydrationWarning
+          variants={itemVariants}
+          className="text-neutral-700 font-body text-base sm:text-lg md:text-xl lg:text-2xl leading-relaxed mb-8 sm:mb-10 max-w-3xl mx-auto font-medium"
+        >
+          {subheadline}
+        </motion.p>
 
-          <h1 className="relative text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-extrabold text-neutral-950 tracking-tight leading-[1.1] sm:leading-[1.05] max-w-3xl mx-auto">
-            {t.hero.headline}
-            {t.hero.headlineSub && (
-              <span className="block text-neutral-500 font-bold sm:inline ml-2">
-                {t.hero.headlineSub}
-              </span>
-            )}
-          </h1>
-        </div>
-
-        <p className="text-neutral-700 font-normal text-base sm:text-lg md:text-xl max-w-2xl mx-auto mb-10 leading-relaxed px-2">
-          {t.hero.subheadline}
-        </p>
-
-        {/* Action Buttons */}
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-3.5 sm:gap-4 w-full sm:w-auto">
+        {/* 4. Action Buttons */}
+        <motion.div
+          variants={itemVariants}
+          className="flex flex-col sm:flex-row items-center justify-center gap-3.5 sm:gap-4.5 w-full sm:w-auto"
+        >
           <Link
             href={isLoggedIn ? '/dashboard/keys' : '/login'}
-            className="w-full sm:w-auto min-w-[210px] justify-center rounded-full px-8 py-3.5 text-xs sm:text-sm font-semibold flex items-center gap-2 btn-hero-primary cursor-pointer text-center"
+            className="w-full sm:w-auto min-w-[210px] sm:min-w-[230px] justify-center rounded-full px-8 sm:px-9 py-3.5 sm:py-4 text-sm sm:text-base md:text-lg font-bold flex items-center gap-2.5 btn-hero-primary cursor-pointer text-center shadow-sm"
           >
-            <span>{isLoggedIn ? t.hero.manageKeys : t.hero.primaryCta}</span>
-            <ArrowUpRight className="h-4 w-4 shrink-0 btn-hero-icon" />
+            <span suppressHydrationWarning>
+              {isLoggedIn ? t?.hero?.manageKeys : (t?.hero?.primaryCta || 'Get API Key')}
+            </span>
+            <ArrowUpRight className="h-4.5 w-4.5 sm:h-5 sm:w-5 shrink-0 btn-hero-icon" />
           </Link>
           <Link
             href="/models"
-            className="w-full sm:w-auto min-w-[190px] justify-center rounded-full px-8 py-3.5 text-xs sm:text-sm font-semibold flex items-center gap-2 btn-hero-secondary cursor-pointer text-center"
+            className="w-full sm:w-auto min-w-[190px] sm:min-w-[210px] justify-center rounded-full px-8 sm:px-9 py-3.5 sm:py-4 text-sm sm:text-base md:text-lg font-bold flex items-center gap-2.5 btn-hero-secondary cursor-pointer text-center shadow-2xs"
           >
-            <span>{t.hero.secondaryCta}</span>
-            <ArrowUpRight className="h-4 w-4 shrink-0 btn-hero-icon" />
+            <span suppressHydrationWarning>
+              {t?.hero?.secondaryCta || 'Explore Models'}
+            </span>
           </Link>
-        </div>
-      </div>
+        </motion.div>
+
+        {/* 5. Developer Trust Points & Tools Support */}
+        <motion.div
+          variants={itemVariants}
+          className="mt-10 sm:mt-12 pt-6 sm:pt-7 border-t border-neutral-200/90 w-full max-w-3xl flex flex-col items-center gap-3.5"
+        >
+          <div className="flex flex-wrap items-center justify-center gap-x-6 sm:gap-x-8 gap-y-2.5 text-xs sm:text-sm md:text-base text-neutral-800 font-semibold">
+            <span className="inline-flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 sm:w-4.5 sm:h-4.5 text-emerald-600 shrink-0" />
+              <span suppressHydrationWarning>{locale === 'id' ? 'Setup 2 menit di IDE' : '2-minute IDE Setup'}</span>
+            </span>
+            <span className="inline-flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 sm:w-4.5 sm:h-4.5 text-emerald-600 shrink-0" />
+              <span suppressHydrationWarning>{locale === 'id' ? 'QRIS Otomatis Instan' : 'Instant QRIS Top-up'}</span>
+            </span>
+            <span className="inline-flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 sm:w-4.5 sm:h-4.5 text-emerald-600 shrink-0" />
+              <span suppressHydrationWarning>{locale === 'id' ? 'Tanpa Kartu Kredit Valas' : 'No Credit Card Required'}</span>
+            </span>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-center gap-2 text-xs sm:text-sm text-neutral-500 font-mono">
+            <span suppressHydrationWarning className="uppercase tracking-wider font-semibold text-neutral-400">
+              {locale === 'id' ? 'Mendukung:' : 'Compatible with:'}
+            </span>
+            <span className="text-neutral-800 font-medium">
+              Cursor · Cline · Windsurf · Claude Code · SDK OpenAI
+            </span>
+          </div>
+        </motion.div>
+      </motion.div>
     </section>
   );
 }

@@ -27,8 +27,8 @@ export { requireUser, requireAdmin };
 // ── API Keys ──────────────────────────────────────────
 
 export async function listApiKeys() {
+  const user = await requireUser();
   try {
-    const user = await requireUser();
     return await db
       .select({
         id: s.apiKeys.id,
@@ -48,21 +48,26 @@ export async function listApiKeys() {
 }
 
 export async function createApiKey(_prev: { raw: string | null }, formData: FormData) {
+  const user = await requireUser();
   const { raw, hash, prefix } = generateApiKey();
+  const name = String(formData.get('name') ?? '').trim() || 'default';
+  let createdId: string | null = null;
   try {
-    const user = await requireUser();
-    const name = String(formData.get('name') ?? '').trim() || 'default';
-    await db.insert(s.apiKeys).values({ userId: user.id, name, keyHash: hash, keyPrefix: prefix });
+    const [inserted] = await db
+      .insert(s.apiKeys)
+      .values({ userId: user.id, name, keyHash: hash, keyPrefix: prefix })
+      .returning({ id: s.apiKeys.id });
+    createdId = inserted?.id ?? null;
   } catch (err) {
     console.warn('[createApiKey] Database offline, generated mock API key:', err);
   }
-  return { raw };
+  return { raw, prefix, id: createdId };
 }
 
 export async function revokeApiKey(formData: FormData) {
+  const user = await requireUser();
+  const id = String(formData.get('id'));
   try {
-    const user = await requireUser();
-    const id = String(formData.get('id'));
     await db
       .update(s.apiKeys)
       .set({ status: 'revoked', revokedAt: new Date() })
@@ -80,8 +85,8 @@ export async function redeemCode(_prev: { ok: boolean; message: string }, formDa
   const code = String(formData.get('code') ?? '').trim().toUpperCase();
   if (!code) return { ok: false, message: 'Enter a code' };
 
+  const user = await requireUser();
   try {
-    const user = await requireUser();
     return await db.transaction(async (tx) => {
       const [rc] = await tx.select().from(s.redeemCodes).where(eq(s.redeemCodes.code, code)).for('update');
       if (!rc || !rc.active) return { ok: false, message: 'Invalid code' };
@@ -158,8 +163,8 @@ export async function createMockPayment(formData: FormData) {
   const packageId = String(formData.get('packageId'));
   const externalId = `mock_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   
+  const user = await requireUser();
   try {
-    const user = await requireUser();
     const [pkg] = await db.select().from(s.packages).where(eq(s.packages.id, packageId)).limit(1);
     if (pkg && pkg.status === 'active') {
       const [payment] = await db

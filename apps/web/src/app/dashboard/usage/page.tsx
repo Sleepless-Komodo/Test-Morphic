@@ -44,7 +44,11 @@ export default async function UsagePage() {
       db
         .select({
           id: s.usageRecords.id,
+          requestId: s.usageRecords.requestId,
           model: s.models.displayName,
+          publicModelId: s.models.publicModelId,
+          promptTokens: s.usageRecords.promptTokens,
+          completionTokens: s.usageRecords.completionTokens,
           totalTokens: s.usageRecords.totalTokens,
           credits: s.usageRecords.creditsConsumed,
           status: s.usageRecords.status,
@@ -56,7 +60,7 @@ export default async function UsagePage() {
         .leftJoin(s.models, eq(s.usageRecords.modelId, s.models.id))
         .where(eq(s.usageRecords.userId, user.id))
         .orderBy(desc(s.usageRecords.createdAt))
-        .limit(30),
+        .limit(50),
     ]);
     if (t) today = t;
     if (m) month = m;

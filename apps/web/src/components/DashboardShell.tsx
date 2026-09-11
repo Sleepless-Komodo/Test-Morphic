@@ -5,6 +5,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { useTranslation } from '@/lib/i18n';
+import { formatCredits } from '@/lib/utils';
 import { LanguageToggle } from '@/components/LanguageToggle';
 import { SignOutButton } from '@/app/dashboard/sign-out';
 import {
@@ -17,6 +18,7 @@ import {
   KeyRound,
   LayoutDashboard,
   Menu,
+  Settings,
   Ticket,
   X,
   Zap,
@@ -39,13 +41,18 @@ export function DashboardShell({ session, balance, children }: DashboardShellPro
   const pathname = usePathname();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
-  const navItems = [
+  // Group 1: Core Gateway & Developer Tools
+  const gatewayNavItems = [
     { href: '/dashboard', label: t.dashboard.navOverview, icon: LayoutDashboard },
     { href: '/dashboard/keys', label: t.dashboard.navKeys, icon: KeyRound },
+    { href: '/dashboard/usage', label: t.dashboard.navUsage, icon: BarChart3 },
     { href: '/dashboard/models', label: t.dashboard.navModels, icon: Cpu },
+  ];
+
+  // Group 2: Financial & Voucher
+  const managementNavItems = [
     { href: '/dashboard/billing', label: t.dashboard.navBilling, icon: CreditCard },
     { href: '/dashboard/redeem', label: t.dashboard.navVoucher, icon: Ticket },
-    { href: '/dashboard/usage', label: t.dashboard.navUsage, icon: BarChart3 },
   ];
 
   const isActive = (href: string) => pathname === href;
@@ -59,94 +66,136 @@ export function DashboardShell({ session, balance, children }: DashboardShellPro
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [mobileNavOpen]);
 
-  const navLinks = navItems.map((item) => {
-    const Icon = item.icon;
-    const active = isActive(item.href);
-    return (
-      <Link
-        key={item.href}
-        href={item.href}
-        onClick={() => setMobileNavOpen(false)}
-        aria-current={active ? 'page' : undefined}
-        className={`flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-semibold transition-colors ${
-          active
-            ? 'bg-neutral-950 text-white shadow-xs'
-            : 'text-neutral-600 hover:text-neutral-950 hover:bg-neutral-100'
-        }`}
-      >
-        <Icon className={`h-5 w-5 shrink-0 ${active ? 'text-white' : 'text-neutral-500'}`} />
-        <span suppressHydrationWarning>{item.label}</span>
-      </Link>
-    );
-  });
+  const renderNavList = (items: typeof gatewayNavItems) => (
+    <div className="space-y-1">
+      {items.map((item) => {
+        const Icon = item.icon;
+        const active = isActive(item.href);
+        return (
+          <Link
+            key={item.href}
+            href={item.href}
+            onClick={() => setMobileNavOpen(false)}
+            aria-current={active ? 'page' : undefined}
+            className={`flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-xs sm:text-sm font-semibold transition-all ${
+              active
+                ? 'bg-neutral-950 text-white shadow-xs'
+                : 'text-neutral-600 hover:text-neutral-950 hover:bg-neutral-100/80'
+            }`}
+          >
+            <Icon className={`h-4 w-4 shrink-0 ${active ? 'text-white' : 'text-neutral-500'}`} />
+            <span suppressHydrationWarning>{item.label}</span>
+          </Link>
+        );
+      })}
+    </div>
+  );
 
   const sidebarContent = (
     <>
-      {/* Brand */}
-      <Link href="/" className="flex items-center gap-3 group px-4 pt-2 pb-6">
-        <Image
-          src="/morphic-symbol.jpg"
-          alt="Morphic logo"
-          width={40}
-          height={40}
-          priority
-          className="w-10 h-10 rounded-full object-cover ring-1 ring-neutral-200 shadow-xs transition-transform group-hover:scale-105 transform-gpu"
-        />
-        <div className="min-w-0">
-          <span className="block font-heading font-extrabold text-lg tracking-tight text-neutral-950 truncate">
-            Morphic
-          </span>
-        </div>
-      </Link>
+      {/* Brand Header */}
+      <div className="px-4 pt-1 pb-4 flex items-center justify-between">
+        <Link href="/" className="flex items-center gap-3 group">
+          <Image
+            src="/morphic-symbol.jpg"
+            alt="Morphic logo"
+            width={36}
+            height={36}
+            priority
+            className="w-9 h-9 rounded-full object-cover ring-1 ring-neutral-200 shadow-xs transition-transform group-hover:scale-105 transform-gpu"
+          />
+          <div className="min-w-0">
+            <span className="block font-heading font-extrabold text-lg tracking-tight text-neutral-950 truncate">
+              Morphic
+            </span>
+          </div>
+        </Link>
+        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-neutral-100 text-neutral-700 border border-neutral-200/80">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+          <span>v1.0</span>
+        </span>
+      </div>
 
-      {/* Credits Balance */}
+      {/* Credits Balance Action Card */}
       <Link
         href="/dashboard/billing"
         onClick={() => setMobileNavOpen(false)}
-        className="mx-4 mb-6 flex items-center gap-3 px-4 py-3.5 rounded-2xl bg-neutral-50 border border-neutral-200/90 hover:border-neutral-300 transition-all"
+        className="mx-3 mb-4 flex items-center justify-between gap-3 p-3 rounded-2xl bg-neutral-50/90 border border-neutral-200/90 hover:border-neutral-300 hover:bg-neutral-100/70 transition-all group shadow-2xs"
       >
-        <Zap className="h-5 w-5 text-emerald-600 shrink-0" />
-        <div className="min-w-0">
-          <span
-            suppressHydrationWarning
-            className="block text-[11px] font-semibold text-neutral-500 leading-tight mb-0.5"
-          >
-            {t.dashboard.balanceLabel}
-          </span>
-          <span className="block text-sm font-mono font-bold text-neutral-950 truncate">
-            Rp {balance.toLocaleString('id-ID')}
-          </span>
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="w-7 h-7 rounded-lg bg-emerald-100/80 text-emerald-700 flex items-center justify-center shrink-0">
+            <Zap className="h-4 w-4" />
+          </div>
+          <div className="min-w-0">
+            <span
+              suppressHydrationWarning
+              className="block text-[10px] font-mono font-bold uppercase tracking-wider text-neutral-500 leading-tight"
+            >
+              {t.dashboard.balanceLabel}
+            </span>
+            <span className="block text-xs sm:text-sm font-mono font-bold text-neutral-950 truncate">
+              {formatCredits(balance)}{' '}
+              <span className="text-[10px] font-sans font-normal text-neutral-500">
+                {locale === 'en' ? 'credits' : 'kredit'}
+              </span>
+            </span>
+          </div>
         </div>
+        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-neutral-900 text-white group-hover:bg-neutral-800 transition-colors shrink-0">
+          + Top Up
+        </span>
       </Link>
 
-      {/* Navigation */}
-      <nav className="px-4 flex flex-col gap-2">{navLinks}</nav>
+      {/* Semantic Grouped Navigation */}
+      <div className="px-3 space-y-4 overflow-y-auto">
+        {/* Group 1: Core Gateway */}
+        <div>
+          <div
+            suppressHydrationWarning
+            className="px-3 text-[10px] font-mono font-bold uppercase tracking-wider text-neutral-500 mb-1.5"
+          >
+            {t.dashboard.navGroupGateway || (locale === 'id' ? 'Gateway & Developer' : 'Gateway & Dev')}
+          </div>
+          {renderNavList(gatewayNavItems)}
+        </div>
 
-      {/* Utility links & Language selector (Above Account) */}
-      <div className="mt-auto mx-4 pt-4 border-t border-neutral-200/80 flex flex-col gap-1">
+        {/* Group 2: Financial & Voucher */}
+        <div>
+          <div
+            suppressHydrationWarning
+            className="px-3 text-[10px] font-mono font-bold uppercase tracking-wider text-neutral-500 mb-1.5"
+          >
+            {locale === 'id' ? 'Billing & Kredit' : 'Billing & Credits'}
+          </div>
+          {renderNavList(managementNavItems)}
+        </div>
+      </div>
+
+      {/* Utility links & Language selector (Bottom Section) */}
+      <div className="mt-auto mx-3 pt-3 border-t border-neutral-200/80 flex flex-col gap-0.5">
         <Link
           href="/docs"
           onClick={() => setMobileNavOpen(false)}
-          className="flex items-center gap-3 rounded-2xl px-3.5 py-2.5 text-xs sm:text-sm font-semibold text-neutral-600 hover:text-neutral-950 hover:bg-neutral-100 transition-colors"
+          className="flex items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-semibold text-neutral-600 hover:text-neutral-950 hover:bg-neutral-100 transition-colors"
         >
-          <BookOpen className="h-4 w-4 shrink-0 text-neutral-500" />
+          <BookOpen className="h-3.5 w-3.5 shrink-0 text-neutral-500" />
           <span suppressHydrationWarning>{t.nav.docs}</span>
         </Link>
         <Link
           href="/"
           onClick={() => setMobileNavOpen(false)}
-          className="flex items-center gap-3 rounded-2xl px-3.5 py-2.5 text-xs sm:text-sm font-semibold text-neutral-600 hover:text-neutral-950 hover:bg-neutral-100 transition-colors"
+          className="flex items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-semibold text-neutral-600 hover:text-neutral-950 hover:bg-neutral-100 transition-colors"
         >
-          <ArrowUpRight className="h-4 w-4 shrink-0 text-neutral-500" />
+          <ArrowUpRight className="h-3.5 w-3.5 shrink-0 text-neutral-500" />
           <span suppressHydrationWarning>
             {locale === 'id' ? 'Kembali ke Situs' : 'Back to Site'}
           </span>
         </Link>
 
         {/* Language Selection Row */}
-        <div className="flex items-center justify-between px-3.5 py-2 rounded-2xl text-xs font-semibold text-neutral-600">
-          <div className="flex items-center gap-3">
-            <Globe className="h-4 w-4 shrink-0 text-neutral-500" />
+        <div className="flex items-center justify-between px-3 py-1.5 rounded-xl text-xs font-semibold text-neutral-600">
+          <div className="flex items-center gap-2.5">
+            <Globe className="h-3.5 w-3.5 shrink-0 text-neutral-500" />
             <span suppressHydrationWarning>{locale === 'id' ? 'Bahasa' : 'Language'}</span>
           </div>
           <LanguageToggle />
@@ -154,35 +203,54 @@ export function DashboardShell({ session, balance, children }: DashboardShellPro
       </div>
 
       {/* Account Profile Card (Bottom Anchor) */}
-      <div className="mx-4 mt-3 pt-3 border-t border-neutral-200/80">
-        <div className="p-3 rounded-2xl bg-neutral-50 border border-neutral-200/80 flex items-center justify-between gap-3 hover:border-neutral-300 transition-colors">
-          <div className="flex items-center gap-3 min-w-0 flex-1">
+      <div className="mx-3 mt-2 pt-2 border-t border-neutral-200/80">
+        <div
+          className={`p-2 rounded-2xl border transition-all flex items-center justify-between gap-2 shadow-2xs ${
+            isActive('/dashboard/settings')
+              ? 'bg-neutral-100/90 border-neutral-400 text-neutral-950'
+              : 'bg-neutral-50/90 border-neutral-200/80 hover:border-neutral-300 hover:bg-neutral-100/70'
+          }`}
+        >
+          <Link
+            href="/dashboard/settings"
+            onClick={() => setMobileNavOpen(false)}
+            title={locale === 'id' ? 'Pengaturan Akun & Profil' : 'Account & Profile Settings'}
+            className="flex items-center gap-2.5 min-w-0 flex-1 group cursor-pointer"
+          >
             {session?.user?.image ? (
               <Image
                 src={session.user.image}
                 alt={session.user.name || 'Avatar'}
-                width={36}
-                height={36}
+                width={32}
+                height={32}
                 referrerPolicy="no-referrer"
-                className="w-9 h-9 rounded-xl object-cover ring-1 ring-neutral-200 shrink-0"
+                className="w-8 h-8 rounded-xl object-cover ring-1 ring-neutral-200 shrink-0 group-hover:ring-neutral-400 transition-all"
               />
             ) : (
-              <div className="w-9 h-9 rounded-xl bg-neutral-200 border border-neutral-300 flex items-center justify-center text-xs font-bold text-neutral-700 shrink-0">
+              <div className="w-8 h-8 rounded-xl bg-neutral-200 border border-neutral-300 flex items-center justify-center text-xs font-bold text-neutral-700 shrink-0 group-hover:border-neutral-400 transition-all">
                 {(session?.user?.name?.charAt(0) || session?.user?.email?.charAt(0) || 'U').toUpperCase()}
               </div>
             )}
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <div
                 suppressHydrationWarning
-                className="text-xs font-bold text-neutral-950 leading-snug truncate"
+                className="text-xs font-bold text-neutral-950 leading-snug truncate group-hover:text-black transition-colors"
               >
                 {session?.user?.name || (locale === 'en' ? 'Developer' : 'Pengembang')}
               </div>
-              <div className="text-[11px] text-neutral-500 font-mono truncate leading-snug">
+              <div className="text-[10px] text-neutral-500 font-mono truncate leading-snug">
                 {session?.user?.email}
               </div>
             </div>
-          </div>
+            <Settings
+              className={`h-3.5 w-3.5 shrink-0 transition-colors ${
+                isActive('/dashboard/settings')
+                  ? 'text-neutral-950'
+                  : 'text-neutral-400 group-hover:text-neutral-700'
+              }`}
+            />
+          </Link>
+          <div className="h-4 w-px bg-neutral-200 shrink-0" />
           <SignOutButton />
         </div>
       </div>
@@ -192,7 +260,7 @@ export function DashboardShell({ session, balance, children }: DashboardShellPro
   return (
     <div className="min-h-screen bg-[#fafafa] text-neutral-900 font-body selection:bg-neutral-900 selection:text-white flex items-start">
       {/* Desktop Sidebar */}
-      <aside className="hidden lg:flex w-72 shrink-0 flex-col sticky top-0 h-screen overflow-y-auto bg-white border-r border-neutral-200/90 py-5">
+      <aside className="hidden lg:flex w-64 shrink-0 flex-col sticky top-0 h-screen overflow-y-auto bg-white border-r border-neutral-200/90 py-4">
         {sidebarContent}
       </aside>
 
@@ -216,11 +284,11 @@ export function DashboardShell({ session, balance, children }: DashboardShellPro
             className="absolute inset-0 bg-black/40 backdrop-blur-sm animate-in fade-in duration-150"
             onClick={() => setMobileNavOpen(false)}
           />
-          <div className="absolute top-0 left-0 h-full w-72 bg-white border-r border-neutral-200 shadow-2xl py-4 flex flex-col animate-in slide-in-from-left duration-200">
+          <div className="absolute top-0 left-0 h-full w-64 bg-white border-r border-neutral-200 shadow-2xl py-4 flex flex-col animate-in slide-in-from-left duration-200">
             <button
               type="button"
               onClick={() => setMobileNavOpen(false)}
-              className="absolute top-4 right-4 p-1.5 text-neutral-800 hover:text-neutral-950 rounded-lg cursor-pointer"
+              className="absolute top-3.5 right-3.5 w-10 h-10 flex items-center justify-center text-neutral-600 hover:text-neutral-950 hover:bg-neutral-100 rounded-xl transition-colors cursor-pointer"
               aria-label="Close Navigation Menu"
             >
               <X className="h-5 w-5" />

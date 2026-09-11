@@ -3,10 +3,9 @@
 import React, { useState, useRef } from 'react';
 import Link from 'next/link';
 import { useTranslation } from '@/lib/i18n';
-import { Globe, ShieldCheck } from 'lucide-react';
 
 export default function Footer() {
-  const { locale, setLocale, t } = useTranslation();
+  const { locale, t } = useTranslation();
   const [mousePos, setMousePos] = useState<{ x: number; y: number; px: number; py: number }>({
     x: 50,
     y: 50,
@@ -42,172 +41,40 @@ export default function Footer() {
       onMouseMove={handleMouseMove}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
-      className="relative z-10 pt-16 pb-0 px-3 sm:px-6 md:px-8 bg-black text-neutral-300 border-t border-neutral-900 overflow-hidden select-none transition-colors duration-300"
+      className="relative z-10 pt-16 pb-0 px-4 sm:px-8 lg:px-12 bg-black text-neutral-300 border-t border-neutral-900 overflow-hidden select-none transition-colors duration-300"
     >
       {/* Interactive Cursor Spotlight Glow across the entire dark background */}
       <div
         className="absolute inset-0 pointer-events-none transition-opacity duration-300 will-change-transform"
         style={{
-          opacity: isHovered ? 0.60 : 0.16,
+          opacity: isHovered ? 0.6 : 0.16,
           background: `radial-gradient(750px circle at ${mousePos.x}% ${mousePos.y}%, rgba(255, 255, 255, 0.25), transparent 60%)`,
         }}
       />
 
-      <div className="w-full max-w-[98vw] mx-auto relative z-10 flex flex-col items-center justify-end">
-        {/* MASSIVE 3D WIREFRAME "Morphic" TEXT - Clean outline geometry, no collision */}
-        <div
-          ref={textContainerRef}
-          className="w-full relative overflow-hidden select-none flex items-end justify-center mb-16"
-        >
-          {/* Layer 1: Dark 3D Wireframe Base Layer (Always visible, deep dark 3D bevel) */}
-          <svg
-            viewBox="0 0 1000 230"
-            className="w-full h-auto max-w-full block select-none pointer-events-none"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <defs>
-              {/* Resting Dark Wireframe Gradient - enhanced clarity */}
-              <linearGradient id="baseDarkWireframe" x1="0%" y1="0%" x2="0%" y2="100%">
-                <stop offset="0%" stopColor="rgba(255, 255, 255, 0.32)" />
-                <stop offset="50%" stopColor="rgba(255, 255, 255, 0.16)" />
-                <stop offset="100%" stopColor="rgba(255, 255, 255, 0.05)" />
-              </linearGradient>
-            </defs>
-
-            {/* 3D Extrusion Depth Underlayer (Gives tangible 3D thickness) */}
-            <text
-              x="50%"
-              y="177"
-              textAnchor="middle"
-              fill="none"
-              stroke="rgba(0, 0, 0, 0.95)"
-              strokeWidth="4"
-              className="font-heading font-black"
-              fontSize="225"
-              style={{ letterSpacing: '-0.02em' }}
-            >
-              Morphic
-            </text>
-
-            {/* Resting Base Wireframe Stroke */}
-            <text
-              x="50%"
-              y="175"
-              textAnchor="middle"
-              fill="none"
-              stroke="url(#baseDarkWireframe)"
-              strokeWidth="1.4"
-              strokeLinejoin="round"
-              className="font-heading font-black"
-              fontSize="225"
-              style={{ letterSpacing: '-0.02em' }}
-            >
-              Morphic
-            </text>
-          </svg>
-
-          {/* Layer 1.5: Ambient Glow (Subtle but always visible even without hover) */}
-          <svg
-            viewBox="0 0 1000 230"
-            className="absolute inset-0 w-full h-auto max-w-full block select-none pointer-events-none opacity-20"
-            xmlns="http://www.w3.org/2000/svg"
-            aria-hidden="true"
-          >
-            <defs>
-              <linearGradient id="ambientStroke" x1="0%" y1="0%" x2="0%" y2="100%">
-                <stop offset="0%" stopColor="#ffffff" />
-                <stop offset="100%" stopColor="#a1a1aa" />
-              </linearGradient>
-              <filter id="ambientBloom" x="-20%" y="-20%" width="140%" height="140%">
-                <feGaussianBlur stdDeviation="5" result="glow" />
-                <feComposite in="SourceGraphic" in2="glow" operator="over" />
-              </filter>
-            </defs>
-            <text
-              x="50%"
-              y="175"
-              textAnchor="middle"
-              fill="none"
-              stroke="url(#ambientStroke)"
-              strokeWidth="1.8"
-              strokeLinejoin="round"
-              filter="url(#ambientBloom)"
-              className="font-heading font-black"
-              fontSize="225"
-              style={{ letterSpacing: '-0.02em' }}
-            >
-              Morphic
-            </text>
-          </svg>
-
-          {/* Layer 2: Glowing 3D Cursor Spotlight Mask (Lights up dynamically with high clarity!) */}
-          <div
-            className="absolute inset-0 w-full h-full pointer-events-none transition-opacity duration-200 flex items-end justify-center"
-            style={{
-              opacity: isHovered ? 1 : 0,
-              maskImage: `radial-gradient(420px circle at ${mousePos.px}px ${mousePos.py}px, black 0%, black 35%, transparent 80%)`,
-              WebkitMaskImage: `radial-gradient(420px circle at ${mousePos.px}px ${mousePos.py}px, black 0%, black 35%, transparent 80%)`,
-            }}
-          >
-            <svg
-              viewBox="0 0 1000 230"
-              className="w-full h-auto max-w-full block select-none pointer-events-none"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <defs>
-                {/* Brilliant 3D Cursor Specular Highlight */}
-                <linearGradient id="cursorGlowStroke" x1="0%" y1="0%" x2="100%" y2="100%">
-                  <stop offset="0%" stopColor="#ffffff" />
-                  <stop offset="50%" stopColor="#e4e4e7" />
-                  <stop offset="100%" stopColor="#a1a1aa" />
-                </linearGradient>
-
-                <filter id="laserBloom" x="-20%" y="-20%" width="140%" height="140%">
-                  <feGaussianBlur stdDeviation="4" result="glow" />
-                  <feComposite in="SourceGraphic" in2="glow" operator="over" />
-                </filter>
-              </defs>
-
-              {/* Glowing 3D Bevel Highlight directly under the cursor */}
-              <text
-                x="50%"
-                y="175"
-                textAnchor="middle"
-                fill="none"
-                stroke="url(#cursorGlowStroke)"
-                strokeWidth="2.4"
-                strokeLinejoin="round"
-                filter="url(#laserBloom)"
-                className="font-heading font-black drop-shadow-[0_0_24px_rgba(255,255,255,0.7)]"
-                fontSize="225"
-                style={{ letterSpacing: '-0.02em' }}
-              >
-                Morphic
-              </text>
-            </svg>
-          </div>
-        </div>
-
-        {/* Clear-Background Horizon Bar — rendered in normal flow BELOW the big text (no overlap) */}
-        <div className="relative w-full flex flex-col sm:flex-row items-center justify-between gap-4 text-xs font-body text-neutral-500 px-4 sm:px-6 md:px-8 pointer-events-none z-20 pb-4">
-          {/* Left: Copyright & Brand Tagline (Matching user reference image) */}
-          <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2.5 text-center sm:text-left pointer-events-auto bg-transparent">
+      <div className="w-full relative z-20 mb-8 sm:mb-12">
+        {/* Navigation & Brand Mission Area */}
+        <div className="w-full flex flex-col md:flex-row items-center md:items-start justify-between gap-6 text-xs font-body text-neutral-500">
+          {/* Left: Brand Tagline & Gateway Badge */}
+          <div className="flex flex-col items-center md:items-start gap-2 text-center md:text-left max-w-md">
             <Link
               href="/"
-              className="font-heading font-extrabold text-sm tracking-tight text-white hover:text-neutral-200 transition-colors"
+              className="font-heading font-extrabold text-base tracking-tight text-white hover:text-neutral-200 transition-colors inline-flex items-center gap-2"
             >
-              Morphic
+              <span>Morphic</span>
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-neutral-900 text-neutral-400 border border-neutral-800">
+                GATEWAY
+              </span>
             </Link>
-            <span className="text-neutral-600 hidden sm:inline">|</span>
-            <p className="text-neutral-400 font-body text-xs font-normal">
+            <p className="text-neutral-400 font-body text-xs font-normal leading-relaxed">
               {locale === 'id'
-                ? '© 2026 Morphic. Reseller API Key AI Terpercaya untuk Developer Indonesia.'
-                : '© 2026 Morphic. Trusted AI API Key Gateway for Developers.'}
+                ? 'Reseller API Key AI Terpercaya untuk Developer Indonesia. Akses Claude, DeepSeek, Qwen, dan Kimi dengan pembayaran QRIS lokal otomatis.'
+                : 'Trusted AI API Key Gateway for Developers. Access Claude, DeepSeek, Qwen, and Kimi with instant local QRIS top-ups.'}
             </p>
           </div>
 
-          {/* Right: Navigation Links (Matching navbar) */}
-          <div className="flex flex-wrap items-center justify-center sm:justify-end gap-5 text-neutral-400 text-xs font-body pointer-events-auto bg-transparent">
+          {/* Right: Navigation Links */}
+          <div className="flex flex-wrap items-center justify-center md:justify-end gap-x-7 gap-y-3 text-neutral-400 text-xs font-body pt-1">
             <Link href="/models" className="hover:text-white transition-colors">
               <span suppressHydrationWarning>{t.nav.models}</span>
             </Link>
@@ -217,13 +84,132 @@ export default function Footer() {
             <Link href="/docs" className="hover:text-white transition-colors">
               <span suppressHydrationWarning>{t.nav.docs}</span>
             </Link>
-            <a href="#faq" className="hover:text-white transition-colors">
+            <Link href="/#faq" className="hover:text-white transition-colors">
               FAQ
-            </a>
+            </Link>
             <Link href="/dashboard" className="hover:text-white transition-colors">
               <span suppressHydrationWarning>{t.nav.dashboard}</span>
             </Link>
           </div>
+        </div>
+      </div>
+
+      {/* 2. SUBMERGED HALF-BODIED "Morphic" TEXT at the horizon */}
+      <div
+        ref={textContainerRef}
+        className="w-full max-w-[98vw] mx-auto relative z-10 overflow-hidden select-none flex items-end justify-center pointer-events-none"
+      >
+        {/* Layer 1: Dark Wireframe Base Layer (Always visible resting watermark) */}
+        <svg
+          viewBox="0 0 1000 110"
+          className="w-full h-auto max-w-full block select-none pointer-events-none"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <defs>
+            <linearGradient id="baseDarkWireframe" x1="0%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%" stopColor="rgba(255, 255, 255, 0.32)" />
+              <stop offset="50%" stopColor="rgba(255, 255, 255, 0.16)" />
+              <stop offset="100%" stopColor="rgba(255, 255, 255, 0.05)" />
+            </linearGradient>
+          </defs>
+
+          {/* Extrusion Depth Underlayer */}
+          <text
+            x="50%"
+            y="177"
+            textAnchor="middle"
+            fill="none"
+            stroke="rgba(0, 0, 0, 0.95)"
+            strokeWidth="4"
+            className="font-heading font-black"
+            fontSize="225"
+            style={{ letterSpacing: '-0.02em' }}
+          >
+            Morphic
+          </text>
+
+          {/* Resting Base Wireframe Stroke */}
+          <text
+            x="50%"
+            y="175"
+            textAnchor="middle"
+            fill="none"
+            stroke="url(#baseDarkWireframe)"
+            strokeWidth="1.4"
+            strokeLinejoin="round"
+            className="font-heading font-black"
+            fontSize="225"
+            style={{ letterSpacing: '-0.02em' }}
+          >
+            Morphic
+          </text>
+        </svg>
+
+        {/* Layer 2: Glowing Cursor Spotlight Mask (Lights up dynamically with high clarity!) */}
+        <div
+          className="absolute inset-0 w-full h-full pointer-events-none transition-opacity duration-200 flex items-end justify-center"
+          style={{
+            opacity: isHovered ? 1 : 0,
+            maskImage: `radial-gradient(420px circle at ${mousePos.px}px ${mousePos.py}px, black 0%, black 35%, transparent 80%)`,
+            WebkitMaskImage: `radial-gradient(420px circle at ${mousePos.px}px ${mousePos.py}px, black 0%, black 35%, transparent 80%)`,
+          }}
+        >
+          <svg
+            viewBox="0 0 1000 110"
+            className="w-full h-auto max-w-full block select-none pointer-events-none"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <defs>
+              <linearGradient id="cursorGlowStroke" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor="#ffffff" />
+                <stop offset="50%" stopColor="#e4e4e7" />
+                <stop offset="100%" stopColor="#a1a1aa" />
+              </linearGradient>
+
+              <filter id="laserBloom" x="-20%" y="-20%" width="140%" height="140%">
+                <feGaussianBlur stdDeviation="4" result="glow" />
+                <feComposite in="SourceGraphic" in2="glow" operator="over" />
+              </filter>
+            </defs>
+
+            {/* Glowing Highlight directly under the cursor */}
+            <text
+              x="50%"
+              y="175"
+              textAnchor="middle"
+              fill="none"
+              stroke="url(#cursorGlowStroke)"
+              strokeWidth="2.4"
+              strokeLinejoin="round"
+              filter="url(#laserBloom)"
+              className="font-heading font-black drop-shadow-[0_0_24px_rgba(255,255,255,0.7)]"
+              fontSize="225"
+              style={{ letterSpacing: '-0.02em' }}
+            >
+              Morphic
+            </text>
+          </svg>
+        </div>
+      </div>
+
+      {/* 3. Horizon Deck: Dedicated Credit & Legal Bar Cleanly Positioned UNDERNEATH the Morphic Horizon */}
+      <div className="w-full relative z-20 border-t border-neutral-900/90 py-5 sm:py-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs font-body text-neutral-500">
+        <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2.5 text-center sm:text-left">
+          <p className="text-neutral-400 font-body text-xs font-normal">
+            {locale === 'id'
+              ? '© 2026 Morphic. Seluruh hak cipta dilindungi.'
+              : '© 2026 Morphic. All rights reserved.'}
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center justify-center sm:justify-end gap-5 text-neutral-400 text-xs font-body">
+          <Link href="/terms" className="hover:text-neutral-300 transition-colors">
+            {locale === 'id' ? 'Ketentuan Layanan' : 'Terms of Service'}
+          </Link>
+          <span className="text-neutral-700 hidden sm:inline">·</span>
+          <Link href="/privacy" className="hover:text-neutral-300 transition-colors">
+            {locale === 'id' ? 'Kebijakan Privasi' : 'Privacy Policy'}
+          </Link>
         </div>
       </div>
     </footer>
