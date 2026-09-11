@@ -161,122 +161,113 @@ h6 {
   cursor: not-allowed;
 }
 
-/* ===== Landing Hero — Light Aurora ===== */
+/* ===== Landing Hero — Parallax Visual & Router Topology ===== */
 
-.hero-font {
-  font-family: 'Manrope', 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+/* Animated tracer pulses flowing along topology wires (hub → node) */
+.topology-tracer {
+  stroke-dashoffset: 7.5;
+  animation: topology-tracer-flow 2.4s linear infinite;
 }
 
-.hero-font h1,
-.hero-font h2,
-.hero-font h3 {
-  font-family: 'Manrope', 'DM Sans', sans-serif;
-  letter-spacing: -0.035em;
-}
-
-/* Hero background — soft neutral light gradient + interactive particle network canvas */
-.hero-bg {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  overflow: hidden;
-  background:
-    radial-gradient(100% 70% at 50% -10%, #f2f4f7 0%, transparent 55%),
-    linear-gradient(180deg, #fafafa 0%, #f6f7f9 50%, #fafafa 100%);
-}
-
-.hero-bg-canvas {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  display: block;
-}
-
-/* Slowly drifting monochrome aurora blobs (motion, independent of cursor) */
-.hero-aurora {
-  position: absolute;
-  border-radius: 9999px;
-  filter: blur(70px);
-  pointer-events: none;
-  will-change: transform;
-}
-
-.hero-aurora-1 {
-  width: 46rem;
-  height: 46rem;
-  left: -12%;
-  top: -18%;
-  background: radial-gradient(circle, rgba(9, 9, 11, 0.055) 0%, transparent 70%);
-  animation: hero-aurora-drift-1 26s ease-in-out infinite alternate;
-}
-
-.hero-aurora-2 {
-  width: 40rem;
-  height: 40rem;
-  right: -14%;
-  top: 8%;
-  background: radial-gradient(circle, rgba(9, 9, 11, 0.045) 0%, transparent 70%);
-  animation: hero-aurora-drift-2 32s ease-in-out infinite alternate;
-}
-
-@keyframes hero-aurora-drift-1 {
-  0% {
-    transform: translate(0, 0) scale(1);
+@keyframes topology-tracer-flow {
+  to {
+    stroke-dashoffset: 0;
   }
+}
 
-  50% {
-    transform: translate(6rem, 4rem) scale(1.08);
+/* Radar pulse rings around the MORPHIC hub badge */
+.topology-radar {
+  animation: topology-radar-expand 3.2s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+}
+
+.topology-radar-delayed {
+  animation-delay: 1.6s;
+}
+
+@keyframes topology-radar-expand {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.8;
   }
 
   100% {
-    transform: translate(2rem, 7rem) scale(0.96);
-  }
-}
-
-@keyframes hero-aurora-drift-2 {
-  0% {
-    transform: translate(0, 0) scale(1);
-  }
-
-  50% {
-    transform: translate(-5rem, 5rem) scale(0.94);
-  }
-
-  100% {
-    transform: translate(-2rem, 8rem) scale(1.06);
+    transform: scale(2.1);
+    opacity: 0;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .hero-aurora-1 {
-    animation: hero-aurora-drift-1 50s ease-in-out infinite alternate;
+  .topology-tracer {
+    animation: none;
   }
 
-  .hero-aurora-2 {
-    animation: hero-aurora-drift-2 60s ease-in-out infinite alternate;
+  .topology-radar {
+    animation: none;
+    opacity: 0;
   }
 }
 
-/* Glass blur layer behind badge + headline, edges fade via radial mask */
-.hero-headline-glass-blur {
-  position: absolute;
-  inset: -2rem -2.5rem;
-  z-index: 0;
-  border-radius: 2.5rem;
-  background: rgba(255, 255, 255, 0.35);
-  backdrop-filter: blur(14px) saturate(1.2);
-  -webkit-backdrop-filter: blur(14px) saturate(1.2);
-  -webkit-mask-image: radial-gradient(85% 90% at 50% 50%, rgba(0, 0, 0, 1) 55%, transparent 100%);
-  mask-image: radial-gradient(85% 90% at 50% 50%, rgba(0, 0, 0, 1) 55%, transparent 100%);
-  pointer-events: none;
+/* ===== Hero Entrance Staggered Animations (Linear / Vercel Micro Blur-Fade Up) ===== */
+@keyframes hero-stagger-fade-up {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 16px, 0);
+    filter: blur(6px);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+    filter: blur(0px);
+  }
 }
 
-/* Fallback when backdrop-filter is unsupported */
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .hero-headline-glass-blur {
-    background: rgba(250, 252, 255, 0.88);
+.hero-anim-badge {
+  animation: hero-stagger-fade-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.04s both;
+  will-change: transform, opacity, filter;
+}
+
+.hero-anim-h1 {
+  animation: hero-stagger-fade-up 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.12s both;
+  will-change: transform, opacity, filter;
+}
+
+.hero-anim-h1-main {
+  animation: hero-stagger-fade-up 0.55s cubic-bezier(0.16, 1, 0.3, 1) 0.10s both;
+  will-change: transform, opacity, filter;
+}
+
+.hero-anim-h1-sub {
+  animation: hero-stagger-fade-up 0.55s cubic-bezier(0.16, 1, 0.3, 1) 0.18s both;
+  will-change: transform, opacity, filter;
+}
+
+.hero-anim-sub {
+  animation: hero-stagger-fade-up 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.24s both;
+  will-change: transform, opacity, filter;
+}
+
+.hero-anim-cta {
+  animation: hero-stagger-fade-up 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.32s both;
+  will-change: transform, opacity, filter;
+}
+
+.hero-anim-trust {
+  animation: hero-stagger-fade-up 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.40s both;
+  will-change: transform, opacity, filter;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-anim-badge,
+  .hero-anim-h1,
+  .hero-anim-h1-main,
+  .hero-anim-h1-sub,
+  .hero-anim-sub,
+  .hero-anim-cta,
+  .hero-anim-trust {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+    filter: none !important;
   }
 }
 
@@ -451,31 +442,6 @@ h6 {
   display: none;
 }
 
-/* Desktop: horizontal rail — node with line stretching across the gap to the next node */
-@media (min-width: 1024px) {
-  .steps-item {
-    display: flex;
-    flex-direction: column;
-    gap: 1.25rem;
-  }
-
-  .steps-rail {
-    flex-direction: row;
-    align-items: center;
-    gap: 0.75rem;
-  }
-
-  .steps-rail-line {
-    flex: 1;
-    width: auto;
-    height: 1px;
-    margin-top: 0;
-    /* extend through the 1.5rem column gap toward the next node */
-    margin-right: calc(-1.5rem - 0.25rem);
-    background: linear-gradient(90deg, rgba(9, 9, 11, 0.18) 0%, rgba(9, 9, 11, 0.04) 100%);
-  }
-}
-
 /* Reduced motion: reveal everything immediately, keep hover color feedback */
 @media (prefers-reduced-motion: reduce) {
   .steps-js .steps-reveal {
@@ -536,3 +502,184 @@ table.data td {
   padding: 0.5rem;
   border-bottom: 1px solid var(--border);
 }
+
+@keyframes packetFlow {
+  from {
+    stroke-dashoffset: 20;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.topology-packet {
+  animation: packetFlow 2.4s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .topology-packet {
+    animation: none;
+  }
+}
+
+@keyframes heroTextShimmer {
+  0% {
+    background-position: 120% 0;
+  }
+  100% {
+    background-position: -120% 0;
+  }
+}
+
+.hero-shimmer-text {
+  background: linear-gradient(
+    110deg,
+    #09090b 0%,
+    #09090b 35%,
+    #52525b 50%,
+    #09090b 65%,
+    #09090b 100%
+  );
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: heroTextShimmer 6s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-shimmer-text {
+    background: none;
+    -webkit-background-clip: initial;
+    -webkit-text-fill-color: initial;
+    color: #09090b;
+    animation: none;
+  }
+}
+
+/* ── Admin & Standard Dashboard Utility Classes ───────────────── */
+@layer components {
+  .card {
+    background-color: #ffffff;
+    border: 1px solid rgba(228, 228, 231, 0.9);
+    border-radius: 1rem;
+    padding: 1.25rem;
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.03), 0 1px 2px -1px rgba(0, 0, 0, 0.03);
+  }
+
+  table.data {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 0.8125rem;
+    text-align: left;
+  }
+
+  table.data thead th {
+    padding: 0.625rem 0.875rem;
+    border-bottom: 1px solid rgba(228, 228, 231, 0.8);
+    font-weight: 600;
+    font-size: 0.6875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #71717a;
+    background-color: rgba(250, 250, 250, 0.8);
+  }
+
+  table.data thead th:first-child {
+    border-top-left-radius: 0.5rem;
+  }
+  table.data thead th:last-child {
+    border-top-right-radius: 0.5rem;
+  }
+
+  table.data tbody td {
+    padding: 0.625rem 0.875rem;
+    border-bottom: 1px solid rgba(244, 244, 245, 0.9);
+    color: #18181b;
+    vertical-align: middle;
+  }
+
+  table.data tbody tr:hover td {
+    background-color: rgba(244, 244, 245, 0.5);
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    font-size: 0.8125rem;
+    border-radius: 0.625rem;
+    padding: 0.5rem 0.875rem;
+    transition: all 150ms cubic-bezier(0.16, 1, 0.3, 1);
+    cursor: pointer;
+    line-height: 1.25;
+  }
+
+  .btn-primary {
+    background-color: #09090b;
+    color: #ffffff;
+    border: 1px solid #09090b;
+  }
+  .btn-primary:hover {
+    background-color: #27272a;
+    border-color: #27272a;
+  }
+
+  .btn-ghost {
+    background-color: transparent;
+    color: #52525b;
+    border: 1px solid rgba(228, 228, 231, 0.9);
+  }
+  .btn-ghost:hover {
+    background-color: #f4f4f5;
+    color: #09090b;
+  }
+
+  .btn-danger {
+    background-color: #fef2f2;
+    color: #dc2626;
+    border: 1px solid #fecaca;
+  }
+  .btn-danger:hover {
+    background-color: #dc2626;
+    color: #ffffff;
+    border-color: #dc2626;
+  }
+
+  .input {
+    border-radius: 0.625rem;
+    border: 1px solid rgba(228, 228, 231, 0.9);
+    background-color: #ffffff;
+    padding: 0.45rem 0.75rem;
+    font-size: 0.8125rem;
+    color: #09090b;
+    outline: none;
+    transition: border-color 150ms ease, box-shadow 150ms ease;
+  }
+  .input:focus {
+    border-color: #09090b;
+    box-shadow: 0 0 0 1px #09090b;
+  }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.125rem 0.5rem;
+    border-radius: 9999px;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    background-color: #f4f4f5;
+    color: #71717a;
+    border: 1px solid #e4e4e7;
+    font-family: monospace;
+  }
+
+  .badge.badge-active {
+    background-color: #ecfdf5;
+    color: #059669;
+    border-color: #a7f3d0;
+  }
+}
+
+

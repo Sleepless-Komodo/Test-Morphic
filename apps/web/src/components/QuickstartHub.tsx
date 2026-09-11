@@ -3,8 +3,9 @@
 import { useState } from 'react';
 import { Check, Copy, Terminal } from 'lucide-react';
 import { useTranslation } from '@/lib/i18n';
+import { API_BASE_URL } from '@/lib/utils';
 
-const BASE_URL = 'https://api.morphic.sh/v1';
+const BASE_URL = API_BASE_URL;
 
 type TabId = 'ide' | 'curl' | 'sdk';
 
@@ -88,9 +89,9 @@ res = client.chat.completions.create(
               key={tab.id}
               type="button"
               onClick={() => setActiveTab(tab.id)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all duration-150 active:scale-95 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 ${
                 activeTab === tab.id
-                  ? 'bg-neutral-950 text-white shadow-xs'
+                  ? 'bg-white text-neutral-950 shadow-2xs font-bold'
                   : 'text-neutral-600 hover:text-neutral-950'
               }`}
             >

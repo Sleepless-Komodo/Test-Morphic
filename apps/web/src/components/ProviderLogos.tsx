@@ -13,8 +13,7 @@ export function ClaudeLogo({ className = 'w-4 h-4' }: LogoProps) {
 }
 
 export function OpenAILogo({ className = 'w-4 h-4' }: LogoProps) {
-  // External SVG currentColor does not inherit from the page; invert for dark logo tiles.
-  return <Image src="/logos/openai.svg" alt="OpenAI" width={24} height={24} unoptimized className={`${className} invert`} />;
+  return <Image src="/logos/openai.svg" alt="OpenAI" width={24} height={24} unoptimized className={className} />;
 }
 
 export function DeepSeekLogo({ className = 'w-4 h-4' }: LogoProps) {
@@ -34,7 +33,7 @@ export function ZhipuLogo({ className = 'w-4 h-4' }: LogoProps) {
 }
 
 export function YiLogo({ className = 'w-4 h-4' }: LogoProps) {
-  return <Image src="/logos/yi.svg" alt="Yi" width={24} height={24} unoptimized className={`${className} invert`} />;
+  return <Image src="/logos/yi.svg" alt="Yi" width={24} height={24} unoptimized className={className} />;
 }
 
 export function ModelProviderLogo({ provider, className = 'w-4 h-4' }: { provider: string; className?: string }) {

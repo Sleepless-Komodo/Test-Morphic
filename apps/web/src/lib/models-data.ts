@@ -5,6 +5,7 @@ export interface ModelItem {
   category: 'Coding' | 'Reasoning' | 'Chat' | 'Multimodal';
   contextWindow: string;
   dailyRate: string;
+  dailyRateEn: string;
   speed: 'Ultra Fast' | 'Fast' | 'Balanced';
   estimatedLatency: string;
   description: {
@@ -12,20 +13,23 @@ export interface ModelItem {
     en: string;
   };
   badge?: string;
+  badgeEn?: string;
   badgeType?: 'popular' | 'flagship' | 'pro' | 'hemat';
 }
 
 export const ALL_MODELS: ModelItem[] = [
   {
-    id: 'claude-3.5-sonnet-proxy',
+    id: 'claude-3-5-sonnet-20241022',
     name: 'Claude 3.5 Sonnet',
     provider: 'Anthropic',
     category: 'Coding',
     contextWindow: '200K Tokens',
     dailyRate: 'Rp 8.500 / hari',
+    dailyRateEn: 'Rp 8,500 / day',
     speed: 'Fast',
     estimatedLatency: '~180ms',
     badge: 'PRO DEV',
+    badgeEn: 'PRO DEV',
     badgeType: 'pro',
     description: {
       id: 'Model standar industri terbaik untuk problem-solving tingkat lanjut, refactoring kode besar, dan arsitektur enterprise.',
@@ -39,9 +43,11 @@ export const ALL_MODELS: ModelItem[] = [
     category: 'Coding',
     contextWindow: '64K Tokens',
     dailyRate: 'Rp 2.500 / hari',
+    dailyRateEn: 'Rp 2,500 / day',
     speed: 'Ultra Fast',
     estimatedLatency: '~110ms',
     badge: 'POPULER',
+    badgeEn: 'POPULAR',
     badgeType: 'popular',
     description: {
       id: 'Sangat responsif dan akurat untuk auto-complete, refactoring, dan debugging di Cursor, Windsurf, dan Cline.',
@@ -55,9 +61,11 @@ export const ALL_MODELS: ModelItem[] = [
     category: 'Reasoning',
     contextWindow: '128K Tokens',
     dailyRate: 'Rp 4.500 / hari',
+    dailyRateEn: 'Rp 4,500 / day',
     speed: 'Balanced',
     estimatedLatency: '~350ms',
     badge: 'REASONING',
+    badgeEn: 'REASONING',
     badgeType: 'flagship',
     description: {
       id: 'Penalaran mendalam bertahap (Chain-of-Thought) untuk memecahkan logika matematika dan arsitektur sistem rumit.',
@@ -71,9 +79,11 @@ export const ALL_MODELS: ModelItem[] = [
     category: 'Chat',
     contextWindow: '128K Tokens',
     dailyRate: 'Rp 3.500 / hari',
+    dailyRateEn: 'Rp 3,500 / day',
     speed: 'Fast',
     estimatedLatency: '~160ms',
     badge: 'FLAGSHIP',
+    badgeEn: 'FLAGSHIP',
     badgeType: 'flagship',
     description: {
       id: 'Model flagship serba bisa dengan pemahaman bahasa Indonesia alami tinggi, analisis data, dan multi-step agent.',
@@ -87,9 +97,11 @@ export const ALL_MODELS: ModelItem[] = [
     category: 'Coding',
     contextWindow: '256K Tokens',
     dailyRate: 'Rp 4.000 / hari',
+    dailyRateEn: 'Rp 4,000 / day',
     speed: 'Fast',
     estimatedLatency: '~190ms',
     badge: '256K CONTEXT',
+    badgeEn: '256K CONTEXT',
     badgeType: 'pro',
     description: {
       id: 'Context window masif 256K tokens untuk membaca seluruh repositori kode tanpa terpotong.',
@@ -103,9 +115,11 @@ export const ALL_MODELS: ModelItem[] = [
     category: 'Multimodal',
     contextWindow: '128K Tokens',
     dailyRate: 'Rp 3.500 / hari',
+    dailyRateEn: 'Rp 3,500 / day',
     speed: 'Ultra Fast',
     estimatedLatency: '~130ms',
     badge: 'OPENAI',
+    badgeEn: 'OPENAI',
     badgeType: 'popular',
     description: {
       id: 'Endpoint drop-in resmi OpenAI dengan latensi kilat dan burst rate limit tinggi untuk agent otomatisasi.',
@@ -119,9 +133,11 @@ export const ALL_MODELS: ModelItem[] = [
     category: 'Chat',
     contextWindow: '128K Tokens',
     dailyRate: 'Rp 1.500 / hari',
+    dailyRateEn: 'Rp 1,500 / day',
     speed: 'Ultra Fast',
     estimatedLatency: '~120ms',
     badge: 'HEMAT',
+    badgeEn: 'BUDGET',
     badgeType: 'hemat',
     description: {
       id: 'Model chat dan penalaran ringan berbiaya sangat terjangkau untuk kebutuhan eksekusi harian volume besar.',
@@ -135,9 +151,11 @@ export const ALL_MODELS: ModelItem[] = [
     category: 'Chat',
     contextWindow: '16K Tokens',
     dailyRate: 'Rp 1.000 / hari',
+    dailyRateEn: 'Rp 1,000 / day',
     speed: 'Ultra Fast',
     estimatedLatency: '~90ms',
     badge: 'TERHEMAT',
+    badgeEn: 'BEST VALUE',
     badgeType: 'hemat',
     description: {
       id: 'Model berkecepatan kilat untuk prompt instan, auto-complete cepat, dan tarif harian paling ramah kantong.',
@@ -145,3 +163,27 @@ export const ALL_MODELS: ModelItem[] = [
     },
   },
 ];
+
+export function getModelDailyRate(model: ModelItem, locale: string): string {
+  if (locale === 'en') {
+    return model.dailyRateEn || model.dailyRate.replace('/ hari', '/ day').replace(/\./g, ',');
+  }
+  return model.dailyRate;
+}
+
+export function getModelBadge(model: ModelItem, locale: string): string | undefined {
+  if (!model.badge) return undefined;
+  if (locale === 'en') {
+    return (
+      model.badgeEn ||
+      (model.badge === 'POPULER'
+        ? 'POPULAR'
+        : model.badge === 'HEMAT'
+        ? 'BUDGET'
+        : model.badge === 'TERHEMAT'
+        ? 'BEST VALUE'
+        : model.badge)
+    );
+  }
+  return model.badge;
+}

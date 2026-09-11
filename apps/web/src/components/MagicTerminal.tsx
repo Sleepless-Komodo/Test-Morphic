@@ -1,8 +1,10 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { motion } from 'framer-motion';
 import { Copy, Check, Terminal as TerminalIcon } from 'lucide-react';
 import { useTranslation } from '@/lib/i18n';
+import { useReducedMotionSafe } from '@/lib/use-reduced-motion-safe';
 
 type TabKey = 'cursor' | 'cline' | 'python' | 'curl';
 
@@ -91,7 +93,7 @@ print(response.choices[0].message.content)`,
   curl: {
     label: 'cURL',
     file: 'request.sh',
-    command: `curl http://localhost:8787/v1/chat/completions \\
+    command: `curl https://api.morphic.sh/v1/chat/completions \\
   -H "Authorization: Bearer mp-xxxxxxxx" \\
   -H "Content-Type: application/json" \\
   -d '{"model": "deepseek-v4", "messages": [{"role": "user", "content": "Hello"}]}'`,
@@ -101,7 +103,7 @@ print(response.choices[0].message.content)`,
       'x-morphic-latency: 142ms',
       '{"id":"chatcmpl-9x","choices":[{"message":{"role":"assistant","content":"Hello! How can I help you?"}}]}',
     ],
-    rawSnippet: `curl http://localhost:8787/v1/chat/completions \\
+    rawSnippet: `curl https://api.morphic.sh/v1/chat/completions \\
   -H "Authorization: Bearer mp-xxxxxxxx" \\
   -H "Content-Type: application/json" \\
   -d '{"model": "deepseek-v4", "messages": [{"role": "user", "content": "Hello"}]}'`,
@@ -178,26 +180,52 @@ export default function MagicTerminal({
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const reduced = useReducedMotionSafe();
+
   return (
-    <section id="terminal" className="relative z-10 py-20 px-4 sm:px-6 bg-white text-neutral-900">
-      <div className="max-w-4xl mx-auto">
-        {/* Section Header */}
-        <div className="text-center max-w-2xl mx-auto mb-10">
-          <div className="text-[11px] font-mono uppercase tracking-[0.2em] text-neutral-400 font-bold mb-4">
+    <section id="terminal" className="relative z-10 py-14 lg:py-20 px-6 bg-white text-neutral-900 border-t border-neutral-200/70 scroll-mt-20 sm:scroll-mt-24">
+      <div className="max-w-6xl mx-auto grid lg:grid-cols-[0.9fr_1.1fr] gap-10 lg:gap-14 items-center">
+        {/* Left Column: Editorial Value Proposition */}
+        <motion.div
+          initial={reduced ? false : { opacity: 0, y: 14, filter: 'blur(4px)' }}
+          whileInView={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+          viewport={{ once: true, margin: '-50px' }}
+          transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+          className="flex flex-col items-start"
+        >
+          <div className="text-xs sm:text-sm font-mono uppercase tracking-[0.2em] text-neutral-400 font-bold mb-3">
             {t.terminal.badge}
           </div>
 
-          <h2 className="text-2xl md:text-4xl font-heading font-extrabold tracking-tight mb-3 text-neutral-950">
+          <h2 className="text-4xl sm:text-5xl lg:text-6xl font-heading font-extrabold tracking-tight mb-4 text-neutral-950">
             {t.terminal.title}
           </h2>
 
-          <p className="text-neutral-600 font-body text-sm max-w-lg mx-auto leading-relaxed">
+          <p className="text-neutral-600 font-body text-base sm:text-lg leading-relaxed mb-8 max-w-lg">
             {t.terminal.desc}
           </p>
-        </div>
 
-        {/* Light Terminal Card */}
-        <div className="relative group">
+          {/* Feature Pills */}
+          <div className="flex flex-wrap gap-2.5">
+            {t.terminal.pills.map((pill) => (
+              <span
+                key={pill}
+                className="px-3.5 py-1.5 rounded-full border border-neutral-200 bg-neutral-50 text-neutral-800 font-mono text-xs tracking-wide font-bold shadow-2xs"
+              >
+                {pill}
+              </span>
+            ))}
+          </div>
+        </motion.div>
+
+        {/* Right Column: Interactive Terminal Mockup */}
+        <motion.div
+          initial={reduced ? false : { opacity: 0, y: 16, filter: 'blur(4px)' }}
+          whileInView={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+          viewport={{ once: true, margin: '-50px' }}
+          transition={{ duration: 0.55, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
+          className="relative group w-full"
+        >
           <div className="relative bg-white border border-neutral-200 rounded-2xl shadow-[0_2px_10px_rgba(0,0,0,0.04)] hover:shadow-[0_16px_40px_-18px_rgba(9,9,11,0.2)] hover:border-neutral-300 transition-all duration-300 overflow-hidden">
             {/* Terminal Header - Tabs */}
             <div className="bg-neutral-100/80 border-b border-neutral-200/80 px-4 pt-3 flex items-center justify-between">
@@ -217,11 +245,11 @@ export default function MagicTerminal({
                 ))}
               </div>
 
-              {/* Fake Window Controls */}
-              <div className="hidden sm:flex space-x-1.5 pb-2 pl-3 shrink-0">
-                <div className="w-2.5 h-2.5 rounded-full bg-neutral-300" />
-                <div className="w-2.5 h-2.5 rounded-full bg-neutral-300" />
-                <div className="w-2.5 h-2.5 rounded-full bg-neutral-300" />
+              {/* Terminal Traffic Light Controls */}
+              <div className="hidden sm:flex items-center space-x-1.5 pb-2 pl-3 shrink-0">
+                <div className="w-2.5 h-2.5 rounded-full bg-[#ff5f56] border border-[#e0443e]/50 shadow-2xs" />
+                <div className="w-2.5 h-2.5 rounded-full bg-[#ffbd2e] border border-[#dea123]/50 shadow-2xs" />
+                <div className="w-2.5 h-2.5 rounded-full bg-[#27c93f] border border-[#1aab29]/50 shadow-2xs" />
               </div>
             </div>
 
@@ -282,7 +310,7 @@ export default function MagicTerminal({
               </div>
             </div>
           </div>
-        </div>
+        </motion.div>
       </div>
     </section>
   );

@@ -375,7 +375,7 @@ export async function grantEntitlement(input: {
 /** Rebuild balance cache from ledger (reconcile / drift repair). Balance-sourced entries only. */
 export async function reconcileBalance(userId: string): Promise<number> {
   const [row] = await db
-    .select({ total: sql<number>`coalesce(sum(${s.creditLedger.amount}), 0)::int` })
+    .select({ total: sql<number>`coalesce(sum(${s.creditLedger.amount}), 0)::bigint` })
     .from(s.creditLedger)
     .where(and(eq(s.creditLedger.userId, userId), eq(s.creditLedger.sourceType, 'balance')));
   const total = Number(row?.total ?? 0);

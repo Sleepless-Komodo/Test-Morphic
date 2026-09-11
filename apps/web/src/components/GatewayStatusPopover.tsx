@@ -77,19 +77,20 @@ export default function GatewayStatusPopover() {
         onClick={() => setOpen((prev) => !prev)}
         aria-expanded={open}
         aria-haspopup="dialog"
-        className="inline-flex items-center gap-2 rounded-full border border-neutral-200 bg-white px-3 py-1.5 text-xs font-semibold text-neutral-700 shadow-xs transition-colors hover:border-neutral-300 hover:text-neutral-950 cursor-pointer"
+        className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold shadow-xs transition-colors cursor-pointer ${
+          state === 'degraded'
+            ? 'border-amber-300 bg-amber-50/80 text-amber-900 hover:bg-amber-100'
+            : 'border-neutral-200 bg-white text-neutral-700 hover:border-neutral-300 hover:text-neutral-950'
+        }`}
       >
         <span className="relative flex h-2 w-2 shrink-0">
-          {operational && (
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
-          )}
           <span
             className={`relative inline-flex h-2 w-2 rounded-full ${
               state === 'checking'
                 ? 'bg-neutral-300'
                 : operational
-                  ? 'bg-emerald-500'
-                  : 'bg-amber-500'
+                  ? 'bg-emerald-500 ring-2 ring-emerald-500/20'
+                  : 'bg-amber-500 ring-2 ring-amber-500/20'
             }`}
           />
         </span>
@@ -131,9 +132,19 @@ export default function GatewayStatusPopover() {
                 <span suppressHydrationWarning className="text-neutral-600">
                   {locale === 'id' ? service.nameId : service.name}
                 </span>
-                <span className="inline-flex items-center gap-1.5 font-semibold text-emerald-700">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                  {t.dashboard.statusServiceOperational}
+                <span
+                  className={`inline-flex items-center gap-1.5 font-semibold ${
+                    operational ? 'text-emerald-700' : 'text-amber-700'
+                  }`}
+                >
+                  <span
+                    className={`h-1.5 w-1.5 rounded-full ${
+                      operational ? 'bg-emerald-500' : 'bg-amber-500'
+                    }`}
+                  />
+                  {operational
+                    ? t.dashboard.statusServiceOperational
+                    : (locale === 'id' ? 'Terganggu' : 'Degraded')}
                 </span>
               </div>
             ))}

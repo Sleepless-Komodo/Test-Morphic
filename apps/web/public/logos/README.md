@@ -19,6 +19,9 @@ Fetched with webfetch on 2026-09-09 from the upstream `master` branch:
 | `openai.svg` | https://raw.githubusercontent.com/lobehub/lobe-icons/master/packages/static-svg/icons/openai.svg |
 | `zhipu-color.svg` | https://raw.githubusercontent.com/lobehub/lobe-icons/master/packages/static-svg/icons/zhipu-color.svg |
 | `yi.svg` | https://raw.githubusercontent.com/lobehub/lobe-icons/master/packages/static-svg/icons/yi.svg |
+| `cursor.svg` | https://raw.githubusercontent.com/lobehub/lobe-icons/master/packages/static-svg/icons/cursor.svg |
+| `cline.svg` | https://raw.githubusercontent.com/lobehub/lobe-icons/master/packages/static-svg/icons/cline.svg |
+| `windsurf.svg` | https://raw.githubusercontent.com/lobehub/lobe-icons/master/packages/static-svg/icons/windsurf.svg |
 
 License source (also fetched with webfetch):
 https://raw.githubusercontent.com/lobehub/lobe-icons/master/LICENSE
