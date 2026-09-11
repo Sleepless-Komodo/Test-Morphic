@@ -1,5 +1,5 @@
 import { headers } from 'next/headers';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
 import { auth } from '@/lib/auth';
 import { db, schema as s } from '@morphic/db';
 import { getBalance } from '@morphic/db/billing';
@@ -10,6 +10,7 @@ export default async function DashboardPage() {
   let userBalance = 0;
   let activeKeys = 0;
   let usage = { totalTokens: 0, promptTokens: 0, completionTokens: 0 };
+  let recentRequests: any[] = [];
   let modelCount = 0;
   let avgCreditsPer1m = 0;
   let minInputRate = 0;
@@ -48,6 +49,31 @@ export default async function DashboardPage() {
     } catch (err) {
       console.warn('[DashboardPage] Database offline, showing empty usage stats:', err);
     }
+
+    try {
+      recentRequests = await db
+        .select({
+          id: s.usageRecords.id,
+          requestId: s.usageRecords.requestId,
+          model: s.models.displayName,
+          publicModelId: s.models.publicModelId,
+          promptTokens: s.usageRecords.promptTokens,
+          completionTokens: s.usageRecords.completionTokens,
+          totalTokens: s.usageRecords.totalTokens,
+          credits: s.usageRecords.creditsConsumed,
+          status: s.usageRecords.status,
+          streamed: s.usageRecords.streamed,
+          latencyMs: s.usageRecords.latencyMs,
+          createdAt: s.usageRecords.createdAt,
+        })
+        .from(s.usageRecords)
+        .leftJoin(s.models, eq(s.usageRecords.modelId, s.models.id))
+        .where(eq(s.usageRecords.userId, session.user.id))
+        .orderBy(desc(s.usageRecords.createdAt))
+        .limit(6);
+    } catch (err) {
+      console.warn('[DashboardPage] Database offline, showing empty recent requests:', err);
+    }
   }
 
   try {
@@ -71,6 +97,7 @@ export default async function DashboardPage() {
       userBalance={userBalance}
       activeKeys={activeKeys}
       usage={usage}
+      recentRequests={recentRequests}
       modelCount={modelCount}
       avgCreditsPer1m={avgCreditsPer1m}
       minInputRate={minInputRate}

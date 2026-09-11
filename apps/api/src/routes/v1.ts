@@ -381,9 +381,12 @@ v1.post('/chat/completions', async (c) => {
           const chunkText = decoder.decode(value, { stream: true });
           await stream.write(chunkText);
           buffer += chunkText;
-          for (const line of buffer.split('\n')) {
-            if (!line.startsWith('data: ')) continue;
-            const data = line.slice(6).trim();
+          const lines = buffer.split('\n');
+          buffer = lines.pop() ?? '';
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed.startsWith('data: ')) continue;
+            const data = trimmed.slice(6).trim();
             if (!data || data === '[DONE]') continue;
             try {
               const j = JSON.parse(data);
@@ -394,6 +397,24 @@ v1.post('/chat/completions', async (c) => {
               chunksReceived++;
             } catch {
               // partial chunk, ignore
+            }
+          }
+        }
+        if (buffer.trim()) {
+          const trimmed = buffer.trim();
+          if (trimmed.startsWith('data: ')) {
+            const data = trimmed.slice(6).trim();
+            if (data && data !== '[DONE]') {
+              try {
+                const j = JSON.parse(data);
+                if (j.usage) usage = j.usage;
+                if (j.usage?.completion_tokens != null) {
+                  lastKnownCompletionTokens = j.usage.completion_tokens;
+                }
+                chunksReceived++;
+              } catch {
+                // ignore
+              }
             }
           }
           buffer = '';
