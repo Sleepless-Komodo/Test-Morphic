@@ -1,6 +1,6 @@
 import type { Context, Next } from 'hono';
 import { db, schema as s } from '@morphic/db';
-import { eq, and, gt } from 'drizzle-orm';
+import { eq, and, gt, or } from 'drizzle-orm';
 
 export interface AuthedSession {
   userId: string;
@@ -16,25 +16,30 @@ declare module 'hono' {
 /** Session authentication for user-facing management routes (API keys, account balance/usage) */
 export async function sessionAuth(c: Context, next: Next) {
   const authHeader = c.req.header('authorization');
-  let token: string | undefined;
+  let rawToken: string | undefined;
 
   if (authHeader?.startsWith('Bearer ')) {
-    token = authHeader.slice('Bearer '.length).trim();
+    rawToken = authHeader.slice('Bearer '.length).trim();
   } else {
-    // Cookie fallbacks (Better Auth session cookies)
+    // Cookie fallbacks (Better Auth session cookies - secure or standard)
     const cookies = c.req.header('cookie');
     if (cookies) {
-      const match = cookies.match(/(?:better-auth\.session_token|session_token)=([^;]+)/);
-      if (match) token = match[1];
+      const match = cookies.match(/(?:__Secure-)?(?:better-auth\.session_token|session_token)=([^;]+)/);
+      if (match) {
+        rawToken = decodeURIComponent(match[1]).trim();
+      }
     }
   }
 
-  if (!token) {
+  if (!rawToken) {
     return c.json(
       { error: { message: 'unauthorized: session token required', type: 'auth_error', code: 'missing_session_token' } },
       401,
     );
   }
+
+  // Handle signed vs unsigned token formats (token.signature vs token)
+  const unsignedToken = rawToken.includes('.') ? rawToken.split('.')[0] : rawToken;
 
   const [session] = await db
     .select({
@@ -43,7 +48,12 @@ export async function sessionAuth(c: Context, next: Next) {
       expiresAt: s.sessions.expiresAt,
     })
     .from(s.sessions)
-    .where(and(eq(s.sessions.token, token), gt(s.sessions.expiresAt, new Date())))
+    .where(
+      and(
+        or(eq(s.sessions.token, rawToken), eq(s.sessions.token, unsignedToken!)),
+        gt(s.sessions.expiresAt, new Date())
+      )
+    )
     .limit(1);
 
   if (!session) {
