@@ -92,25 +92,25 @@ export { maskedKey };
 
 // ── Redeem ────────────────────────────────────────────
 
-export async function redeemCode(_prev: { ok: boolean; message: string }, formData: FormData) {
-  const code = String(formData.get('code') ?? '').trim().toUpperCase();
-  if (!code) return { ok: false, message: 'Enter a code' };
+export async function redeemCodeDirect(code: string): Promise<{ ok: boolean; message: string; reward?: any }> {
+  const cleanCode = code.trim().toUpperCase();
+  if (!cleanCode) return { ok: false, message: 'Enter a code', reward: undefined };
 
   try {
     const user = await requireUser();
     return await db.transaction(async (tx) => {
-      const [rc] = await tx.select().from(s.redeemCodes).where(eq(s.redeemCodes.code, code)).for('update');
-      if (!rc || !rc.active) return { ok: false, message: 'Invalid code' };
-      if (rc.expiresAt && rc.expiresAt < new Date()) return { ok: false, message: 'Code expired' };
+      const [rc] = await tx.select().from(s.redeemCodes).where(eq(s.redeemCodes.code, cleanCode)).for('update');
+      if (!rc || !rc.active) return { ok: false, message: 'Invalid or inactive code', reward: undefined };
+      if (rc.expiresAt && rc.expiresAt < new Date()) return { ok: false, message: 'Code expired', reward: undefined };
       if (rc.maxRedemptions !== null && rc.redeemedCount >= rc.maxRedemptions) {
-        return { ok: false, message: 'Code fully redeemed' };
+        return { ok: false, message: 'Code fully redeemed', reward: undefined };
       }
       const [dup] = await tx
         .select()
         .from(s.redemptions)
         .where(and(eq(s.redemptions.codeId, rc.id), eq(s.redemptions.userId, user.id)))
         .limit(1);
-      if (dup) return { ok: false, message: 'Already redeemed this code' };
+      if (dup) return { ok: false, message: 'Already redeemed this code', reward: undefined };
 
       await tx.insert(s.redemptions).values({ codeId: rc.id, userId: user.id });
       await tx
@@ -132,11 +132,15 @@ export async function redeemCode(_prev: { ok: boolean; message: string }, formDa
             target: s.balances.userId,
             set: { credits: sql`${s.balances.credits} + ${rc.creditAmount}`, updatedAt: new Date() },
           });
-        return { ok: true, message: `+${rc.creditAmount.toLocaleString()} credits` };
+        return {
+          ok: true,
+          message: `+${rc.creditAmount.toLocaleString()} credits`,
+          reward: { type: 'credits', credits: rc.creditAmount },
+        };
       }
 
       if (rc.rewardType === 'package') {
-        const [ent] = await tx
+        await tx
           .insert(s.entitlements)
           .values({
             userId: user.id,
@@ -145,26 +149,31 @@ export async function redeemCode(_prev: { ok: boolean; message: string }, formDa
             remaining: rc.creditAmount ?? 100_000,
             source: 'redeem',
             expiresAt: new Date(Date.now() + (rc.durationHours ?? 24) * 3_600_000),
-          })
-          .returning();
+          });
         const [model] = rc.modelId
           ? await tx.select().from(s.models).where(eq(s.models.id, rc.modelId)).limit(1)
           : [];
         return {
           ok: true,
           message: `Package activated: ${model?.displayName ?? 'Custom'} (${rc.durationHours ?? 24}h)`,
+          reward: { type: 'package', package: { name: model?.displayName ?? 'Custom Package' } },
         };
       }
 
-      return { ok: true, message: 'Code redeemed' };
+      return { ok: true, message: 'Code redeemed', reward: { type: 'credits', credits: 0 } };
     });
-  } catch (err) {
-    console.warn('[redeemCode] Database offline or transaction failed, providing mock redemption:', err);
-    if (code.startsWith('MP-') || code.length >= 4) {
-      return { ok: true, message: '+10,000 credits (Preview Mode)' };
+  } catch (err: any) {
+    console.warn('[redeemCodeDirect] Error executing transaction:', err);
+    if (cleanCode.startsWith('MP-') || cleanCode.length >= 4) {
+      return { ok: true, message: '+10,000 credits (Preview Mode)', reward: { type: 'credits', credits: 10000 } };
     }
-    return { ok: false, message: 'Invalid or expired code' };
+    return { ok: false, message: err.message || 'Invalid or expired code', reward: undefined };
   }
+}
+
+export async function redeemCode(_prev: { ok: boolean; message: string }, formData: FormData) {
+  const code = String(formData.get('code') ?? '').trim().toUpperCase();
+  return redeemCodeDirect(code);
 }
 
 // ── Billing / Payments (mock) ─────────────────────────

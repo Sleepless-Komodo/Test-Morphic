@@ -1,163 +1,122 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useState } from 'react';
+import { Gift, Loader2, CheckCircle2, XCircle } from 'lucide-react';
 import { useTranslation } from '@/lib/i18n';
-import { redeemCode } from '@/lib/actions';
-import { Ticket, CheckCircle2, AlertCircle, Sparkles, ShieldCheck, ArrowRight } from 'lucide-react';
+import { formatCredits } from '@/lib/utils';
+import { redeemCodeDirect } from '@/lib/actions';
 
 export function RedeemView() {
   const { t, locale } = useTranslation();
   const [code, setCode] = useState('');
-  const [status, setStatus] = useState<{ ok: boolean; message: string } | null>(null);
-  const [isPending, startTransition] = useTransition();
+  const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [reward, setReward] = useState<any>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!code.trim()) return;
 
-    startTransition(async () => {
-      const fd = new FormData();
-      fd.set('code', code.trim());
-      const res = await redeemCode({ ok: false, message: '' }, fd);
-      setStatus(res);
-      if (res.ok) {
-        setCode('');
-      }
-    });
-  };
+    setStatus('loading');
+    setErrorMsg(null);
+    setReward(null);
 
-  const handleQuickCode = (sampleCode: string) => {
-    setCode(sampleCode);
+    try {
+      // Execute Server Action directly (no CORS or cookie-stripping issues)
+      const res = await redeemCodeDirect(code);
+
+      if (!res.ok) {
+        throw new Error(res.message || (locale === 'en' ? 'Failed to redeem code' : 'Gagal menukarkan kode'));
+      }
+
+      setStatus('success');
+      setReward(res.reward || { type: 'credits', credits: 0 });
+      setCode('');
+    } catch (err: any) {
+      setStatus('error');
+      setErrorMsg(err.message);
+    }
   };
 
   return (
-    <div className="max-w-6xl mx-auto px-4 md:px-8 py-8 space-y-8">
-      {/* Header */}
-      <div className="border-b border-neutral-200/70 pb-4">
-        <div suppressHydrationWarning className="text-[11px] font-mono uppercase tracking-wider text-neutral-400 font-semibold mb-1">
-          {locale === 'en' ? 'Morphic Developer Console / Voucher' : 'Konsol Pengembang Morphic / Kupon'}
+    <div className="max-w-xl mx-auto py-12 px-4 sm:px-6">
+      <div className="text-center mb-10">
+        <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-blue-50 text-blue-600 mb-4">
+          <Gift className="w-8 h-8" />
         </div>
-        <h1 suppressHydrationWarning className="text-2xl md:text-3xl font-heading font-extrabold text-neutral-950 tracking-tight">
-          {t.dashboard.redeemPageTitle}
+        <h1 className="text-3xl font-extrabold font-heading text-neutral-900 tracking-tight">
+          {locale === 'en' ? 'Redeem Code' : 'Tukar Kode Redeem'}
         </h1>
-        <p suppressHydrationWarning className="text-xs md:text-sm text-neutral-600 mt-1 max-w-2xl leading-relaxed">
-          {t.dashboard.redeemPageSubtitle}
+        <p className="mt-3 text-neutral-500 text-sm max-w-sm mx-auto">
+          {locale === 'en' 
+            ? 'Enter your gift code below to claim credits or package entitlements.'
+            : 'Masukkan kode hadiah kamu di bawah ini untuk klaim kredit atau paket.'}
         </p>
       </div>
 
-      {/* 2-Column Balanced Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-        {/* Left Column: Form (Span 7) */}
-        <div className="lg:col-span-7 p-6 sm:p-8 rounded-3xl bg-white border border-neutral-200/90 shadow-2xs space-y-6">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-neutral-100 border border-neutral-200 flex items-center justify-center text-neutral-950">
-              <Ticket className="h-5 w-5" />
-            </div>
+      <div className="bg-white border border-neutral-200 rounded-3xl p-6 sm:p-8 shadow-sm">
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <div>
+            <label htmlFor="code" className="block text-sm font-semibold text-neutral-900 mb-2">
+              {locale === 'en' ? 'Gift Code' : 'Kode Hadiah'}
+            </label>
+            <input
+              type="text"
+              id="code"
+              name="code"
+              value={code}
+              onChange={(e) => setCode(e.target.value.toUpperCase())}
+              placeholder={locale === 'en' ? 'e.g., WELCOME2024' : 'Cth: WELCOME2024'}
+              className="w-full px-4 py-3 rounded-2xl border border-neutral-200 bg-neutral-50 text-neutral-900 text-lg font-mono font-bold placeholder:font-sans placeholder:font-normal placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all uppercase"
+              disabled={status === 'loading'}
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={!code.trim() || status === 'loading'}
+            className="w-full py-3.5 px-4 rounded-2xl bg-neutral-950 hover:bg-neutral-800 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-bold transition-all shadow-md flex items-center justify-center gap-2"
+          >
+            {status === 'loading' && <Loader2 className="w-4 h-4 animate-spin" />}
+            {status === 'loading' 
+              ? (locale === 'en' ? 'Redeeming...' : 'Menukarkan...') 
+              : (locale === 'en' ? 'Redeem Now' : 'Tukar Sekarang')}
+          </button>
+        </form>
+
+        {/* Status Messages */}
+        {status === 'error' && (
+          <div className="mt-6 p-4 rounded-2xl bg-red-50 border border-red-100 flex items-start gap-3 animate-in fade-in slide-in-from-top-2">
+            <XCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
             <div>
-              <h2 className="font-heading font-bold text-lg text-neutral-950">
-                {t.dashboard.voucherCardTitle}
-              </h2>
-              <p className="text-xs text-neutral-500">{t.dashboard.voucherCardDesc}</p>
+              <h3 className="text-sm font-bold text-red-800">
+                {locale === 'en' ? 'Redemption Failed' : 'Gagal Menukarkan'}
+              </h3>
+              <p className="text-sm text-red-600 mt-1">{errorMsg}</p>
             </div>
           </div>
+        )}
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+        {status === 'success' && reward && (
+          <div className="mt-6 p-5 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-start gap-4 animate-in fade-in zoom-in-95">
+            <CheckCircle2 className="w-6 h-6 text-emerald-500 shrink-0 mt-1" />
             <div>
-              <label className="text-[10px] font-mono uppercase tracking-wider text-neutral-500 font-semibold block mb-2">
-                {t.dashboard.voucherInputLabel}
-              </label>
-              <div className="flex flex-col sm:flex-row gap-2.5">
-                <input
-                  type="text"
-                  value={code}
-                  onChange={(e) => setCode(e.target.value.toUpperCase())}
-                  placeholder={t.dashboard.voucherInputPlaceholder}
-                  className="flex-1 bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3 text-xs font-mono font-bold tracking-wider text-neutral-950 focus:outline-none focus:border-black transition-colors"
-                />
-                <button
-                  type="submit"
-                  disabled={isPending || !code.trim()}
-                  className="px-6 py-3 rounded-xl bg-neutral-950 hover:bg-neutral-800 disabled:opacity-50 text-white text-xs font-bold transition-all shadow-xs shrink-0 flex items-center justify-center gap-2 cursor-pointer"
-                >
-                  <Sparkles className="h-3.5 w-3.5" />
-                  <span>{isPending ? t.dashboard.redeemingBtn : t.dashboard.redeemSubmitBtn}</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Status alerts */}
-            {status && (
-              <div
-                className={`p-4 rounded-2xl border text-xs font-medium flex items-center gap-2.5 animate-in fade-in ${
-                  status.ok
-                    ? 'bg-emerald-50/50 border-emerald-200 text-emerald-900'
-                    : 'bg-red-50/50 border-red-200 text-red-900'
-                }`}
-              >
-                {status.ok ? (
-                  <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
-                ) : (
-                  <AlertCircle className="h-4 w-4 text-red-600 shrink-0" />
-                )}
-                <span>{status.message}</span>
-              </div>
-            )}
-          </form>
-
-          {/* Quick try sample voucher chips */}
-          <div className="pt-4 border-t border-neutral-100">
-            <div className="text-[11px] font-mono text-neutral-400 mb-2">
-              {locale === 'en' ? 'Quick test promo codes:' : 'Kode promo uji coba cepat:'}
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {['MIRACLE-HACK', 'DEV-TEST-5K', 'MORPHIC-START'].map((sample) => (
-                <button
-                  key={sample}
-                  type="button"
-                  onClick={() => handleQuickCode(sample)}
-                  className="px-3 py-1.5 rounded-lg bg-neutral-100 hover:bg-neutral-200 border border-neutral-200 text-[11px] font-mono text-neutral-700 font-semibold transition-colors cursor-pointer flex items-center gap-1.5"
-                >
-                  <span>{sample}</span>
-                  <ArrowRight className="h-3 w-3 text-neutral-400" />
-                </button>
-              ))}
+              <h3 className="text-base font-bold text-emerald-800">
+                {locale === 'en' ? 'Successfully Redeemed!' : 'Berhasil Ditukarkan!'}
+              </h3>
+              <p className="text-sm text-emerald-700 mt-1">
+                {reward.type === 'credits' 
+                  ? (locale === 'en' 
+                      ? `You received ${formatCredits(reward.credits)} credits.` 
+                      : `Kamu mendapatkan tambahan ${formatCredits(reward.credits)} kredit.`)
+                  : (locale === 'en'
+                      ? `You received the package: ${reward.package?.name}`
+                      : `Kamu mendapatkan paket: ${reward.package?.name}`)
+                }
+              </p>
             </div>
           </div>
-        </div>
-
-        {/* Right Column: Terms & Info Card (Span 5) */}
-        <div className="lg:col-span-5 p-6 sm:p-8 rounded-3xl bg-neutral-950 text-white border border-neutral-800 shadow-md space-y-5">
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="h-4 w-4 text-emerald-400" />
-            <h3 className="font-heading font-bold text-sm text-white">{t.dashboard.termsCardTitle}</h3>
-          </div>
-
-          <ul className="space-y-3 text-xs text-neutral-400 leading-relaxed">
-            <li className="flex items-start gap-2.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 mt-1.5 shrink-0" />
-              <span>{t.dashboard.termItem1}</span>
-            </li>
-            <li className="flex items-start gap-2.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 mt-1.5 shrink-0" />
-              <span>{t.dashboard.termItem2}</span>
-            </li>
-            <li className="flex items-start gap-2.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 mt-1.5 shrink-0" />
-              <span>{t.dashboard.termItem3}</span>
-            </li>
-          </ul>
-
-          <div className="p-4 rounded-2xl bg-neutral-900 border border-neutral-800 text-[11px] text-neutral-300 space-y-1">
-            <div className="font-bold text-white mb-1">
-              {locale === 'en' ? 'Need custom developer credits?' : 'Butuh kuota kredit tim / perusahaan?'}
-            </div>
-            <div className="text-neutral-400">
-              {locale === 'en'
-                ? 'Contact support@morphic.sh for enterprise rate limits and bulk invoicing.'
-                : 'Hubungi support@morphic.sh untuk kebutuhan rate limit khusus dan faktur pajak.'}
-            </div>
-          </div>
-        </div>
+        )}
       </div>
     </div>
   );

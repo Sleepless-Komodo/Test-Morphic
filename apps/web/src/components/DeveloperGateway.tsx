@@ -333,12 +333,20 @@ const CHEAP_DAILY_PACKAGES = [
   },
 ];
 
+/**
+ * Interface representing component props for DeveloperGateway.
+ */
 interface DeveloperGatewayProps {
   session?: any;
   userBalance?: number;
+  /**
+   * Optional initial models passed from the Server Component (fetched from PostgreSQL database).
+   * If not provided or empty, the component will fall back to static default models.
+   */
+  initialModels?: ModelItem[];
 }
 
-export default function DeveloperGateway({ session, userBalance = 0 }: DeveloperGatewayProps) {
+export default function DeveloperGateway({ session, userBalance = 0, initialModels }: DeveloperGatewayProps) {
   const { t, locale } = useTranslation();
 
   const [baseUrlCopied, setBaseUrlCopied] = useState(false);
@@ -375,9 +383,14 @@ export default function DeveloperGateway({ session, userBalance = 0 }: Developer
   const getPackageDesc = (pkg: (typeof CHEAP_DAILY_PACKAGES)[number]) =>
     locale === 'en' && pkg.descEn ? pkg.descEn : pkg.desc;
 
+  // Resolve dynamic model list: use database-fetched models if available, fallback to static defaults
+  const activeModelList = useMemo(() => {
+    return initialModels && initialModels.length > 0 ? initialModels : INFERENCE_MODELS;
+  }, [initialModels]);
+
   const filteredModels = useMemo(
     () =>
-      INFERENCE_MODELS.filter((m) => {
+      activeModelList.filter((m) => {
         const matchCap = selectedCapability === 'All' || m.capabilities.includes(selectedCapability as CapabilityTag);
         const matchProv = selectedProvider === 'All' || m.provider === selectedProvider;
         const matchSearch =
@@ -385,7 +398,7 @@ export default function DeveloperGateway({ session, userBalance = 0 }: Developer
           m.id.toLowerCase().includes(searchQuery.toLowerCase());
         return matchCap && matchProv && matchSearch;
       }),
-    [selectedCapability, selectedProvider, searchQuery],
+    [activeModelList, selectedCapability, selectedProvider, searchQuery],
   );
 
   const categories = useMemo(() => Array.from(new Set(filteredModels.map((m) => m.category))), [filteredModels]);
