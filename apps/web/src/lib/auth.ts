@@ -3,6 +3,17 @@ import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { db } from '@morphic/db';
 import * as schema from '@morphic/db/schema';
 
+import { apiKeyAuth } from './auth-api-key';
+
+const authSecret = process.env.BETTER_AUTH_SECRET;
+if (process.env.NODE_ENV === 'production') {
+  if (!authSecret || authSecret === 'change-me-32+chars-random-secret' || authSecret.length < 32) {
+    throw new Error(
+      '[FATAL SECURITY] BETTER_AUTH_SECRET must be set to a secure 32+ character random string in production. Generate one using: openssl rand -base64 32',
+    );
+  }
+}
+
 export const auth = betterAuth({
   database: drizzleAdapter(db, {
     provider: 'pg',
@@ -13,7 +24,15 @@ export const auth = betterAuth({
       verification: schema.verifications,
     },
   }),
-  emailAndPassword: { enabled: false },
+  rateLimit: {
+    window: 60,
+    max: 100,
+  },
+  emailAndPassword: {
+    enabled: true,
+    autoSignIn: true,
+    minPasswordLength: 8,
+  },
   socialProviders: {
     google: {
       clientId: process.env.GOOGLE_CLIENT_ID ?? '',
@@ -29,6 +48,7 @@ export const auth = betterAuth({
   advanced: {
     database: { generateId: false },
   },
+  plugins: [apiKeyAuth()],
 });
 
 export type Session = typeof auth.$Infer.Session;

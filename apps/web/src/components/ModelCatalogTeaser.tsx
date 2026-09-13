@@ -1,54 +1,275 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
-import { ALL_MODELS } from '@/lib/models-data';
-import ModelCard from './ModelCard';
-import MemberPricingBanner from './MemberPricingBanner';
+import { motion, AnimatePresence } from 'framer-motion';
+import { ALL_MODELS, getModelDailyRate, getModelBadge } from '@/lib/models-data';
+import { ModelProviderLogo } from './ProviderLogos';
 import { useTranslation } from '@/lib/i18n';
-import { Cpu, ArrowUpRight } from 'lucide-react';
+import { useReducedMotionSafe } from '@/lib/use-reduced-motion-safe';
+import { ArrowUpRight, ChevronRight, Sparkles } from 'lucide-react';
+
+const EASE = [0.16, 1, 0.3, 1] as const;
 
 export default function ModelCatalogTeaser({ isLoggedIn = false }: { isLoggedIn?: boolean }) {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [isPaused, setIsPaused] = useState(false);
+  const [tilt, setTilt] = useState({ x: 0, y: 0 });
+  const reduced = useReducedMotionSafe();
+
   // Show top 4 flagship/popular models on landing page
   const teaserModels = ALL_MODELS.slice(0, 4);
+  const activeModel = teaserModels[selectedIndex] || teaserModels[0];
+
+  // Auto-advance carousel every 5 seconds (pauses on hover)
+  useEffect(() => {
+    if (isPaused || reduced) return;
+    const timer = setInterval(() => {
+      setSelectedIndex((prev) => (prev + 1) % teaserModels.length);
+    }, 5200);
+    return () => clearInterval(timer);
+  }, [isPaused, reduced, teaserModels.length]);
+
+  const handleNext = () => {
+    setSelectedIndex((prev) => (prev + 1) % teaserModels.length);
+  };
+
+  // Subtle 3D tilt interaction for showcase card on mouse move
+  const handleCardMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (reduced) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / rect.width - 0.5;
+    const y = (e.clientY - rect.top) / rect.height - 0.5;
+    setTilt({ x: y * -7, y: x * 7 });
+  };
+
+  const handleCardMouseLeave = () => {
+    setTilt({ x: 0, y: 0 });
+  };
 
   return (
-    <section id="models" className="relative z-10 py-20 px-4 sm:px-6 bg-[#fafafa] text-neutral-900 border-t border-neutral-200/90">
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-12">
+    <section
+      id="models"
+      className="relative z-10 py-14 lg:py-20 px-6 bg-[#fafafa] text-neutral-900 border-t border-neutral-200/70 scroll-mt-20 sm:scroll-mt-24 overflow-hidden"
+    >
+      <div className="max-w-6xl mx-auto">
+        {/* Section Header */}
+        <motion.div
+          initial={reduced ? false : { opacity: 0, y: 14, filter: 'blur(4px)' }}
+          whileInView={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+          viewport={{ once: true, margin: '-50px' }}
+          transition={{ duration: 0.5, ease: EASE }}
+          className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-12"
+        >
           <div>
-            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-neutral-100 border border-neutral-200 text-neutral-800 text-xs font-semibold mb-3 shadow-sm">
-              <Cpu className="h-3.5 w-3.5 text-neutral-950" />
+            <div className="inline-flex items-center gap-2 text-xs sm:text-sm font-mono uppercase tracking-[0.2em] text-neutral-400 font-bold mb-3">
+              <Sparkles className="w-3.5 h-3.5 text-neutral-900" />
               <span>{t.models.badge}</span>
             </div>
-            <h2 className="text-3xl sm:text-4xl font-heading font-extrabold tracking-tight text-neutral-950">
+            <h2 className="text-4xl sm:text-5xl lg:text-6xl font-heading font-extrabold tracking-tight text-neutral-950">
               {t.models.title}
             </h2>
-            <p className="text-neutral-600 font-body text-sm sm:text-base mt-2 max-w-xl">
+            <p className="mt-4 text-neutral-600 font-body text-base sm:text-lg leading-relaxed max-w-2xl">
               {t.models.desc}
             </p>
           </div>
 
-          <Link
-            href="/models"
-            className="inline-flex items-center gap-2 text-xs sm:text-sm font-semibold text-neutral-950 hover:text-black bg-white border border-neutral-300 hover:border-neutral-400 rounded-full px-5 py-2.5 shadow-sm transition-all hover:scale-[1.02] self-start md:self-auto"
+          <div className="flex items-center gap-3 self-start md:self-auto">
+            <Link
+              href="/models"
+              className="inline-flex items-center gap-2 rounded-full border border-neutral-300 hover:border-neutral-950 px-5 sm:px-6 py-2.5 sm:py-3 text-xs sm:text-sm font-bold transition-all hover:bg-neutral-950 hover:text-white shadow-2xs group"
+            >
+              <span>{locale === 'en' ? `View all ${ALL_MODELS.length} models` : `Lihat semua ${ALL_MODELS.length} model`}</span>
+              <ArrowUpRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+            </Link>
+          </div>
+        </motion.div>
+
+        {/* Master-Detail Split Grid */}
+        <motion.div
+          initial={reduced ? false : { opacity: 0, y: 16, filter: 'blur(4px)' }}
+          whileInView={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+          viewport={{ once: true, margin: '-40px' }}
+          transition={{ duration: 0.55, delay: 0.1, ease: EASE }}
+          className="grid grid-cols-1 lg:grid-cols-[1.1fr_0.9fr] gap-8 lg:gap-12 items-start"
+          onMouseEnter={() => setIsPaused(true)}
+          onMouseLeave={() => setIsPaused(false)}
+        >
+          {/* Left Column: Interactive Model Selector List */}
+          <div className="divide-y divide-neutral-200 border-t border-b border-neutral-200">
+            {teaserModels.map((model, idx) => {
+              const isSelected = selectedIndex === idx;
+              return (
+                <button
+                  key={model.id}
+                  onClick={() => setSelectedIndex(idx)}
+                  onMouseEnter={() => setSelectedIndex(idx)}
+                  className={`group relative flex items-center justify-between py-5 sm:py-6 px-3 sm:px-4 text-left transition-all duration-200 cursor-pointer rounded-2xl ${
+                    isSelected
+                      ? 'bg-neutral-100/70 text-neutral-950 shadow-2xs translate-x-1 sm:translate-x-2'
+                      : 'text-neutral-500 hover:text-neutral-900 hover:bg-neutral-50 hover:translate-x-1'
+                  }`}
+                >
+                  {/* Dynamic Progress indicator when auto-advancing */}
+                  {isSelected && (
+                    <motion.span
+                      layoutId="activeModelIndicator"
+                      className="absolute inset-x-0 -bottom-px h-[2.5px] bg-neutral-950 z-10 rounded-full"
+                      transition={{ type: 'spring', stiffness: 450, damping: 35 }}
+                    />
+                  )}
+
+                  {/* Auto-advance timer progress line on selected item */}
+                  {isSelected && !reduced && (
+                    <motion.span
+                      key={`timer-${selectedIndex}`}
+                      initial={{ scaleX: 0 }}
+                      animate={{ scaleX: 1 }}
+                      transition={{ duration: 5.2, ease: 'linear' }}
+                      style={{ originX: 0 }}
+                      className={`absolute bottom-0 left-0 right-0 h-[2.5px] bg-neutral-950 z-20 transition-opacity duration-200 ${
+                        isPaused ? 'opacity-30' : 'opacity-100'
+                      }`}
+                    />
+                  )}
+
+                  <div className="flex items-baseline gap-3.5 sm:gap-4.5 min-w-0 pr-4">
+                    <span
+                      className={`font-mono text-xs tabular-nums transition-colors ${
+                        isSelected
+                          ? 'text-neutral-950 font-extrabold scale-105'
+                          : 'text-neutral-400 group-hover:text-neutral-700'
+                      }`}
+                    >
+                      {String(idx + 1).padStart(2, '0')}
+                    </span>
+                    <div className="flex flex-col min-w-0">
+                      <span className="text-xl sm:text-2xl font-heading font-bold tracking-tight truncate transition-transform group-hover:translate-x-0.5">
+                        {model.name}
+                      </span>
+                      <span className="font-mono text-[10px] sm:text-[11px] tracking-[0.18em] uppercase text-neutral-400 font-semibold mt-0.5">
+                        {model.provider}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3.5 sm:gap-4 shrink-0">
+                    <span className="font-mono text-xs sm:text-sm text-neutral-600 font-semibold hidden sm:inline">
+                      {getModelDailyRate(model, locale)}
+                    </span>
+                    <div
+                      className={`w-8 h-8 rounded-full border flex items-center justify-center transition-all duration-200 ${
+                        isSelected
+                          ? 'border-neutral-950 bg-neutral-950 text-white shadow-xs scale-105 rotate-45'
+                          : 'border-neutral-200 text-neutral-400 group-hover:border-neutral-400 group-hover:text-neutral-900 group-hover:rotate-45'
+                      }`}
+                    >
+                      <ArrowUpRight className="w-4 h-4" />
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Right Column: Prominent 3D Interactive Showcase Card */}
+          <div
+            onMouseMove={handleCardMouseMove}
+            onMouseLeave={handleCardMouseLeave}
+            style={{
+              transform: `perspective(900px) rotateX(${tilt.x}deg) rotateY(${tilt.y}deg)`,
+              transition: 'transform 0.18s ease-out',
+            }}
+            className="relative overflow-hidden rounded-3xl border border-neutral-200/90 bg-white p-6 sm:p-8 shadow-[0_24px_50px_-20px_rgba(0,0,0,0.08)] transform-gpu"
           >
-            <span>{t.models.viewAllModels}</span>
-            <ArrowUpRight className="w-4 h-4" />
-          </Link>
-        </div>
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.div
+                key={activeModel.id}
+                initial={{ opacity: 0, y: 14, scale: 0.98 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -14, scale: 0.98 }}
+                transition={{ duration: 0.28, ease: EASE }}
+                className="flex flex-col h-full"
+              >
+                {/* Provider Logo + Badge + Model Switch Hint */}
+                <div className="flex items-center justify-between gap-4">
+                  <div className="h-14 w-14 rounded-2xl border border-neutral-200 bg-neutral-50 flex items-center justify-center p-2.5 shadow-2xs transition-transform hover:scale-105">
+                    <ModelProviderLogo provider={activeModel.provider} className="h-8 w-8" />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {getModelBadge(activeModel, locale) && (
+                      <span className="px-3 py-1 rounded-full font-mono text-[10px] font-bold tracking-[0.18em] uppercase border border-neutral-950 bg-neutral-950 text-white shadow-2xs">
+                        {getModelBadge(activeModel, locale)}
+                      </span>
+                    )}
+                  </div>
+                </div>
 
-        {/* 4 Flagship Models Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
-          {teaserModels.map((model) => (
-            <ModelCard key={model.id} model={model} isLoggedIn={isLoggedIn} />
-          ))}
-        </div>
+                <div className="mt-6">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-2xl sm:text-3xl font-heading font-extrabold tracking-tight text-neutral-950">
+                      {activeModel.name}
+                    </h3>
+                    {/* Quick next model button */}
+                    <button
+                      onClick={handleNext}
+                      className="text-xs font-mono text-neutral-400 hover:text-neutral-950 flex items-center gap-1 transition-colors cursor-pointer py-1 px-2 rounded-lg hover:bg-neutral-100"
+                      title="Next Model"
+                    >
+                      <span>Next</span>
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                  <p className="font-mono text-[11px] tracking-wider text-neutral-400 mt-1">
+                    {activeModel.id}
+                  </p>
+                </div>
 
-        {/* Member Pricing Banner */}
-        <MemberPricingBanner isLoggedIn={isLoggedIn} />
+                <p className="mt-4 text-xs sm:text-sm text-neutral-600 font-body leading-relaxed min-h-[44px]">
+                  {activeModel.description[locale] || activeModel.description.id}
+                </p>
+
+                {/* Price & Context spec boxes */}
+                <div className="grid grid-cols-2 gap-3 mt-6 pt-5 border-t border-neutral-100">
+                  <div className="rounded-2xl border border-neutral-200/80 bg-neutral-50/80 p-3.5 hover:border-neutral-300 transition-colors">
+                    <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-neutral-400 font-bold">
+                      {t.models.priceLabel}
+                    </p>
+                    <p className="mt-1 font-mono text-base sm:text-lg font-bold text-neutral-900">
+                      {getModelDailyRate(activeModel, locale)}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-neutral-200/80 bg-neutral-50/80 p-3.5 hover:border-neutral-300 transition-colors">
+                    <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-neutral-400 font-bold">
+                      {t.models.contextLabel}
+                    </p>
+                    <p className="mt-1 font-mono text-base sm:text-lg font-bold text-neutral-900">
+                      {activeModel.contextWindow}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Routing Status via Morphic */}
+                <div className="mt-4 flex items-center gap-2 rounded-2xl bg-neutral-50 border border-neutral-200/80 px-4 py-2.5">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-600" />
+                  <span className="font-mono text-[10px] tracking-[0.18em] uppercase font-bold text-neutral-600">
+                    {locale === 'en' ? 'READY · ROUTED VIA MORPHIC' : 'READY · TERHUBUNG VIA MORPHIC'}
+                  </span>
+                </div>
+
+                {/* Action CTA */}
+                <Link
+                  href={isLoggedIn ? '/dashboard/keys' : '/login'}
+                  className="mt-5 w-full py-3.5 px-4 rounded-2xl bg-neutral-950 hover:bg-neutral-800 text-white text-xs sm:text-sm font-semibold flex items-center justify-center gap-2 transition-all cursor-pointer shadow-xs group/btn"
+                >
+                  <span>{t.models.useModel}</span>
+                  <ArrowUpRight className="w-4 h-4 transition-transform group-hover/btn:translate-x-0.5 group-hover/btn:-translate-y-0.5" />
+                </Link>
+              </motion.div>
+            </AnimatePresence>
+          </div>
+        </motion.div>
       </div>
     </section>
   );

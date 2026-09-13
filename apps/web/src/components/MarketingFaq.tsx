@@ -1,8 +1,12 @@
 'use client';
 
-import { useState } from 'react';
-import { ChevronDown, HelpCircle } from 'lucide-react';
+import React, { useState } from 'react';
+import { motion } from 'framer-motion';
 import { useTranslation } from '@/lib/i18n';
+import { useReducedMotionSafe } from '@/lib/use-reduced-motion-safe';
+import { Plus } from 'lucide-react';
+
+const EASE = [0.16, 1, 0.3, 1] as const;
 
 interface FaqItem {
   q: { id: string; en: string };
@@ -10,6 +14,7 @@ interface FaqItem {
 }
 
 const FAQS: FaqItem[] = [
+
   {
     q: {
       id: 'Mengapa saya membutuhkan gateway API Key dari Morphic?',
@@ -65,32 +70,44 @@ const FAQS: FaqItem[] = [
 export default function MarketingFaq() {
   const { locale, t } = useTranslation();
   const [openIndex, setOpenIndex] = useState<number | null>(0);
+  const reduced = useReducedMotionSafe();
 
   const toggle = (idx: number) => {
     setOpenIndex(openIndex === idx ? null : idx);
   };
 
   return (
-    <section id="faq" className="relative z-10 py-20 px-4 sm:px-6 bg-[#fafafa] text-neutral-900 border-t border-neutral-200/90">
-      <div className="max-w-4xl mx-auto">
-        {/* Header */}
-        <div className="text-center max-w-2xl mx-auto mb-12">
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-neutral-100 border border-neutral-200 text-neutral-800 text-xs font-semibold mb-4 shadow-sm">
-            <HelpCircle className="h-3.5 w-3.5 text-neutral-900" />
-            <span suppressHydrationWarning>{t.faq.badge}</span>
+    <section id="faq" className="relative z-10 py-14 lg:py-20 px-6 bg-[#fafafa] text-neutral-900 border-t border-neutral-200/70 scroll-mt-20 sm:scroll-mt-24">
+      <div className="max-w-6xl mx-auto grid gap-12 lg:grid-cols-[0.7fr_1.3fr] items-start">
+        {/* Left Column: Sticky Header */}
+        <motion.div
+          initial={reduced ? false : { opacity: 0, y: 14, filter: 'blur(4px)' }}
+          whileInView={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+          viewport={{ once: true, margin: '-50px' }}
+          transition={{ duration: 0.5, ease: EASE }}
+          className="lg:sticky lg:top-32 lg:self-start"
+        >
+          <div className="text-xs sm:text-sm font-mono uppercase tracking-[0.2em] text-neutral-400 font-bold mb-3">
+            {t.faq.badge}
           </div>
 
-          <h2 suppressHydrationWarning className="text-3xl sm:text-4xl font-heading font-extrabold tracking-tight mb-3 text-neutral-950">
+          <h2 suppressHydrationWarning className="text-4xl sm:text-5xl lg:text-6xl font-heading font-extrabold tracking-tight mb-4 text-neutral-950">
             {t.faq.title}
           </h2>
 
-          <p suppressHydrationWarning className="text-neutral-600 font-body text-sm sm:text-base leading-relaxed">
+          <p suppressHydrationWarning className="text-neutral-600 font-body text-base sm:text-lg leading-relaxed max-w-sm">
             {t.faq.desc}
           </p>
-        </div>
+        </motion.div>
 
-        {/* Accordion list */}
-        <div className="space-y-3">
+        {/* Right Column: Numbered Hairline Accordion List */}
+        <motion.div
+          initial={reduced ? false : { opacity: 0, y: 16, filter: 'blur(4px)' }}
+          whileInView={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+          viewport={{ once: true, margin: '-40px' }}
+          transition={{ duration: 0.55, delay: 0.1, ease: EASE }}
+          className="border-t border-neutral-200 divide-y divide-neutral-200"
+        >
           {FAQS.map((faq, idx) => {
             const isOpen = openIndex === idx;
             const question = faq.q[locale] || faq.q.en || faq.q.id;
@@ -99,30 +116,49 @@ export default function MarketingFaq() {
             return (
               <div
                 key={idx}
-                className="rounded-2xl border border-neutral-200/90 bg-white overflow-hidden transition-all duration-200 hover:border-neutral-300 shadow-xs"
+                className="transition-colors"
               >
                 <button
+                  type="button"
                   onClick={() => toggle(idx)}
-                  className="w-full p-5 sm:p-6 text-left flex items-center justify-between gap-4 hover:bg-neutral-50/70 cursor-pointer transition-colors"
+                  aria-expanded={isOpen}
+                  className="w-full py-6 sm:py-7 text-left flex items-center justify-between gap-6 cursor-pointer group"
                 >
-                  <span suppressHydrationWarning className="font-heading font-bold text-base sm:text-lg text-neutral-950">
-                    {question}
+                  <span className="flex items-baseline gap-4 min-w-0 pr-2">
+                    <span className={`font-mono text-sm tabular-nums shrink-0 transition-colors ${isOpen ? 'text-neutral-950 font-bold' : 'text-neutral-400 group-hover:text-neutral-600'}`}>
+                      {String(idx + 1).padStart(2, '0')}
+                    </span>
+                    <span suppressHydrationWarning className={`font-heading text-lg sm:text-xl tracking-tight transition-colors ${
+                      isOpen ? 'text-neutral-950 font-bold' : 'text-neutral-800 font-semibold group-hover:text-neutral-950'
+                    }`}>
+                      {question}
+                    </span>
                   </span>
-                  <ChevronDown
-                    className={`h-4 w-4 text-neutral-500 shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-180 text-neutral-950' : ''
-                      }`}
-                  />
+
+                  <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-full border transition-all duration-300 ${
+                    isOpen
+                      ? 'border-neutral-950 bg-neutral-950 text-white rotate-45 shadow-xs'
+                      : 'border-neutral-200 bg-white text-neutral-500 group-hover:border-neutral-400 group-hover:text-neutral-900'
+                  }`}>
+                    <Plus className="h-4.5 w-4.5" />
+                  </span>
                 </button>
 
-                {isOpen && (
-                  <div suppressHydrationWarning className="px-5 sm:px-6 pb-6 text-xs sm:text-sm text-neutral-600 font-body leading-relaxed border-t border-neutral-100 pt-4 bg-white">
-                    {answer}
+                <div
+                  className={`grid transition-[grid-template-rows,opacity] duration-300 ease-out ${
+                    isOpen ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'
+                  }`}
+                >
+                  <div className="overflow-hidden">
+                    <div suppressHydrationWarning className="pb-7 pl-8 pr-4 text-sm sm:text-base text-neutral-600 font-body leading-relaxed">
+                      {answer}
+                    </div>
                   </div>
-                )}
+                </div>
               </div>
             );
           })}
-        </div>
+        </motion.div>
       </div>
     </section>
   );

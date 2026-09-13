@@ -46,6 +46,7 @@ export async function sessionAuth(c: Context, next: Next) {
       id: s.sessions.id,
       userId: s.sessions.userId,
       expiresAt: s.sessions.expiresAt,
+      suspended: s.users.suspended,
     })
     .from(s.sessions)
     .where(
@@ -60,6 +61,13 @@ export async function sessionAuth(c: Context, next: Next) {
     return c.json(
       { error: { message: 'invalid or expired session token', type: 'auth_error', code: 'invalid_session_token' } },
       401,
+    );
+  }
+
+  if (session.suspended) {
+    return c.json(
+      { error: { message: 'account suspended', type: 'auth_error', code: 'account_suspended' } },
+      403,
     );
   }
 

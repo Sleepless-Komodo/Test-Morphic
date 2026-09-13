@@ -11,17 +11,8 @@ export default async function KeysPage() {
       createdAt: k.createdAt ? new Date(k.createdAt) : new Date(),
     }));
   } catch (err) {
-    console.warn('[KeysPage] Database offline, showing fallback sample keys:', err);
-    keys = [
-      {
-        id: 'dev-key-1',
-        name: 'Cursor & Cline Dev Key',
-        keyPrefix: 'mp-live-9f82a4d1082c',
-        status: 'active',
-        lastUsedAt: new Date(),
-        createdAt: new Date(),
-      },
-    ];
+    console.warn('[KeysPage] Error fetching api keys:', err);
+    keys = [];
   }
 
   return <KeysView initialKeys={keys} />;

@@ -33,13 +33,10 @@ export function ModelsView({ initialModels }: { initialModels: any[] }) {
   }, [initialModels, search, selectedCap]);
 
   return (
-    <div className="max-w-6xl mx-auto px-4 md:px-8 py-8 space-y-8">
+    <div className="w-full space-y-8">
       {/* Header */}
       <div className="border-b border-neutral-200/70 pb-4 flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
-          <div suppressHydrationWarning className="text-[11px] font-mono uppercase tracking-wider text-neutral-400 font-semibold mb-1">
-            {locale === 'en' ? 'Morphic Developer Console / Models' : 'Morphic Developer Console / Model AI'}
-          </div>
           <h1 suppressHydrationWarning className="text-2xl md:text-3xl font-heading font-extrabold text-neutral-950 tracking-tight">
             {t.dashboard.modelsPageTitle}
           </h1>
@@ -63,7 +60,7 @@ export function ModelsView({ initialModels }: { initialModels: any[] }) {
 
       {/* Filter Tabs */}
       <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-2xl bg-white border border-neutral-200/90 shadow-2xs">
-        <div className="flex items-center gap-1.5 overflow-x-auto text-xs">
+        <div className="flex items-center gap-1.5 overflow-x-auto text-xs py-0.5">
           {[
             { id: 'All', label: t.dashboard.filterAllCap },
             { id: 'coding', label: locale === 'en' ? 'Code' : 'Coding' },
@@ -74,7 +71,7 @@ export function ModelsView({ initialModels }: { initialModels: any[] }) {
             <button
               key={cap.id}
               onClick={() => setSelectedCap(cap.id)}
-              className={`px-3 py-1.5 rounded-xl font-semibold transition-all cursor-pointer ${
+              className={`px-3 py-1.5 rounded-xl font-semibold transition-all active:scale-95 cursor-pointer ${
                 selectedCap === cap.id
                   ? 'bg-neutral-950 text-white shadow-2xs'
                   : 'text-neutral-600 hover:text-black hover:bg-neutral-100'
@@ -84,7 +81,7 @@ export function ModelsView({ initialModels }: { initialModels: any[] }) {
             </button>
           ))}
         </div>
-        <div suppressHydrationWarning className="text-xs font-mono text-neutral-400 pl-2">
+        <div suppressHydrationWarning className="text-xs font-mono text-neutral-500 font-medium pl-2">
           {filtered.length} {t.dashboard.activeModelsSuffix}
         </div>
       </div>

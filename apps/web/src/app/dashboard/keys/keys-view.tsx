@@ -1,10 +1,11 @@
 'use client';
 
 import { useState, useTransition } from 'react';
+import Link from 'next/link';
 import { useTranslation } from '@/lib/i18n';
 import { createApiKey, revokeApiKey } from '@/lib/actions';
 import { timeAgo } from '@/lib/utils';
-import { KeyRound, Copy, Check, ShieldAlert, Sparkles, Terminal, Trash2 } from 'lucide-react';
+import { ArrowUpRight, KeyRound, Copy, Check, ShieldAlert, ShieldCheck, Trash2 } from 'lucide-react';
 
 const maskedKey = (prefix: string) => `${(prefix || 'mp-live-').slice(0, 10)}••••••••••••••••`;
 
@@ -17,12 +18,32 @@ interface KeyItem {
   createdAt: Date;
 }
 
+function CopyPrefixButton({ prefix }: { prefix: string }) {
+  const [copied, setCopied] = useState(false);
+  const onCopy = () => {
+    navigator.clipboard.writeText(prefix);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+  return (
+    <button
+      type="button"
+      onClick={onCopy}
+      title="Salin Prefix Kunci"
+      className="p-1 rounded hover:bg-neutral-200/60 text-neutral-400 hover:text-neutral-700 transition cursor-pointer"
+    >
+      {copied ? <Check className="h-3 w-3 text-emerald-600" /> : <Copy className="h-3 w-3" />}
+    </button>
+  );
+}
+
 export function KeysView({ initialKeys }: { initialKeys: KeyItem[] }) {
   const { t, locale } = useTranslation();
   const [keys, setKeys] = useState<KeyItem[]>(initialKeys);
   const [newKeyName, setNewKeyName] = useState('');
   const [createdRawKey, setCreatedRawKey] = useState<string | null>(null);
   const [copiedKey, setCopiedKey] = useState(false);
+  const [confirmRevokeId, setConfirmRevokeId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
   const handleCreate = (e: React.FormEvent) => {
@@ -35,12 +56,13 @@ export function KeysView({ initialKeys }: { initialKeys: KeyItem[] }) {
       const res = await createApiKey({ raw: null }, fd);
       if (res.raw) {
         setCreatedRawKey(res.raw);
-        const hex = Array.from({ length: 12 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+        const actualPrefix = (res as any).prefix || res.raw.slice(0, 16);
+        const realId = (res as any).id || `k-${Date.now()}`;
         setKeys((prev) => [
           {
-            id: `k-${Date.now()}`,
+            id: realId,
             name: newKeyName.trim(),
-            keyPrefix: `mp-${hex}`,
+            keyPrefix: actualPrefix,
             status: 'active',
             lastUsedAt: null,
             createdAt: new Date(),
@@ -68,12 +90,9 @@ export function KeysView({ initialKeys }: { initialKeys: KeyItem[] }) {
   };
 
   return (
-    <div className="max-w-6xl mx-auto px-4 md:px-8 py-8 space-y-8">
+    <div className="w-full space-y-8">
       {/* Header */}
       <div className="border-b border-neutral-200/70 pb-4">
-        <div suppressHydrationWarning className="text-[11px] font-mono uppercase tracking-wider text-neutral-400 font-semibold mb-1">
-          {locale === 'en' ? 'Morphic Developer Console / Authentication' : 'Morphic Developer Console / Autentikasi'}
-        </div>
         <h1 suppressHydrationWarning className="text-2xl md:text-3xl font-heading font-extrabold text-neutral-950 tracking-tight">
           {t.dashboard.keysPageTitle}
         </h1>
@@ -90,12 +109,12 @@ export function KeysView({ initialKeys }: { initialKeys: KeyItem[] }) {
             value={newKeyName}
             onChange={(e) => setNewKeyName(e.target.value)}
             placeholder={t.dashboard.keyNameInputPlaceholder}
-            className="flex-1 bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-2.5 text-xs text-neutral-900 focus:outline-none focus:border-black transition-colors"
+            className="flex-1 bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-2.5 text-xs text-neutral-900 focus:outline-none focus:border-black focus-visible:ring-2 focus-visible:ring-neutral-950/20 transition-colors"
           />
           <button
             type="submit"
             disabled={isPending || !newKeyName.trim()}
-            className="px-5 py-2.5 rounded-xl bg-neutral-950 hover:bg-neutral-800 disabled:opacity-50 text-white text-xs font-bold transition-all shadow-xs shrink-0 flex items-center justify-center gap-1.5 cursor-pointer"
+            className="px-5 py-2.5 rounded-xl bg-neutral-950 hover:bg-neutral-800 disabled:opacity-50 text-white text-xs font-bold transition-all shadow-xs shrink-0 flex items-center justify-center gap-1.5 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 focus-visible:ring-offset-2 active:scale-95"
           >
             <KeyRound className="h-3.5 w-3.5" />
             <span>{isPending ? t.dashboard.creatingKeyBtn : t.dashboard.createKeyBtn}</span>
@@ -104,9 +123,9 @@ export function KeysView({ initialKeys }: { initialKeys: KeyItem[] }) {
 
         {/* Revealed Key Banner */}
         {createdRawKey && (
-          <div className="p-4 rounded-2xl bg-neutral-900 text-white border border-neutral-800 shadow-md space-y-3 animate-in fade-in">
+          <div className="p-4 rounded-2xl bg-neutral-900 text-white border border-neutral-800 shadow-md space-y-3 animate-in fade-in slide-in-from-top-3 duration-250 ease-out">
             <div className="flex items-center gap-2 text-xs font-mono text-emerald-400 font-bold">
-              <Sparkles className="h-4 w-4" />
+              <ShieldCheck className="h-4 w-4" />
               <span>{t.dashboard.revealKeyPrompt}</span>
             </div>
             <div className="flex items-center gap-3 p-3 rounded-xl bg-neutral-950 border border-neutral-800">
@@ -167,30 +186,68 @@ export function KeysView({ initialKeys }: { initialKeys: KeyItem[] }) {
                   <tr key={k.id} className="hover:bg-neutral-50/50 transition-colors">
                     <td className="px-6 py-4 font-bold text-neutral-900">{k.name}</td>
                     <td className="px-6 py-4 font-mono text-neutral-600">
-                      <span className="px-2 py-0.5 rounded-md bg-neutral-100 border border-neutral-200">
-                        {maskedKey(k.keyPrefix)}
-                      </span>
+                      <div className="inline-flex items-center gap-1.5">
+                        <span className="px-2 py-0.5 rounded-md bg-neutral-100 border border-neutral-200">
+                          {maskedKey(k.keyPrefix)}
+                        </span>
+                        <CopyPrefixButton prefix={k.keyPrefix} />
+                      </div>
                     </td>
                     <td className="px-6 py-4">
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-neutral-100 text-neutral-800 border border-neutral-200">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                        <span suppressHydrationWarning>{k.status === 'active' ? (locale === 'en' ? 'Active' : 'Aktif') : k.status}</span>
-                      </span>
+                      {k.status === 'active' ? (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-50 text-emerald-800 border border-emerald-200/80 shadow-2xs">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 ring-2 ring-emerald-500/20" />
+                          <span suppressHydrationWarning>{locale === 'en' ? 'Active' : 'Aktif'}</span>
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-neutral-100 text-neutral-600 border border-neutral-200">
+                          <span className="w-1.5 h-1.5 rounded-full bg-neutral-400" />
+                          <span>{k.status}</span>
+                        </span>
+                      )}
                     </td>
                     <td className="px-6 py-4 text-neutral-500 font-mono text-[11px]">
-                      {timeAgo(k.lastUsedAt)}
+                      {timeAgo(k.lastUsedAt, locale)}
                     </td>
                     <td className="px-6 py-4 text-neutral-500 font-mono text-[11px]">
                       {new Date(k.createdAt).toLocaleDateString(locale === 'en' ? 'en-US' : 'id-ID')}
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <button
-                        onClick={() => handleRevoke(k.id)}
-                        className="px-2.5 py-1 rounded-lg border border-neutral-200 hover:border-red-300 hover:bg-red-50 text-neutral-600 hover:text-red-700 text-[11px] font-semibold transition-colors cursor-pointer inline-flex items-center gap-1"
-                      >
-                        <Trash2 className="h-3 w-3" />
-                        <span suppressHydrationWarning>{t.dashboard.revokeBtn}</span>
-                      </button>
+                      {confirmRevokeId === k.id ? (
+                        <div className="inline-flex items-center gap-1.5 justify-end">
+                          <span className="text-[11px] text-red-600 font-bold">
+                            {locale === 'en' ? 'Revoke?' : 'Cabut?'}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              handleRevoke(k.id);
+                              setConfirmRevokeId(null);
+                            }}
+                            disabled={isPending}
+                            className="px-2 py-0.5 rounded-md bg-red-600 hover:bg-red-700 text-white text-[10px] font-bold transition-all active:scale-95 shadow-2xs cursor-pointer"
+                          >
+                            {locale === 'en' ? 'Yes' : 'Ya'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmRevokeId(null)}
+                            disabled={isPending}
+                            className="px-2 py-0.5 rounded-md bg-neutral-100 hover:bg-neutral-200 text-neutral-700 text-[10px] font-semibold transition-all active:scale-95 cursor-pointer"
+                          >
+                            {locale === 'en' ? 'Cancel' : 'Batal'}
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setConfirmRevokeId(k.id)}
+                          className="px-2.5 py-1 rounded-lg border border-neutral-200 hover:border-red-300 hover:bg-red-50 text-neutral-600 hover:text-red-700 text-[11px] font-semibold transition-colors cursor-pointer inline-flex items-center gap-1"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                          <span suppressHydrationWarning>{t.dashboard.revokeBtn}</span>
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -200,20 +257,31 @@ export function KeysView({ initialKeys }: { initialKeys: KeyItem[] }) {
         )}
       </div>
 
-      {/* Integration Guide Bento Card */}
-      <div className="p-6 rounded-3xl bg-neutral-950 text-white border border-neutral-800 shadow-md space-y-3">
-        <div className="flex items-center gap-2 text-xs font-bold text-neutral-200">
-          <Terminal className="h-4 w-4 text-neutral-400" />
-          <span suppressHydrationWarning>{t.dashboard.quickstartTitle}</span>
+      {/* Security Best Practices & Documentation Callout (OpenAI / Groq Standard) */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 sm:p-5 rounded-2xl bg-white border border-neutral-200/90 shadow-2xs">
+        <div className="flex items-start sm:items-center gap-3.5">
+          <div className="w-8 h-8 rounded-xl bg-neutral-100 border border-neutral-200/80 text-neutral-600 flex items-center justify-center shrink-0">
+            <ShieldAlert className="h-4 w-4 text-neutral-700" />
+          </div>
+          <div className="text-xs text-neutral-600 leading-relaxed">
+            <span className="font-bold text-neutral-950 block sm:inline mr-1.5">
+              {locale === 'id' ? 'Keamanan Kunci API:' : 'API Key Security:'}
+            </span>
+            <span>
+              {locale === 'id'
+                ? 'Jangan pernah membagikan kunci rahasia Anda atau menyimpannya di repository publik. Selalu gunakan environment variable (.env) lokal.'
+                : 'Do not share your secret key with others, or commit it to public repositories. Always use local environment variables.'}
+            </span>
+          </div>
         </div>
-        <p suppressHydrationWarning className="text-xs text-neutral-400 leading-relaxed">
-          {t.dashboard.quickstartDesc}
-        </p>
-        <div className="p-4 rounded-2xl bg-neutral-900 border border-neutral-800 font-mono text-xs text-neutral-300 space-y-1 overflow-x-auto">
-          <div><span suppressHydrationWarning className="text-neutral-500">{locale === 'en' ? '# Cursor / Cline / Windsurf OpenAI Override:' : '# Konfigurasi Override OpenAI di Cursor / Cline / Windsurf:'}</span></div>
-          <div><span className="text-emerald-400">OPENAI_BASE_URL</span>=https://api.morphic.sh/v1</div>
-          <div><span className="text-emerald-400">OPENAI_API_KEY</span>=mp-live-xxxxxxxxxxxxxxxxxxxx</div>
-        </div>
+
+        <Link
+          href="/docs"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-neutral-200 hover:border-neutral-300 hover:bg-neutral-50 text-xs font-semibold text-neutral-800 hover:text-neutral-950 transition-all shrink-0 self-start sm:self-auto cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
+        >
+          <span>{locale === 'id' ? 'Panduan Setup IDE' : 'Setup Guides'}</span>
+          <ArrowUpRight className="h-3.5 w-3.5 text-neutral-500" />
+        </Link>
       </div>
     </div>
   );
