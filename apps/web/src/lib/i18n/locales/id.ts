@@ -338,6 +338,12 @@ export const id = {
       expiresPrefix: 'Kedaluwarsa:',
       qrisHistoryTitle: 'Riwayat Pembayaran QRIS',
       noPaymentsHistory: 'Belum ada transaksi pembayaran.',
+      ledgerHistoryTitle: 'Riwayat Mutasi Saldo',
+      noLedgerHistory: 'Belum ada mutasi saldo tercatat.',
+      thLedgerType: 'Tipe Mutasi',
+      thLedgerAmount: 'Perubahan Saldo',
+      thLedgerRef: 'Keterangan / Referensi',
+      thLedgerDate: 'Waktu',
 
       // Subpage Voucher / Redeem
       redeemPageTitle: 'Klaim Kode Voucher',
