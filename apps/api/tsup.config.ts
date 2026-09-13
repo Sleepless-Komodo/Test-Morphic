@@ -4,5 +4,7 @@ export default defineConfig({
   entry: ['src/index.ts'],
   format: ['esm'],
   clean: true,
+  bundle: true,
+  splitting: false,
   noExternal: ['@morphic/db', '@morphic/shared'],
 });
