@@ -1,5 +1,5 @@
 import { handle } from 'hono/vercel';
-import { app } from './app';
+import { app } from '../src/app';
 import { db, schema as s } from '@morphic/db';
 import { sweepExpiredReservations } from '@morphic/db/billing';
 import { lt } from 'drizzle-orm';

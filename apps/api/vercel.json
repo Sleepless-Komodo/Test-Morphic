@@ -1,17 +1,9 @@
 {
   "version": 2,
-  "buildCommand": "pnpm build",
-  "installCommand": "pnpm install --frozen-lockfile",
-  "functions": {
-    "dist/index.vercel.js": {
-      "runtime": "nodejs22.x",
-      "maxDuration": 30
-    }
-  },
-  "routes": [
+  "rewrites": [
     {
-      "src": "/(.*)",
-      "dest": "/dist/index.vercel.js"
+      "source": "/(.*)",
+      "destination": "/api/index"
     }
   ]
 }
