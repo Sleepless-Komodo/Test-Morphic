@@ -190,7 +190,7 @@ check('ghost status released', ghost!.status === 'released');
 
 // ledger sum == balance cache (source of truth consistency, balance-sourced entries)
 const [sum] = await db
-  .select({ total: sql<number>`coalesce(sum(${s.creditLedger.amount}),0)::int` })
+  .select({ total: sql<number>`coalesce(sum(${s.creditLedger.amount}),0)::bigint` })
   .from(s.creditLedger)
   .where(sql`${s.creditLedger.userId} = ${user!.id} and ${s.creditLedger.sourceType} = 'balance'`);
 check('ledger sum == balance', Number(sum!.total) === b5, `ledger ${sum!.total} vs balance ${b5}`);

@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch --env-file-if-exists=../../.env src/index.ts",
+    "seed:dahl": "tsx --env-file-if-exists=../../.env scripts/seed-dahl.ts",
     "build": "tsc --noEmit && tsup",
     "start": "node --env-file-if-exists=../../.env dist/index.js",
     "lint": "eslint src",

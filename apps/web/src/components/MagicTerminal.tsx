@@ -1,10 +1,23 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Copy, Check, Terminal as TerminalIcon, Sparkles } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { Copy, Check, Terminal as TerminalIcon } from 'lucide-react';
 import { useTranslation } from '@/lib/i18n';
+import { useReducedMotionSafe } from '@/lib/use-reduced-motion-safe';
 
 type TabKey = 'cursor' | 'cline' | 'python' | 'curl';
+
+interface MagicTerminalProps {
+  /** Milliseconds per typed character. Lower = faster typing. */
+  typeSpeed?: number;
+  /** Milliseconds before the first typing cycle starts. */
+  startDelay?: number;
+  /** Milliseconds the finished command + output stays on screen before the loop restarts. */
+  loopDelay?: number;
+  /** Milliseconds between each revealed output line. */
+  outputLineDelay?: number;
+}
 
 const TERMINAL_SNIPPETS: Record<
   TabKey,
@@ -19,12 +32,12 @@ const TERMINAL_SNIPPETS: Record<
   cursor: {
     label: 'Cursor IDE',
     file: 'cursor.settings.json',
-    command: 'curl -s https://api.morphic.sh/v1/models',
+    command: 'cursor settings apply --provider openai',
     outputLines: [
       '✔ Base URL: https://api.morphic.sh/v1',
-      '✔ API Key:  mp-live-xxxxxxxxxxxx',
-      '✔ Active Model: deepseek-v4-coder (Latensi: 120ms)',
-      '✔ Status: 100% OpenAI-compatible ready for composer',
+      '✔ API Key:  mp-xxxxxxxxxxxxxxxxxxxx',
+      '✔ Models: deepseek-v4-coder, claude-3.5-sonnet-proxy, qwen-2.5-max, kimi-k1.5-coding',
+      '✔ Status: OpenAI-compatible ready for composer',
     ],
     rawSnippet: `// Cursor Settings > Models > OpenAI API:
 Base URL: https://api.morphic.sh/v1
@@ -39,12 +52,13 @@ API Key:  mp-xxxxxxxxxxxxxxxxxxxx
   cline: {
     label: 'Cline / VSCode',
     file: 'cline_mcp_settings.json',
-    command: 'cline config set provider=openai-compatible',
+    command: 'cline settings apply cline_mcp_settings.json',
     outputLines: [
-      '✔ Provider configured: OpenAI Compatible',
-      '✔ Endpoint set: https://api.morphic.sh/v1',
-      '✔ Auth token validated: mp-live-active',
-      '✔ High-concurrency mode: Enabled (180 RPM)',
+      '✔ apiProvider: openai',
+      '✔ openAiBaseUrl: https://api.morphic.sh/v1',
+      '✔ openAiApiKey: mp-xxxxxxxxxxxxxxxxxxxx',
+      '✔ openAiModelId: deepseek-v4-coder',
+      '✔ Provider ready — start chatting in VSCode',
     ],
     rawSnippet: `{
   "apiProvider": "openai",
@@ -79,48 +93,86 @@ print(response.choices[0].message.content)`,
   curl: {
     label: 'cURL',
     file: 'request.sh',
-    command: 'curl -i https://api.morphic.sh/v1/chat/completions \\',
+    command: `curl https://api.morphic.sh/v1/chat/completions \\
+  -H "Authorization: Bearer mp-xxxxxxxx" \\
+  -H "Content-Type: application/json" \\
+  -d '{"model": "deepseek-v4", "messages": [{"role": "user", "content": "Hello"}]}'`,
     outputLines: [
       'HTTP/2 200 OK',
       'content-type: application/json',
       'x-morphic-latency: 142ms',
-      '{"id":"chatcmpl-9x","choices":[{"message":{"role":"assistant","content":"Ready."}}]}',
+      '{"id":"chatcmpl-9x","choices":[{"message":{"role":"assistant","content":"Hello! How can I help you?"}}]}',
     ],
     rawSnippet: `curl https://api.morphic.sh/v1/chat/completions \\
-  -H "Authorization: Bearer mp-xxxxxxxxxxxxxxxxxxxx" \\
+  -H "Authorization: Bearer mp-xxxxxxxx" \\
   -H "Content-Type: application/json" \\
-  -d '{
-    "model": "deepseek-v4-coder",
-    "messages": [{"role": "user", "content": "Hello Morphic!"}]
-  }'`,
+  -d '{"model": "deepseek-v4", "messages": [{"role": "user", "content": "Hello"}]}'`,
   },
 };
 
-export default function MagicTerminal() {
+export default function MagicTerminal({
+  typeSpeed = 28,
+  startDelay = 400,
+  loopDelay = 2400,
+  outputLineDelay = 170,
+}: MagicTerminalProps = {}) {
   const { t } = useTranslation();
-  const [activeTab, setActiveTab] = useState<TabKey>('cursor');
+  const [activeTab, setActiveTab] = useState<TabKey>('curl');
   const [copied, setCopied] = useState(false);
-  const [visibleLines, setVisibleLines] = useState<number>(0);
+  const [typedCount, setTypedCount] = useState(0);
+  const [visibleLines, setVisibleLines] = useState(0);
 
   const snippet = TERMINAL_SNIPPETS[activeTab];
+  const command = snippet.command;
+  const outputLines = snippet.outputLines;
+
+  // Looping typing animation: type command -> reveal output lines -> hold -> reset -> repeat
+  useEffect(() => {
+    let cancelled = false;
+    let id = 0;
+
+    const later = (fn: () => void, delay: number) => {
+      id = window.setTimeout(fn, delay);
+    };
+
+    function revealOutputs(n: number) {
+      if (cancelled) return;
+      setVisibleLines(n);
+      if (n < outputLines.length) {
+        later(() => revealOutputs(n + 1), outputLineDelay);
+      } else {
+        later(() => {
+          if (cancelled) return;
+          setTypedCount(0);
+          setVisibleLines(0);
+          later(() => typeFrom(1), typeSpeed);
+        }, loopDelay);
+      }
+    }
+
+    function typeFrom(n: number) {
+      if (cancelled) return;
+      setTypedCount(n);
+      if (n < command.length) {
+        later(() => typeFrom(n + 1), typeSpeed);
+      } else {
+        later(() => revealOutputs(1), outputLineDelay);
+      }
+    }
+
+    later(() => typeFrom(1), startDelay);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(id);
+    };
+  }, [command, outputLines, typeSpeed, startDelay, loopDelay, outputLineDelay]);
 
   const handleTabChange = (tab: TabKey) => {
     setActiveTab(tab);
+    setTypedCount(0);
     setVisibleLines(0);
   };
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setVisibleLines((prev) => {
-        if (prev < snippet.outputLines.length) {
-          return prev + 1;
-        }
-        clearInterval(timer);
-        return prev;
-      });
-    }, 180);
-    return () => clearInterval(timer);
-  }, [activeTab, snippet.outputLines.length]);
 
   const handleCopy = () => {
     navigator.clipboard.writeText(snippet.rawSnippet);
@@ -128,115 +180,137 @@ export default function MagicTerminal() {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const reduced = useReducedMotionSafe();
+
   return (
-    <section id="terminal" className="relative z-10 py-20 px-4 sm:px-6 bg-white text-neutral-900 border-t border-neutral-200/90">
-      <div className="max-w-4xl mx-auto">
-        {/* Section Header */}
-        <div className="text-center max-w-2xl mx-auto mb-10">
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-neutral-100 border border-neutral-200 text-neutral-800 text-xs font-semibold mb-4 shadow-sm">
-            <Sparkles className="h-3.5 w-3.5 text-neutral-900" />
-            <span>{t.terminal.badge}</span>
+    <section id="terminal" className="relative z-10 py-14 lg:py-20 px-6 bg-white text-neutral-900 border-t border-neutral-200/70 scroll-mt-20 sm:scroll-mt-24">
+      <div className="max-w-6xl mx-auto grid lg:grid-cols-[0.9fr_1.1fr] gap-10 lg:gap-14 items-center">
+        {/* Left Column: Editorial Value Proposition */}
+        <motion.div
+          initial={reduced ? false : { opacity: 0, y: 14, filter: 'blur(4px)' }}
+          whileInView={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+          viewport={{ once: true, margin: '-50px' }}
+          transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+          className="flex flex-col items-start"
+        >
+          <div className="text-xs sm:text-sm font-mono uppercase tracking-[0.2em] text-neutral-400 font-bold mb-3">
+            {t.terminal.badge}
           </div>
 
-          <h2 className="text-3xl sm:text-4xl font-heading font-extrabold tracking-tight mb-3 text-neutral-950">
+          <h2 className="text-4xl sm:text-5xl lg:text-6xl font-heading font-extrabold tracking-tight mb-4 text-neutral-950">
             {t.terminal.title}
           </h2>
 
-          <p className="text-neutral-600 font-body text-sm sm:text-base leading-relaxed">
+          <p className="text-neutral-600 font-body text-base sm:text-lg leading-relaxed mb-8 max-w-lg">
             {t.terminal.desc}
           </p>
-        </div>
 
-        {/* Minimalist MagicUI Style Terminal Window */}
-        <div className="rounded-2xl border border-neutral-300/90 bg-neutral-950 text-neutral-100 shadow-[0_20px_50px_rgba(0,0,0,0.12)] overflow-hidden">
-          {/* macOS Window Title Bar */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-800/80 bg-neutral-900/90 backdrop-blur-md select-none">
-            {/* Window Dots */}
-            <div className="flex items-center gap-2">
-              <span className="w-3 h-3 rounded-full bg-[#FF5F56] border border-[#E0443E]/50 inline-block shadow-xs" />
-              <span className="w-3 h-3 rounded-full bg-[#FFBD2E] border border-[#DEA123]/50 inline-block shadow-xs" />
-              <span className="w-3 h-3 rounded-full bg-[#27C93F] border border-[#1AAB29]/50 inline-block shadow-xs" />
-              <div className="ml-3 hidden sm:flex items-center gap-1.5 text-neutral-400 text-xs font-mono">
+          {/* Feature Pills */}
+          <div className="flex flex-wrap gap-2.5">
+            {t.terminal.pills.map((pill) => (
+              <span
+                key={pill}
+                className="px-3.5 py-1.5 rounded-full border border-neutral-200 bg-neutral-50 text-neutral-800 font-mono text-xs tracking-wide font-bold shadow-2xs"
+              >
+                {pill}
+              </span>
+            ))}
+          </div>
+        </motion.div>
+
+        {/* Right Column: Interactive Terminal Mockup */}
+        <motion.div
+          initial={reduced ? false : { opacity: 0, y: 16, filter: 'blur(4px)' }}
+          whileInView={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+          viewport={{ once: true, margin: '-50px' }}
+          transition={{ duration: 0.55, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
+          className="relative group w-full"
+        >
+          <div className="relative bg-white border border-neutral-200 rounded-2xl shadow-[0_2px_10px_rgba(0,0,0,0.04)] hover:shadow-[0_16px_40px_-18px_rgba(9,9,11,0.2)] hover:border-neutral-300 transition-all duration-300 overflow-hidden">
+            {/* Terminal Header - Tabs */}
+            <div className="bg-neutral-100/80 border-b border-neutral-200/80 px-4 pt-3 flex items-center justify-between">
+              <div className="flex space-x-1 overflow-x-auto no-scrollbar">
+                {(Object.keys(TERMINAL_SNIPPETS) as TabKey[]).map((key) => (
+                  <button
+                    key={key}
+                    onClick={() => handleTabChange(key)}
+                    className={`px-3.5 py-2 text-[11px] font-mono font-bold rounded-t-lg transition-all whitespace-nowrap cursor-pointer ${
+                      activeTab === key
+                        ? 'bg-neutral-900 text-white shadow-sm'
+                        : 'text-neutral-500 hover:text-neutral-800'
+                    }`}
+                  >
+                    {TERMINAL_SNIPPETS[key].label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Terminal Traffic Light Controls */}
+              <div className="hidden sm:flex items-center space-x-1.5 pb-2 pl-3 shrink-0">
+                <div className="w-2.5 h-2.5 rounded-full bg-[#ff5f56] border border-[#e0443e]/50 shadow-2xs" />
+                <div className="w-2.5 h-2.5 rounded-full bg-[#ffbd2e] border border-[#dea123]/50 shadow-2xs" />
+                <div className="w-2.5 h-2.5 rounded-full bg-[#27c93f] border border-[#1aab29]/50 shadow-2xs" />
+              </div>
+            </div>
+
+            {/* File Name Title Bar */}
+            <div className="bg-white border-b border-neutral-200/80 px-4 py-2 flex items-center justify-between">
+              <div className="flex items-center gap-2 text-neutral-600">
                 <TerminalIcon className="h-3.5 w-3.5 text-neutral-500" />
-                <span>morphic-runtime — {snippet.file}</span>
+                <span className="text-[11px] font-mono font-medium">{snippet.file}</span>
               </div>
+
+              <button
+                onClick={handleCopy}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-bold border transition-all cursor-pointer ${
+                  copied
+                    ? 'border-emerald-500 bg-emerald-500 text-white'
+                    : 'border-neutral-300 bg-white text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900'
+                }`}
+              >
+                {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                <span>{copied ? t.terminal.copied : t.terminal.copy}</span>
+              </button>
             </div>
 
-            {/* Tab Selectors */}
-            <div className="flex items-center gap-1.5 overflow-x-auto">
-              {(Object.keys(TERMINAL_SNIPPETS) as TabKey[]).map((tab) => (
-                <button
-                  key={tab}
-                  onClick={() => handleTabChange(tab)}
-                  className={`px-3 py-1 rounded-lg text-xs font-mono font-medium transition-all cursor-pointer ${
-                    activeTab === tab
-                      ? 'bg-neutral-800 text-white shadow-inner border border-neutral-700'
-                      : 'text-neutral-400 hover:text-white hover:bg-neutral-800/50'
-                  }`}
-                >
-                  {TERMINAL_SNIPPETS[tab].label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Terminal Body */}
-          <div className="p-5 sm:p-6 font-mono text-xs sm:text-sm relative">
-            {/* Copy button */}
-            <button
-              onClick={handleCopy}
-              className="absolute top-4 right-4 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-neutral-800/80 hover:bg-neutral-700/80 text-neutral-300 hover:text-white text-xs border border-neutral-700 transition-all cursor-pointer shadow-sm z-10"
-              title="Copy snippet"
-            >
-              {copied ? (
-                <>
-                  <Check className="h-3.5 w-3.5 text-emerald-400" />
-                  <span className="text-emerald-400 font-sans font-semibold">{t.terminal.copied}</span>
-                </>
-              ) : (
-                <>
-                  <Copy className="h-3.5 w-3.5 text-neutral-400" />
-                  <span className="font-sans font-medium">{t.terminal.copy}</span>
-                </>
-              )}
-            </button>
-
-            {/* Command execution line */}
-            <div className="flex items-center gap-2 text-emerald-400 mb-3 select-none">
-              <span className="text-neutral-500 font-bold">$</span>
-              <span className="text-neutral-100 font-semibold">{snippet.command}</span>
-            </div>
-
-            {/* Animated Output Lines */}
-            <div className="space-y-1.5 text-neutral-300 min-h-[100px]">
-              {snippet.outputLines.slice(0, visibleLines).map((line, idx) => (
-                <div
-                  key={idx}
-                  className="animate-in fade-in slide-in-from-bottom-1 duration-150 flex items-start gap-2 text-neutral-300"
-                >
-                  <span className="text-neutral-500 text-[11px] select-none">{idx + 1}</span>
-                  <span className={line.startsWith('✔') ? 'text-emerald-300' : line.startsWith('<<<') ? 'text-cyan-300' : 'text-neutral-300'}>
-                    {line}
-                  </span>
-                </div>
-              ))}
-              {visibleLines < snippet.outputLines.length && (
-                <div className="inline-block w-2 h-4 bg-emerald-400 animate-pulse ml-4 align-middle" />
-              )}
-            </div>
-
-            {/* Live Telemetry Footer Bar */}
-            <div className="mt-5 pt-4 border-t border-neutral-800/80 flex flex-wrap items-center justify-between gap-3 text-[11px] text-neutral-400">
-              <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                <span className="text-neutral-300 font-semibold">{t.terminal.connected}</span>
+            {/* Terminal Body - Light Surface */}
+            <div className="bg-neutral-50 p-4 sm:p-5">
+              {/* Typing command */}
+              <div className="font-mono text-xs sm:text-[13px] leading-relaxed mb-4 min-h-[100px]">
+                <span className="text-emerald-600 select-none">$ </span>
+                <span className="text-neutral-800 font-semibold whitespace-pre-wrap break-words">
+                  {command.slice(0, typedCount)}
+                </span>
+                <span className="inline-block w-[7px] h-[15px] bg-neutral-800/80 align-middle ml-0.5 animate-pulse" />
               </div>
-              <div className="text-neutral-500 font-mono">
-                API Standard: OpenAI v1/chat/completions
+
+              {/* Animated Output Lines */}
+              <div className="space-y-1.5 min-h-[100px]">
+                {outputLines.slice(0, visibleLines).map((line, idx) => (
+                  <div
+                    key={idx}
+                    className="animate-in fade-in slide-in-from-bottom-1 duration-150 flex items-start gap-2"
+                  >
+                    <span className="text-neutral-300 text-[11px] select-none shrink-0">{idx + 1}</span>
+                    <span
+                      className={
+                        line.startsWith('✔')
+                          ? 'text-emerald-600'
+                          : line.startsWith('<<<')
+                            ? 'text-neutral-800 font-semibold'
+                            : line.startsWith('>>>')
+                              ? 'text-neutral-400'
+                              : 'text-neutral-600'
+                      }
+                    >
+                      {line}
+                    </span>
+                  </div>
+                ))}
               </div>
             </div>
           </div>
-        </div>
+        </motion.div>
       </div>
     </section>
   );

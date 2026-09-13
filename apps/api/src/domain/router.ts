@@ -1,6 +1,7 @@
 import { db, schema as s } from '@morphic/db';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, or } from 'drizzle-orm';
 import { resolveProviderCredential } from '@morphic/shared/provider-crypto';
+import { normalizeModelId } from '@morphic/shared/models';
 import { isCircuitOpen } from './circuit-breaker.ts';
 
 export interface ResolvedRoute {
@@ -36,6 +37,7 @@ interface ModelRow {
 }
 
 async function resolveModelRow(publicModelId: string): Promise<ModelRow | null> {
+  const normalized = normalizeModelId(publicModelId);
   const [row] = await db
     .select({
       modelId: s.models.id,
@@ -55,7 +57,7 @@ async function resolveModelRow(publicModelId: string): Promise<ModelRow | null> 
     })
     .from(s.models)
     .innerJoin(s.providers, eq(s.models.providerId, s.providers.id))
-    .where(eq(s.models.publicModelId, publicModelId))
+    .where(or(eq(s.models.publicModelId, publicModelId), eq(s.models.publicModelId, normalized)))
     .limit(1);
 
   return row ?? null;
