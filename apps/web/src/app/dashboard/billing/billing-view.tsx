@@ -4,8 +4,8 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslation } from '@/lib/i18n';
 import { formatCredits } from '@/lib/utils';
-import { createMockPayment, simulatePaymentWebhook } from '@/lib/actions';
-import { Zap, CreditCard, Clock, QrCode, CheckCircle2, RefreshCw, Loader2 } from 'lucide-react';
+import { Zap, CreditCard, Clock, QrCode } from 'lucide-react';
+import { CheckoutModal } from './checkout-modal';
 
 interface BillingViewProps {
   balance: number;
@@ -23,68 +23,10 @@ export function BillingView({
   const router = useRouter();
   const { t, locale } = useTranslation();
   const [balance, setBalance] = useState(initialBalance);
-  const [selectedPkg, setSelectedPkg] = useState<any>(initialPackages[0]);
-  const [showModal, setShowModal] = useState(false);
-  const [paymentDone, setPaymentDone] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [currentPayment, setCurrentPayment] = useState<{
-    paymentId: string;
-    externalId: string;
-    qrPayload: string;
-    amountCents: number;
-    packageName: string;
-  } | null>(null);
+  const [selectedPkg, setSelectedPkg] = useState<any>(null);
 
-  const handleOpenCheckout = async (pkg: any) => {
-    setSelectedPkg(pkg);
-    setShowModal(true);
-    setPaymentDone(false);
-    setCurrentPayment(null);
-
-    const fd = new FormData();
-    fd.set('packageId', pkg.id);
-    try {
-      const res = await createMockPayment(fd);
-      if (res && res.externalId) {
-        setCurrentPayment(res);
-      }
-    } catch (err) {
-      console.warn('[handleOpenCheckout] Mock payment init fallback:', err);
-    }
-  };
-
-  const handleSimulatePayment = async () => {
-    setIsProcessing(true);
-    const addedCredits = selectedPkg?.creditAllowance ?? 15000;
-    try {
-      if (currentPayment?.externalId) {
-        const fd = new FormData();
-        fd.set('externalId', currentPayment.externalId);
-        const res = await simulatePaymentWebhook(fd);
-        if (res?.ok) {
-          setPaymentDone(true);
-          setBalance((p) => p + addedCredits);
-          router.refresh();
-        } else {
-          setPaymentDone(true);
-          setBalance((p) => p + addedCredits);
-        }
-      } else {
-        setPaymentDone(true);
-        setBalance((p) => p + addedCredits);
-      }
-    } catch (err) {
-      console.warn('[handleSimulatePayment] Simulation fallback:', err);
-      setPaymentDone(true);
-      setBalance((p) => p + addedCredits);
-    } finally {
-      setIsProcessing(false);
-      setTimeout(() => {
-        setPaymentDone(false);
-        setShowModal(false);
-        setCurrentPayment(null);
-      }, 1500);
-    }
+  const handleSuccess = (creditsAdded: number) => {
+    setBalance((prev) => prev + creditsAdded);
   };
 
   return (
@@ -160,7 +102,8 @@ export function BillingView({
                   +{formatCredits(p.creditAllowance)} <span suppressHydrationWarning>{locale === 'en' ? 'credits' : 'kredit'}</span>
                 </div>
                 <button
-                  onClick={() => handleOpenCheckout(p)}
+                  id={`buy-pkg-${p.id}`}
+                  onClick={() => setSelectedPkg(p)}
                   className="px-3 py-1.5 rounded-xl bg-neutral-950 hover:bg-neutral-800 text-white text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
                 >
                   <QrCode className="h-3.5 w-3.5" />
@@ -172,59 +115,13 @@ export function BillingView({
         </div>
       </div>
 
-      {/* QRIS Modal */}
-      {showModal && selectedPkg && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-white rounded-3xl border border-neutral-200 max-w-sm w-full p-6 text-center shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-200 ease-out">
-            <div className="flex items-center justify-between border-b pb-3">
-              <div suppressHydrationWarning className="text-xs font-bold text-neutral-500 uppercase font-mono">{t.dashboard.checkoutQris}</div>
-              <button onClick={() => setShowModal(false)} className="text-neutral-400 hover:text-black text-sm cursor-pointer">
-                ✕
-              </button>
-            </div>
-
-            <div>
-              <h3 className="font-heading font-bold text-lg text-neutral-950">
-                {locale === 'en' && selectedPkg.nameEn ? selectedPkg.nameEn : selectedPkg.name}
-              </h3>
-              <div className="text-2xl font-black text-neutral-950 mt-1 font-mono">
-                Rp {(selectedPkg.priceCents ?? 0).toLocaleString('id-ID')}
-              </div>
-              <p suppressHydrationWarning className="text-xs text-neutral-500 mt-1">{t.dashboard.scanQrisDesc}</p>
-            </div>
-
-            <div className="p-4 bg-neutral-50 rounded-2xl border border-neutral-200 inline-block mx-auto">
-              <div className="w-40 h-40 bg-white border border-neutral-200 rounded-xl flex flex-col items-center justify-center text-neutral-900 p-2 mx-auto">
-                <QrCode className="h-24 w-24 text-neutral-950" />
-                <span className="text-[9px] font-mono text-neutral-400 mt-1 truncate max-w-[140px]">
-                  {currentPayment?.externalId || 'QRIS.NMID.00941829'}
-                </span>
-              </div>
-            </div>
-
-            {paymentDone ? (
-              <div className="p-3 bg-neutral-100 border border-neutral-200 rounded-xl text-neutral-900 text-xs font-bold flex items-center justify-center gap-2">
-                <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                <span suppressHydrationWarning>{t.dashboard.paymentSuccess}</span>
-              </div>
-            ) : (
-              <button
-                disabled={isProcessing}
-                onClick={handleSimulatePayment}
-                className="w-full py-3 rounded-2xl bg-neutral-950 hover:bg-neutral-800 disabled:opacity-60 text-white text-xs font-bold transition-all shadow-md cursor-pointer flex items-center justify-center gap-2"
-              >
-                {isProcessing ? (
-                  <>
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    <span>Memverifikasi Webhook...</span>
-                  </>
-                ) : (
-                  <span suppressHydrationWarning>{t.dashboard.confirmPayment}</span>
-                )}
-              </button>
-            )}
-          </div>
-        </div>
+      {/* Checkout Modal — real Duitku payment */}
+      {selectedPkg && (
+        <CheckoutModal
+          pkg={selectedPkg}
+          onClose={() => setSelectedPkg(null)}
+          onSuccess={handleSuccess}
+        />
       )}
 
       {/* Active Passes / Entitlements */}
