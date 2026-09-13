@@ -32,6 +32,11 @@ pgdata/
 *.sqlite
 *.db
 
+# Data dump / export SQL files — may contain sensitive user data
+data_*.sql
+*_export*.sql
+*_dump*.sql
+
 # Logs
 *.log
 logs/

@@ -1,8 +1,8 @@
 import { Hono } from 'hono';
 import { db, schema as s } from '@morphic/db';
 import { eq, and } from 'drizzle-orm';
-import { sessionAuth } from '../middleware/session-auth.ts';
-import { createTransaction, checkTransactionStatus } from '../lib/duitku.ts';
+import { sessionAuth } from '../middleware/session-auth';
+import { createTransaction, checkTransactionStatus } from '../lib/duitku';
 
 const payments = new Hono();
 

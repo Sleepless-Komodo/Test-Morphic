@@ -4,11 +4,11 @@ import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { streamSSE } from 'hono/streaming';
 import { chatCompletionRequestSchema } from '@morphic/shared/types';
 import { estimatePromptTokens } from '@morphic/shared/credits';
-import { resolveModelWithFallback, callProvider, normalizeUpstreamError } from '../domain/router.ts';
-import { recordSuccess, recordFailure } from '../domain/circuit-breaker.ts';
-import { logRequest } from '../middleware/logger.ts';
+import { resolveModelWithFallback, callProvider, normalizeUpstreamError } from '../domain/router';
+import { recordSuccess, recordFailure } from '../domain/circuit-breaker';
+import { logRequest } from '../middleware/logger';
 import { reserve, settle, InsufficientCreditsError } from '@morphic/db/billing';
-import { apiKeyAuth, gatewayGuards } from '../middleware/auth.ts';
+import { apiKeyAuth, gatewayGuards } from '../middleware/auth';
 
 const v1 = new Hono();
 

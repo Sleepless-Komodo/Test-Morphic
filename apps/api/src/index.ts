@@ -1,12 +1,12 @@
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { v1 } from './routes/v1.ts';
-import { webhooks } from './routes/webhooks.ts';
-import { keys } from './routes/keys.ts';
-import { account } from './routes/account.ts';
-import { payments } from './routes/payments.ts';
-import { redeem } from './routes/redeem.ts';
+import { v1 } from './routes/v1';
+import { webhooks } from './routes/webhooks';
+import { keys } from './routes/keys';
+import { account } from './routes/account';
+import { payments } from './routes/payments';
+import { redeem } from './routes/redeem';
 import { db, schema as s } from '@morphic/db';
 import { sweepExpiredReservations } from '@morphic/db/billing';
 import { lt } from 'drizzle-orm';

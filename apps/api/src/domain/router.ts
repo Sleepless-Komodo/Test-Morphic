@@ -2,7 +2,7 @@ import { db, schema as s } from '@morphic/db';
 import { eq, and, or } from 'drizzle-orm';
 import { resolveProviderCredential } from '@morphic/shared/provider-crypto';
 import { normalizeModelId } from '@morphic/shared/models';
-import { isCircuitOpen } from './circuit-breaker.ts';
+import { isCircuitOpen } from './circuit-breaker';
 
 export interface ResolvedRoute {
   providerName: string;

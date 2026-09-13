@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import type { Context, Next } from 'hono';
 import { db, schema as s } from '@morphic/db';
 import { eq, and } from 'drizzle-orm';
-import { checkRateLimit, trackConcurrency, releaseConcurrency } from '../ratelimit.ts';
+import { checkRateLimit, trackConcurrency, releaseConcurrency } from '../ratelimit';
 
 export interface AuthedKey {
   keyId: string;
