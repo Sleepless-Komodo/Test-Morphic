@@ -1,13 +1,10 @@
-import { serve } from '@hono/node-server';
+import { handle } from 'hono/vercel';
 import { app } from './app';
 import { db, schema as s } from '@morphic/db';
 import { sweepExpiredReservations } from '@morphic/db/billing';
 import { lt } from 'drizzle-orm';
 
-const port = Number(process.env.API_PORT ?? 8787);
-serve({ fetch: app.fetch, port }, (info) => {
-  console.log(`morphic api listening on :${info.port}`);
-});
+export const config = { runtime: 'nodejs' };
 
 // Crash-safety sweep: release reservations that never settled
 const sweepInterval = setInterval(() => {
@@ -26,3 +23,5 @@ const purgeInterval = setInterval(() => {
     .catch((e: unknown) => console.error('[logger] purge error:', e));
 }, 24 * 60 * 60_000);
 purgeInterval.unref();
+
+export default handle(app);
