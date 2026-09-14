@@ -15,7 +15,7 @@ export function getDb(): PostgresJsDatabase<typeof schema> {
       postgres(connectionString, {
         max: isVercel ? 3 : 10,
         prepare: false,
-        idle_timeout: 15,
+        idle_timeout: 1,
       }),
       { schema },
     );

@@ -17,7 +17,8 @@ export interface ResolvedRoute {
   deprecationWarning: string | null;
 }
 
-const UPSTREAM_TIMEOUT_MS = Number(process.env.UPSTREAM_TIMEOUT_MS ?? 60_000);
+const envTimeout = process.env.UPSTREAM_TIMEOUT_MS ? Number(process.env.UPSTREAM_TIMEOUT_MS) : 60_000;
+const UPSTREAM_TIMEOUT_MS = Number.isNaN(envTimeout) || envTimeout <= 0 ? 60_000 : envTimeout;
 
 interface ModelRow {
   modelId: string;
