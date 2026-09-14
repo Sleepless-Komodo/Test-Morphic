@@ -7,7 +7,7 @@
     "dev": "tsx watch --env-file-if-exists=../../.env src/index.ts",
     "seed:dahl": "tsx --env-file-if-exists=../../.env scripts/seed-dahl.ts",
     "build": "tsc --noEmit && tsup",
-    "postbuild": "mkdir -p api public && touch public/.keep && cp dist/index.vercel.js api/index.js",
+
     "start": "node --env-file-if-exists=../../.env dist/index.js",
     "lint": "eslint src",
     "typecheck": "tsc --noEmit"
