@@ -63,7 +63,9 @@ async function bal() {
 
 const results: string[] = [];
 const check = (name: string, cond: boolean, extra = '') => {
-  results.push(`${cond ? 'PASS' : 'FAIL'} ${name} ${extra}`);
+  const msg = `${cond ? 'PASS' : 'FAIL'} ${name} ${extra}`;
+  console.log(msg);
+  results.push(msg);
   if (!cond) process.exitCode = 1;
 };
 
@@ -77,11 +79,11 @@ check('non-stream 200', r1.status === 200, `status ${r1.status}`);
 check('response has choices', Boolean(j1.choices), JSON.stringify(j1).slice(0, 100));
 
 const after1 = await db.select().from(s.reservations).where(eq(s.reservations.userId, user!.id));
-check('reservation settled', after1.length === 1 && after1[0]!.status === 'settled', JSON.stringify(after1[0]?.status));
+check('reservation settled', after1.length === 1 && after1[0]?.status === 'settled', JSON.stringify(after1[0]?.status));
 const expected = Math.ceil((12 * 100) / 1e6) + Math.ceil((8 * 200) / 1e6); // 1+2=3
 const b1 = await bal();
 check(`deducted actual ${expected}`, b0 - b1 === expected, `balance ${b1}, charged ${b0 - b1}`);
-check('reservation actual == charged', after1[0]!.actualCredits === expected);
+check('reservation actual == charged', after1[0]?.actualCredits === expected);
 
 const [usage] = await db.select().from(s.usageRecords).where(eq(s.usageRecords.userId, user!.id));
 check('usage recorded', Boolean(usage) && usage!.status === 'success' && usage!.promptTokens === 12 && usage!.completionTokens === 8);

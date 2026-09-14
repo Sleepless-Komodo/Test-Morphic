@@ -1,6 +1,6 @@
 import { eq, desc, and, gt } from 'drizzle-orm';
 import { db, schema as s } from '@morphic/db';
-import { requireUser } from '@/lib/actions';
+import { requireUser, fetchAccountTransactions } from '@/lib/actions';
 import { getBalance } from '@morphic/db/billing';
 import { BillingView } from './billing-view';
 
@@ -73,9 +73,10 @@ export default async function BillingPage() {
   let displayPackages: any[] = FALLBACK_CHEAP_PACKAGES;
   let entitlements: any[] = [];
   let payments: any[] = [];
+  let transactions: any[] = [];
 
   try {
-    const [b, dbPackages, dbEntitlements, dbPayments] = await Promise.all([
+    const [b, dbPackages, dbEntitlements, dbPayments, txRes] = await Promise.all([
       getBalance(user.id),
       db.select().from(s.packages).where(eq(s.packages.status, 'active')),
       db
@@ -102,11 +103,13 @@ export default async function BillingPage() {
         .where(eq(s.payments.userId, user.id))
         .orderBy(desc(s.payments.createdAt))
         .limit(20),
+      fetchAccountTransactions(1, 20),
     ]);
     balance = b;
     if (dbPackages.length > 0) displayPackages = dbPackages;
     entitlements = dbEntitlements;
     payments = dbPayments;
+    transactions = txRes.data;
   } catch (err) {
     console.warn('[BillingPage] Database offline, showing fallback packages and zero balance:', err);
   }
@@ -117,6 +120,7 @@ export default async function BillingPage() {
       packages={displayPackages}
       entitlements={entitlements}
       payments={payments}
+      transactions={transactions}
     />
   );
 }
