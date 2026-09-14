@@ -338,6 +338,12 @@ export const en = {
       expiresPrefix: 'Expires:',
       qrisHistoryTitle: 'QRIS Payment History',
       noPaymentsHistory: 'No payment transactions recorded yet.',
+      ledgerHistoryTitle: 'Credit Ledger History',
+      noLedgerHistory: 'No credit transactions recorded yet.',
+      thLedgerType: 'Transaction Type',
+      thLedgerAmount: 'Credit Change',
+      thLedgerRef: 'Description / Reference',
+      thLedgerDate: 'Time',
 
       // Subpage Voucher / Redeem
       redeemPageTitle: 'Redeem Voucher Code',

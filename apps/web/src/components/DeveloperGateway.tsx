@@ -42,70 +42,33 @@ export interface RecentRequestItem {
   createdAt: Date;
 }
 
-/**
- * Interface representing component props for DeveloperGateway.
- */
 interface DeveloperGatewayProps {
   userBalance?: number;
-  /**
-   * Optional initial models passed from the Server Component (fetched from PostgreSQL database).
-   * If not provided or empty, the component will fall back to static default models.
-   */
-  initialModels?: ModelItem[];
+  activeKeys?: number;
+  usage?: UsageSummary;
+  recentRequests?: RecentRequestItem[];
+  modelCount?: number;
+  avgCreditsPer1m?: number;
+  minInputRate?: number;
 }
 
-export default function DeveloperGateway({ session, userBalance = 0, initialModels }: DeveloperGatewayProps) {
+export default function DeveloperGateway({
+  userBalance = 0,
+  activeKeys = 0,
+  usage = { totalTokens: 0, promptTokens: 0, completionTokens: 0 },
+  recentRequests = [],
+  modelCount = 0,
+  avgCreditsPer1m = 0,
+  minInputRate = 0,
+}: DeveloperGatewayProps) {
   const { t, locale } = useTranslation();
   const isId = locale === 'id';
   const [baseUrlCopied, setBaseUrlCopied] = useState(false);
 
-  const getPackageDesc = (pkg: (typeof CHEAP_DAILY_PACKAGES)[number]) =>
-    locale === 'en' && pkg.descEn ? pkg.descEn : pkg.desc;
-
-  // Resolve dynamic model list: use database-fetched models if available, fallback to static defaults
-  const activeModelList = useMemo(() => {
-    return initialModels && initialModels.length > 0 ? initialModels : INFERENCE_MODELS;
-  }, [initialModels]);
-
-  const filteredModels = useMemo(
-    () =>
-      activeModelList.filter((m) => {
-        const matchCap = selectedCapability === 'All' || m.capabilities.includes(selectedCapability as CapabilityTag);
-        const matchProv = selectedProvider === 'All' || m.provider === selectedProvider;
-        const matchSearch =
-          m.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          m.id.toLowerCase().includes(searchQuery.toLowerCase());
-        return matchCap && matchProv && matchSearch;
-      }),
-    [activeModelList, selectedCapability, selectedProvider, searchQuery],
-  );
-
-  const categories = useMemo(() => Array.from(new Set(filteredModels.map((m) => m.category))), [filteredModels]);
-
-  const handleCreateKey = () => {
-    if (!keyName.trim()) return;
-    setIsCreatingKey(true);
-    setTimeout(() => {
-      const hex = Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
-      setKeysList((prev) => [
-        { id: `k-${Date.now()}`, name: keyName, key: `mp-live-${hex}`, date: t.dashboard.justNow },
-        ...prev,
-      ]);
-      setKeyName('');
-      setIsCreatingKey(false);
-    }, 400);
-  };
-
-  const handleRedeemVoucher = () => {
-    if (!voucherCode.trim()) return;
-    const msg =
-      locale === 'en'
-        ? `Voucher "${voucherCode.toUpperCase()}" active! +Rp 5,000 balance added.`
-        : `Kupon "${voucherCode.toUpperCase()}" aktif! +Rp 5.000 saldo ditambahkan.`;
-    setVoucherSuccess(msg);
-    setBalance((p) => p + 5000);
-    setVoucherCode('');
-    setTimeout(() => setVoucherSuccess(null), 5000);
+  const copyBaseUrl = () => {
+    navigator.clipboard.writeText(BASE_URL);
+    setBaseUrlCopied(true);
+    setTimeout(() => setBaseUrlCopied(false), 2000);
   };
 
   const estimatedTokens =
