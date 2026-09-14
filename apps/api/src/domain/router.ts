@@ -17,8 +17,10 @@ export interface ResolvedRoute {
   deprecationWarning: string | null;
 }
 
-const envTimeout = process.env.UPSTREAM_TIMEOUT_MS ? Number(process.env.UPSTREAM_TIMEOUT_MS) : 60_000;
-const UPSTREAM_TIMEOUT_MS = Number.isNaN(envTimeout) || envTimeout <= 0 ? 60_000 : envTimeout;
+// Default 55s: leaves 5s buffer for DB settle before Vercel's 60s maxDuration kills the function.
+// Override with UPSTREAM_TIMEOUT_MS env var (e.g. set to 110000 if on Pro plan with 120s limit).
+const envTimeout = process.env.UPSTREAM_TIMEOUT_MS ? Number(process.env.UPSTREAM_TIMEOUT_MS) : 55_000;
+const UPSTREAM_TIMEOUT_MS = Number.isNaN(envTimeout) || envTimeout <= 0 ? 55_000 : envTimeout;
 
 interface ModelRow {
   modelId: string;
