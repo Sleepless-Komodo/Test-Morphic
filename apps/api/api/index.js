@@ -2609,7 +2609,15 @@ import { drizzle } from "drizzle-orm/postgres-js";
 function getDb() {
   if (!instance) {
     const connectionString = process.env.DATABASE_URL ?? "postgresql://unset:unset@localhost:5432/unset";
-    instance = drizzle(src_default(connectionString, { max: 10 }), { schema: schema_exports });
+    const isVercel = Boolean(process.env.VERCEL || process.env.VERCEL_ENV);
+    instance = drizzle(
+      src_default(connectionString, {
+        max: isVercel ? 1 : 10,
+        prepare: false,
+        idle_timeout: 15
+      }),
+      { schema: schema_exports }
+    );
   }
   return instance;
 }
@@ -3009,7 +3017,14 @@ var OpenAiCompatibleAdapter = class {
     const headers = { "content-type": "application/json" };
     if (route.credential) headers["authorization"] = `Bearer ${route.credential}`;
     const timeoutSignal = AbortSignal.timeout(UPSTREAM_TIMEOUT_MS);
-    const combinedSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
+    let combinedSignal = timeoutSignal;
+    if (signal && typeof AbortSignal.any === "function") {
+      try {
+        combinedSignal = AbortSignal.any([signal, timeoutSignal]);
+      } catch {
+        combinedSignal = timeoutSignal;
+      }
+    }
     return fetch(url, {
       method: "POST",
       headers,
@@ -3236,40 +3251,6 @@ async function settle(input) {
     }).where(eq3(reservations.id, res.id));
     return { actualCredits: charged, refunded, usageRecordId: usage.id };
   });
-}
-async function release(reservationId, reference) {
-  await db.transaction(async (tx) => {
-    const [res] = await tx.select().from(reservations).where(and2(eq3(reservations.id, reservationId), eq3(reservations.status, "reserved"))).for("update");
-    if (!res) return;
-    if (res.sourceType === "entitlement" && res.sourceId) {
-      await tx.update(entitlements).set({ remaining: sql`${entitlements.remaining} + ${res.estimatedCredits}` }).where(eq3(entitlements.id, res.sourceId));
-      await tx.insert(creditLedger).values({
-        userId: res.userId,
-        entryType: "release",
-        amount: res.estimatedCredits,
-        reservationId: res.id,
-        sourceType: "entitlement",
-        sourceId: res.sourceId,
-        reference: reference ?? "sweep"
-      });
-    } else {
-      await writeBalanceLedger(tx, {
-        userId: res.userId,
-        entryType: "release",
-        amount: res.estimatedCredits,
-        reservationId: res.id,
-        reference: reference ?? "sweep"
-      });
-    }
-    await tx.update(reservations).set({ status: "released" }).where(eq3(reservations.id, res.id));
-  });
-}
-async function sweepExpiredReservations() {
-  const expired = await db.select({ id: reservations.id }).from(reservations).where(and2(eq3(reservations.status, "reserved"), lt(reservations.expiresAt, /* @__PURE__ */ new Date())));
-  for (const r of expired) {
-    await release(r.id, "sweep-expired");
-  }
-  return expired.length;
 }
 async function grantCredits(input) {
   await db.transaction(async (tx) => {
@@ -4620,19 +4601,7 @@ app.route("/v1/payments", payments2);
 app.route("/v1/redeem", redeem);
 
 // src/index.vercel.ts
-init_src2();
-import { lt as lt2 } from "drizzle-orm";
 var config = { runtime: "nodejs" };
-var sweepInterval = setInterval(() => {
-  sweepExpiredReservations().then((n) => n > 0 && console.log(`swept ${n} expired reservations`)).catch((e) => console.error("sweep error", e));
-}, 6e4);
-sweepInterval.unref();
-var LOG_RETENTION_DAYS = Number(process.env.LOG_RETENTION_DAYS ?? 30);
-var purgeInterval = setInterval(() => {
-  const cutoff = new Date(Date.now() - LOG_RETENTION_DAYS * 864e5);
-  db.delete(schema_exports.requestLogs).where(lt2(schema_exports.requestLogs.createdAt, cutoff)).catch((e) => console.error("[logger] purge error:", e));
-}, 24 * 60 * 6e4);
-purgeInterval.unref();
 var index_vercel_default = handle(app);
 export {
   config,

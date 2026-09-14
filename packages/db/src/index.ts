@@ -10,7 +10,15 @@ export function getDb(): PostgresJsDatabase<typeof schema> {
     // postgres.js connects lazily, so real queries fail loudly if env missing
     const connectionString =
       process.env.DATABASE_URL ?? 'postgresql://unset:unset@localhost:5432/unset';
-    instance = drizzle(postgres(connectionString, { max: 10 }), { schema });
+    const isVercel = Boolean(process.env.VERCEL || process.env.VERCEL_ENV);
+    instance = drizzle(
+      postgres(connectionString, {
+        max: isVercel ? 1 : 10,
+        prepare: false,
+        idle_timeout: 15,
+      }),
+      { schema },
+    );
   }
   return instance;
 }

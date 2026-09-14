@@ -175,9 +175,14 @@ export class OpenAiCompatibleAdapter implements IAiProviderAdapter {
     if (route.credential) headers['authorization'] = `Bearer ${route.credential}`;
 
     const timeoutSignal = AbortSignal.timeout(UPSTREAM_TIMEOUT_MS);
-    const combinedSignal = signal
-      ? AbortSignal.any([signal, timeoutSignal])
-      : timeoutSignal;
+    let combinedSignal: AbortSignal = timeoutSignal;
+    if (signal && typeof AbortSignal.any === 'function') {
+      try {
+        combinedSignal = AbortSignal.any([signal, timeoutSignal]);
+      } catch {
+        combinedSignal = timeoutSignal;
+      }
+    }
 
     return fetch(url, {
       method: 'POST',
