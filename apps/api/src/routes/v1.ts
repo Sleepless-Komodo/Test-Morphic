@@ -97,11 +97,11 @@ v1.get('/ping-dahl', async (c) => {
   }
 });
 
-
 v1.post('/chat/completions', async (c) => {
   const requestId = randomUUID();
   const startedAt = Date.now();
   const { keyId, userId } = c.get('apiKey');
+  const t = (label: string) => console.log(`[${requestId.slice(0,8)}] +${Date.now()-startedAt}ms ${label}`);
 
   let parsed: ReturnType<typeof chatCompletionRequestSchema.safeParse>;
   try {
@@ -228,6 +228,7 @@ v1.post('/chat/completions', async (c) => {
   const promptTokens = estimatePromptTokens(promptText);
   const wantsStream = body.stream === true;
 
+  t('reserve: start');
   // 1. Reserve (estimate ceiling, hard-bounded)
   let reservation;
   try {
@@ -240,6 +241,7 @@ v1.post('/chat/completions', async (c) => {
       requestId,
     });
   } catch (e) {
+    t('reserve: FAILED');
     if (e instanceof InsufficientCreditsError) {
       logRequest({
         requestId,
@@ -265,10 +267,13 @@ v1.post('/chat/completions', async (c) => {
     throw e;
   }
 
+  t('reserve: done');
+
   // 2. Call provider (generic OpenAI-compatible adapter)
   let upstream: Response;
   const gatewayLatencyMs = Date.now() - startedAt;
 
+  t('callProvider: start');
   try {
     upstream = await callProvider({
       route,
@@ -277,6 +282,7 @@ v1.post('/chat/completions', async (c) => {
       signal: c.req.raw.signal,
     });
   } catch (e: any) {
+    t('callProvider: FAILED (network/timeout)');
     const isTimeout = e?.name === 'TimeoutError' || String(e).includes('timeout');
     const norm = normalizeUpstreamError(isTimeout ? 'timeout' : 'network');
 
@@ -319,6 +325,8 @@ v1.post('/chat/completions', async (c) => {
       norm.httpStatus as ContentfulStatusCode,
     );
   }
+
+  t(`callProvider: done status=${upstream.status}`);
 
   if (!upstream.ok) {
     const norm = normalizeUpstreamError(upstream.status);

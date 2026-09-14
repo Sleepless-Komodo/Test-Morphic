@@ -8749,6 +8749,7 @@ v1.post("/chat/completions", async (c) => {
   const requestId = randomUUID();
   const startedAt = Date.now();
   const { keyId, userId } = c.get("apiKey");
+  const t = (label) => console.log(`[${requestId.slice(0, 8)}] +${Date.now() - startedAt}ms ${label}`);
   let parsed;
   try {
     parsed = chatCompletionRequestSchema.safeParse(await c.req.json());
@@ -8867,6 +8868,7 @@ v1.post("/chat/completions", async (c) => {
   const promptText = body.messages.map((m2) => typeof m2.content === "string" ? m2.content : JSON.stringify(m2.content)).join("\n");
   const promptTokens = estimatePromptTokens(promptText);
   const wantsStream = body.stream === true;
+  t("reserve: start");
   let reservation;
   try {
     reservation = await reserve({
@@ -8878,6 +8880,7 @@ v1.post("/chat/completions", async (c) => {
       requestId
     });
   } catch (e) {
+    t("reserve: FAILED");
     if (e instanceof InsufficientCreditsError) {
       logRequest({
         requestId,
@@ -8902,8 +8905,10 @@ v1.post("/chat/completions", async (c) => {
     }
     throw e;
   }
+  t("reserve: done");
   let upstream;
   const gatewayLatencyMs = Date.now() - startedAt;
+  t("callProvider: start");
   try {
     upstream = await callProvider({
       route,
@@ -8912,6 +8917,7 @@ v1.post("/chat/completions", async (c) => {
       signal: c.req.raw.signal
     });
   } catch (e) {
+    t("callProvider: FAILED (network/timeout)");
     const isTimeout = e?.name === "TimeoutError" || String(e).includes("timeout");
     const norm = normalizeUpstreamError(isTimeout ? "timeout" : "network");
     if (norm.countAsFailure) {
@@ -8950,6 +8956,7 @@ v1.post("/chat/completions", async (c) => {
       norm.httpStatus
     );
   }
+  t(`callProvider: done status=${upstream.status}`);
   if (!upstream.ok) {
     const norm = normalizeUpstreamError(upstream.status);
     if (norm.countAsFailure) {
