@@ -97,6 +97,7 @@ v1.get('/ping-dahl', async (c) => {
   }
 });
 
+
 v1.post('/chat/completions', async (c) => {
   const requestId = randomUUID();
   const startedAt = Date.now();
