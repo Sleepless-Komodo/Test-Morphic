@@ -13,7 +13,7 @@ export function getDb(): PostgresJsDatabase<typeof schema> {
     const isVercel = Boolean(process.env.VERCEL || process.env.VERCEL_ENV);
     instance = drizzle(
       postgres(connectionString, {
-        max: isVercel ? 1 : 10,
+        max: isVercel ? 3 : 10,
         prepare: false,
         idle_timeout: 15,
       }),
