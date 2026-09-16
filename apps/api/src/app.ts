@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
+import { HTTPException } from 'hono/http-exception';
 import { v1 } from './routes/v1';
 import { webhooks } from './routes/webhooks';
 import { keys } from './routes/keys';
@@ -27,8 +28,13 @@ app.use(
 
 app.onError((err, c) => {
   console.error('[API Error]:', err);
+
+  if (err instanceof HTTPException) {
+    return err.getResponse();
+  }
+
   return c.json(
-    { error: { message: err.message || 'Internal Server Error', type: 'internal_error', code: 'internal_error' } },
+    { error: { message: 'Internal Server Error', type: 'internal_error', code: 'internal_error' } },
     500,
   );
 });

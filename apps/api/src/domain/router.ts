@@ -174,9 +174,10 @@ export class OpenAiCompatibleAdapter implements IAiProviderAdapter {
     const url = `${route.baseUrl.replace(/\/$/, '')}/chat/completions`;
     const payload = { ...body, model: route.providerModelId, stream };
 
-    const headers: Record<string, string> = { 'content-type': 'application/json' };
+    const headers: Record<string, string> = { 'content-type': 'application/json', 'connection': 'close' };
     if (route.credential) headers['authorization'] = `Bearer ${route.credential}`;
 
+    console.log("FETCHING URL:", url, "HEADERS:", headers, "PAYLOAD:", JSON.stringify(payload));
     const timeoutSignal = AbortSignal.timeout(UPSTREAM_TIMEOUT_MS);
     
     return fetch(url, {
