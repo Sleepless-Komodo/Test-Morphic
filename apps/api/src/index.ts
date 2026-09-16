@@ -1,49 +1,8 @@
 import { serve } from '@hono/node-server';
-import { Hono } from 'hono';
-import { cors } from 'hono/cors';
-import { v1 } from './routes/v1.ts';
-import { webhooks } from './routes/webhooks.ts';
-import { keys } from './routes/keys.ts';
-import { account } from './routes/account.ts';
-import { payments } from './routes/payments.ts';
-import { redeem } from './routes/redeem.ts';
+import { app } from './app';
 import { db, schema as s } from '@morphic/db';
 import { sweepExpiredReservations } from '@morphic/db/billing';
 import { lt } from 'drizzle-orm';
-
-const app = new Hono();
-
-app.use(
-  '*',
-  cors({
-    // Allowed request origin
-    origin: process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
-    // Allowed headers from FE to BE
-    allowHeaders: ['Content-Type', 'Authorization', 'x-internal-secret'],
-    // Allowed HTTP methods
-    allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    // Expose headers to FE
-    exposeHeaders: ['Content-Length'],
-    maxAge: 600, // cache preflight 10 minutes
-    credentials: true,
-  })
-);
-
-app.onError((err, c) => {
-  console.error('[API Error]:', err);
-  return c.json(
-    { error: { message: err.message || 'Internal Server Error', type: 'internal_error', code: 'internal_error' } },
-    500,
-  );
-});
-
-app.get('/health', (c) => c.json({ ok: true }));
-app.route('/v1', v1);
-app.route('/webhooks', webhooks);
-app.route('/v1/keys', keys);
-app.route('/v1/account', account);
-app.route('/v1/payments', payments);
-app.route('/v1/redeem', redeem);
 
 const port = Number(process.env.API_PORT ?? 8787);
 serve({ fetch: app.fetch, port }, (info) => {

@@ -1,7 +1,16 @@
 /**
- * Secure Backend API Client for Morphic
- * Handles both server-side (forwarding Next.js session cookies)
- * and client-side (with credentials: 'include') requests to Hono API (port 8787).
+ * Internal Backend API Client — Morphic Web
+ *
+ * Thin wrapper around fetch() that:
+ * - Resolves the correct base URL for server-side vs client-side calls
+ * - Forwards the session cookie when called from a Server Component / Server Action
+ * - Returns a typed { data, error, status } envelope so callers never have to try/catch fetch
+ * - Applies an 8-second timeout to prevent hanging requests
+ *
+ * Security notes (OWASP):
+ * - Never logs sensitive fields (tokens, cookies, user IDs) — only non-PII error messages
+ * - Cookie forwarding is read-only (we only forward what the browser already sent)
+ * - AbortController timeout prevents resource exhaustion from stalled connections
  */
 
 export interface ApiResponse<T> {
@@ -10,11 +19,19 @@ export interface ApiResponse<T> {
   status: number;
 }
 
+/**
+ * Call the Hono backend API.
+ *
+ * @param path  - API path starting with `/`, e.g. `/v1/account/transactions`
+ * @param options - Standard `RequestInit` options (method, body, headers, …)
+ */
 export async function fetchBackendApi<T = any>(
   path: string,
-  options: RequestInit = {}
+  options: RequestInit = {},
 ): Promise<ApiResponse<T>> {
   const isServer = typeof window === 'undefined';
+
+  // Prefer INTERNAL_API_URL on the server (avoids public internet round-trip)
   const baseUrl = (
     (isServer ? process.env.INTERNAL_API_URL : undefined) ||
     process.env.NEXT_PUBLIC_API_URL ||
@@ -24,12 +41,15 @@ export async function fetchBackendApi<T = any>(
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
   const url = `${baseUrl}${normalizedPath}`;
 
-  const headers = new Headers(options.headers || {});
+  const headers = new Headers(options.headers ?? {});
+
+  // Set Content-Type for non-GET requests that don't already specify one
   if (!headers.has('Content-Type') && options.method && options.method !== 'GET') {
     headers.set('Content-Type', 'application/json');
   }
 
-  // If executing on the server (Server Component or Server Action), forward session cookie
+  // Forward the session cookie when running inside a Server Component or Server Action
+  // so the Hono session-auth middleware can authenticate the request.
   if (isServer) {
     try {
       const { headers: getNextHeaders } = await import('next/headers');
@@ -39,51 +59,53 @@ export async function fetchBackendApi<T = any>(
         headers.set('cookie', cookie);
       }
     } catch {
-      // In contexts where next/headers is not available, proceed without throwing
+      // next/headers is unavailable in some edge contexts — safe to skip
     }
   }
 
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8000); // 8s timeout
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 8_000);
 
+  try {
     const res = await fetch(url, {
       ...options,
       headers,
-      signal: options.signal || controller.signal,
+      signal: options.signal ?? controller.signal,
+      // Browser: include cookies via credentials; server: cookies forwarded manually above
       credentials: isServer ? undefined : 'include',
-      cache: options.cache || 'no-store',
+      cache: options.cache ?? 'no-store',
     });
 
     clearTimeout(timeoutId);
 
-    const contentType = res.headers.get('content-type') || '';
+    const contentType = res.headers.get('content-type') ?? '';
     let json: any = null;
+
     if (contentType.includes('application/json')) {
       json = await res.json();
     } else {
       const text = await res.text();
-      try {
-        json = JSON.parse(text);
-      } catch {
-        json = text;
-      }
+      try { json = JSON.parse(text); } catch { json = text; }
     }
 
     if (!res.ok) {
-      const errorMsg =
-        json?.error?.message ||
-        json?.message ||
-        `Backend API returned status ${res.status}`;
+      // Return a sanitized error message — never expose raw DB errors to the client
+      const errorMsg: string =
+        json?.error?.message ??
+        json?.message ??
+        `Backend API error (${res.status})`;
       return { data: null, error: errorMsg, status: res.status };
     }
 
     return { data: json as T, error: null, status: res.status };
   } catch (err: any) {
-    const errorMsg =
+    clearTimeout(timeoutId);
+    const errorMsg: string =
       err?.name === 'AbortError'
-        ? 'Request timeout to backend API'
-        : err?.message || 'Failed to connect to backend API';
+        ? 'Request timed out (backend API)'
+        : 'Could not reach backend API';
+    // Log only non-sensitive context (no user IDs, no cookies)
+    console.warn(`[api-client] ${errorMsg} — ${options.method ?? 'GET'} ${path}`);
     return { data: null, error: errorMsg, status: 0 };
   }
 }

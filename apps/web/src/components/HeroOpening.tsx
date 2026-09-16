@@ -3,7 +3,7 @@
 import { useRef } from 'react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
-import { ArrowUpRight, Sparkles } from 'lucide-react';
+import { ArrowUpRight, Sparkles, CheckCircle2 } from 'lucide-react';
 import { useTranslation } from '@/lib/i18n';
 import { useReducedMotionSafe } from '@/lib/use-reduced-motion-safe';
 import ParallaxBackground from '@/components/ParallaxBackground';
@@ -53,7 +53,7 @@ export default function HeroOpening({ isLoggedIn = false }: HeroOpeningProps) {
   return (
     <section
       ref={sectionRef}
-      className="hero-section relative w-full overflow-x-clip flex flex-col items-center justify-center min-h-[85vh] sm:min-h-[90vh] pt-32 sm:pt-40 md:pt-44 pb-32 sm:pb-40 md:pb-48"
+      className="hero-section relative w-full overflow-x-clip flex flex-col items-center justify-center min-h-[90vh] sm:min-h-screen pt-28 sm:pt-36 pb-20 sm:pb-28"
     >
       {/* Parallax visual background — blends seamlessly into #fafafa */}
       <ParallaxBackground sectionRef={sectionRef} />
@@ -126,6 +126,36 @@ export default function HeroOpening({ isLoggedIn = false }: HeroOpeningProps) {
               {t?.hero?.secondaryCta || 'Explore Models'}
             </span>
           </Link>
+        </motion.div>
+
+        {/* 5. Developer Trust Points & Tools Support */}
+        <motion.div
+          variants={itemVariants}
+          className="mt-10 sm:mt-12 pt-6 sm:pt-7 border-t border-neutral-200/90 w-full max-w-3xl flex flex-col items-center gap-3.5"
+        >
+          <div className="flex flex-wrap items-center justify-center gap-x-6 sm:gap-x-8 gap-y-2.5 text-xs sm:text-sm md:text-base text-neutral-800 font-semibold">
+            <span className="inline-flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 sm:w-4.5 sm:h-4.5 text-emerald-600 shrink-0" />
+              <span suppressHydrationWarning>{locale === 'id' ? 'Setup 2 menit di IDE' : '2-minute IDE Setup'}</span>
+            </span>
+            <span className="inline-flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 sm:w-4.5 sm:h-4.5 text-emerald-600 shrink-0" />
+              <span suppressHydrationWarning>{locale === 'id' ? 'QRIS Otomatis Instan' : 'Instant QRIS Top-up'}</span>
+            </span>
+            <span className="inline-flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 sm:w-4.5 sm:h-4.5 text-emerald-600 shrink-0" />
+              <span suppressHydrationWarning>{locale === 'id' ? 'Tanpa Kartu Kredit Valas' : 'No Credit Card Required'}</span>
+            </span>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-center gap-2 text-xs sm:text-sm text-neutral-500 font-mono">
+            <span suppressHydrationWarning className="uppercase tracking-wider font-semibold text-neutral-400">
+              {locale === 'id' ? 'Mendukung:' : 'Compatible with:'}
+            </span>
+            <span className="text-neutral-800 font-medium">
+              Cursor · Cline · Windsurf · Claude Code · SDK OpenAI
+            </span>
+          </div>
         </motion.div>
       </motion.div>
     </section>

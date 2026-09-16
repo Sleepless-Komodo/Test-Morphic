@@ -1,5 +1,5 @@
 import { and, eq, gt, lt, sql } from 'drizzle-orm';
-import { db } from './index.ts';
+import { db, withTransaction } from './index.ts';
 import * as s from './schema.ts';
 import {
   estimateReservation,
@@ -125,7 +125,7 @@ export async function reserve(input: {
     pricing: input.model.pricing,
   });
 
-  return db.transaction(async (tx) => {
+  return withTransaction(async (tx) => {
     const source = await pickSource(tx, input.userId, input.model.id, estimatedCredits);
     if (!source) {
       throw new InsufficientCreditsError(
@@ -207,7 +207,7 @@ export async function settle(input: {
   const charged = Math.min(actualCredits, input.reservation.estimatedCredits);
   const refunded = input.reservation.estimatedCredits - charged;
 
-  return db.transaction(async (tx) => {
+  return withTransaction(async (tx) => {
     const [res] = await tx
       .select()
       .from(s.reservations)
@@ -280,7 +280,7 @@ export async function settle(input: {
 }
 
 export async function release(reservationId: string, reference?: string): Promise<void> {
-  await db.transaction(async (tx) => {
+  await withTransaction(async (tx) => {
     const [res] = await tx
       .select()
       .from(s.reservations)
@@ -338,7 +338,7 @@ export async function grantCredits(input: {
   entryType: 'purchase' | 'redeem' | 'admin_adjustment' | 'promotion' | 'refund';
   reference?: string;
 }): Promise<void> {
-  await db.transaction(async (tx) => {
+  await withTransaction(async (tx) => {
     await writeBalanceLedger(tx, {
       userId: input.userId,
       entryType: input.entryType,

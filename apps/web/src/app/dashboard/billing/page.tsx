@@ -1,7 +1,8 @@
 import { eq, desc, and, gt } from 'drizzle-orm';
 import { db, schema as s } from '@morphic/db';
-import { requireUser, fetchAccountTransactions } from '@/lib/actions';
+import { requireUser } from '@/lib/actions';
 import { getBalance } from '@morphic/db/billing';
+import { fetchBackendApi } from '@/lib/api-client';
 import { BillingView } from './billing-view';
 
 const FALLBACK_CHEAP_PACKAGES = [
@@ -73,10 +74,10 @@ export default async function BillingPage() {
   let displayPackages: any[] = FALLBACK_CHEAP_PACKAGES;
   let entitlements: any[] = [];
   let payments: any[] = [];
-  let transactions: any[] = [];
+  let ledger: any[] = [];
 
   try {
-    const [b, dbPackages, dbEntitlements, dbPayments, txRes] = await Promise.all([
+    const [b, dbPackages, dbEntitlements, dbPayments] = await Promise.all([
       getBalance(user.id),
       db.select().from(s.packages).where(eq(s.packages.status, 'active')),
       db
@@ -103,15 +104,21 @@ export default async function BillingPage() {
         .where(eq(s.payments.userId, user.id))
         .orderBy(desc(s.payments.createdAt))
         .limit(20),
-      fetchAccountTransactions(1, 20),
     ]);
     balance = b;
     if (dbPackages.length > 0) displayPackages = dbPackages;
     entitlements = dbEntitlements;
     payments = dbPayments;
-    transactions = txRes.data;
   } catch (err) {
     console.warn('[BillingPage] Database offline, showing fallback packages and zero balance:', err);
+  }
+
+  // Fetch credit ledger from backend API (authenticated via session cookie forwarding)
+  const ledgerRes = await fetchBackendApi<{ data: any[]; total: number }>(
+    '/v1/account/transactions?limit=50',
+  );
+  if (ledgerRes.data?.data) {
+    ledger = ledgerRes.data.data;
   }
 
   return (
@@ -120,7 +127,7 @@ export default async function BillingPage() {
       packages={displayPackages}
       entitlements={entitlements}
       payments={payments}
-      transactions={transactions}
+      ledger={ledger}
     />
   );
 }

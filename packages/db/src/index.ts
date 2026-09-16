@@ -2,17 +2,37 @@ import { drizzle, type PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import * as schema from './schema.ts';
 
-let instance: PostgresJsDatabase<typeof schema> | null = null;
+function getConnectionString(): string {
+  return process.env.DATABASE_URL ?? 'postgresql://unset:unset@localhost:5432/unset';
+}
 
-export function getDb(): PostgresJsDatabase<typeof schema> {
-  if (!instance) {
-    // placeholder keeps next build (which evaluates modules) working;
-    // postgres.js connects lazily, so real queries fail loudly if env missing
-    const connectionString =
-      process.env.DATABASE_URL ?? 'postgresql://unset:unset@localhost:5432/unset';
-    instance = drizzle(postgres(connectionString, { max: 10 }), { schema });
-  }
-  return instance;
+// ---------------------------------------------------------------------------
+// Single postgres.js TCP connection — works for both local dev and any
+// self-hosted / managed Postgres (Railway, Supabase, etc.).
+// ---------------------------------------------------------------------------
+let _instance: PostgresJsDatabase<typeof schema> | null = null;
+
+function getDb(): PostgresJsDatabase<typeof schema> {
+  if (_instance) return _instance;
+
+  _instance = drizzle(
+    postgres(getConnectionString(), {
+      max: 10,
+      prepare: false,
+    }),
+    { schema },
+  );
+
+  return _instance;
+}
+
+// ---------------------------------------------------------------------------
+// Transactions — use the regular postgres.js driver which handles them natively.
+// ---------------------------------------------------------------------------
+export async function withTransaction<T>(
+  fn: (tx: any) => Promise<T>,
+): Promise<T> {
+  return (getDb() as any).transaction(fn);
 }
 
 // Proxy so `db.select()` etc. works while deferring env read to first use.

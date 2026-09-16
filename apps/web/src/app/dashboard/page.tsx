@@ -1,9 +1,77 @@
 import { headers } from 'next/headers';
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { eq, sql, desc, and } from 'drizzle-orm';
 import { auth } from '@/lib/auth';
 import { db, schema as s } from '@morphic/db';
 import { getBalance } from '@morphic/db/billing';
-import DeveloperGateway from '@/components/DeveloperGateway';
+import DeveloperGateway, { ModelItem } from '@/components/DeveloperGateway';
+
+/**
+ * Fetches active AI models and their provider info directly from PostgreSQL.
+ * Maps DB schema attributes to DeveloperGateway UI expectations.
+ * Returns undefined if database is offline or empty to allow graceful UI fallback.
+ */
+async function getModelsFromDb(): Promise<ModelItem[] | undefined> {
+  try {
+    const dbModels = await db
+      .select({
+        publicModelId: s.models.publicModelId,
+        displayName: s.models.displayName,
+        description: s.models.description,
+        contextLength: s.models.contextLength,
+        capabilities: s.models.capabilities,
+        inputCreditsPer1m: s.models.inputCreditsPer1m,
+        outputCreditsPer1m: s.models.outputCreditsPer1m,
+        providerName: s.providers.name,
+        status: s.models.status,
+      })
+      .from(s.models)
+      .innerJoin(s.providers, eq(s.models.providerId, s.providers.id))
+      .where(eq(s.models.status, 'active'));
+
+    if (!dbModels || dbModels.length === 0) return undefined;
+
+    return dbModels.map((m) => {
+      // Map DB capability array tags to UI CapabilityTag union
+      const caps: ('Chat' | 'Code' | 'Reasoning' | 'Vision' | 'Long Context')[] = [];
+      const rawCaps = Array.isArray(m.capabilities) ? m.capabilities : [];
+      if (rawCaps.includes('coding')) caps.push('Code');
+      if (rawCaps.includes('reasoning')) caps.push('Reasoning');
+      if (rawCaps.includes('chat') || rawCaps.includes('general')) caps.push('Chat');
+      if (rawCaps.includes('multimodal') || rawCaps.includes('vision')) caps.push('Vision');
+      if ((m.contextLength || 0) >= 128000) caps.push('Long Context');
+      if (caps.length === 0) caps.push('Chat');
+
+      const contextK = Math.round((m.contextLength || 0) / 1024);
+      const contextWindow = contextK > 0 ? `${contextK}K Tokens` : '64K Tokens';
+      const formattedProvider = m.providerName
+        ? m.providerName.charAt(0).toUpperCase() + m.providerName.slice(1)
+        : 'Provider';
+
+      return {
+        id: m.publicModelId,
+        name: m.displayName,
+        provider: formattedProvider,
+        capabilities: caps,
+        contextWindow,
+        category: caps.includes('Code') ? 'Coding' : caps.includes('Reasoning') ? 'Reasoning' : caps.includes('Vision') ? 'Multimodal' : 'Chat',
+        dailyRate: `Rp ${((m.inputCreditsPer1m || 100) * 25).toLocaleString('id-ID')} / hari`,
+        dailyRateEn: `Rp ${((m.inputCreditsPer1m || 100) * 25).toLocaleString('en-US')} / day`,
+        speed: 'Fast' as const,
+        estimatedLatency: '~200ms',
+        description: {
+          id: m.description || `${m.displayName} AI model`,
+          en: m.description || `${m.displayName} AI model`,
+        },
+        badge: formattedProvider.toUpperCase(),
+        badgeEn: formattedProvider.toUpperCase(),
+        badgeType: 'popular' as const,
+      };
+    });
+  } catch (error) {
+    console.warn('[DashboardPage] Failed to fetch active models from database:', error);
+    return undefined;
+  }
+}
 
 export default async function DashboardPage() {
   const session = await auth.api.getSession({ headers: await headers() });
@@ -92,15 +160,17 @@ export default async function DashboardPage() {
     console.warn('[DashboardPage] Database offline, showing empty model stats:', err);
   }
 
+  const initialModels = await getModelsFromDb();
+
   return (
     <DeveloperGateway
+      session={session}
       userBalance={userBalance}
-      activeKeys={activeKeys}
-      usage={usage}
+      initialModels={initialModels}
       recentRequests={recentRequests}
-      modelCount={modelCount}
-      avgCreditsPer1m={avgCreditsPer1m}
-      minInputRate={minInputRate}
+      serverModelCount={modelCount}
+      serverAvgCreditsPer1m={avgCreditsPer1m}
+      serverMinInputRate={minInputRate}
     />
   );
 }
