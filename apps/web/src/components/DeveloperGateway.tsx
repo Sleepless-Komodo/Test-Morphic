@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import {
   ArrowUpRight,
   Check,
@@ -18,8 +18,16 @@ import { useTranslation } from '@/lib/i18n';
 import { formatCredits, formatTokenEstimate, timeAgo, API_BASE_URL } from '@/lib/utils';
 import GatewayStatusPopover from '@/components/GatewayStatusPopover';
 import QuickstartHub from '@/components/QuickstartHub';
+import { INFERENCE_MODELS, CapabilityTag, ModelItem } from '@/lib/models-data';
+export type { ModelItem } from '@/lib/models-data';
 
 const BASE_URL = API_BASE_URL;
+
+const CHEAP_DAILY_PACKAGES = [
+  { id: 'starter', label: 'Starter', labelEn: 'Starter', desc: 'Rp 10.000 / bulan', descEn: 'Rp 10,000 / month', credits: 10000 },
+  { id: 'pro', label: 'Pro', labelEn: 'Pro', desc: 'Rp 25.000 / bulan', descEn: 'Rp 25,000 / month', credits: 25000 },
+  { id: 'power', label: 'Power', labelEn: 'Power', desc: 'Rp 50.000 / bulan', descEn: 'Rp 50,000 / month', credits: 50000 },
+] as const;
 
 interface UsageSummary {
   totalTokens: number;
@@ -46,18 +54,53 @@ export interface RecentRequestItem {
  * Interface representing component props for DeveloperGateway.
  */
 interface DeveloperGatewayProps {
+  session?: unknown;
   userBalance?: number;
   /**
    * Optional initial models passed from the Server Component (fetched from PostgreSQL database).
    * If not provided or empty, the component will fall back to static default models.
    */
   initialModels?: ModelItem[];
+  recentRequests?: RecentRequestItem[];
+  /** Pre-computed server-side model stats to avoid client-side string parsing */
+  serverModelCount?: number;
+  serverAvgCreditsPer1m?: number;
+  serverMinInputRate?: number;
 }
 
-export default function DeveloperGateway({ session, userBalance = 0, initialModels }: DeveloperGatewayProps) {
+export default function DeveloperGateway({
+  session,
+  userBalance = 0,
+  initialModels,
+  recentRequests: initialRecentRequests = [],
+  serverModelCount,
+  serverAvgCreditsPer1m,
+  serverMinInputRate,
+}: DeveloperGatewayProps) {
   const { t, locale } = useTranslation();
   const isId = locale === 'id';
   const [baseUrlCopied, setBaseUrlCopied] = useState(false);
+
+  // Filter state
+  const [selectedCapability, setSelectedCapability] = useState<CapabilityTag | 'All'>('All');
+  const [selectedProvider, setSelectedProvider] = useState<string>('All');
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // API Key state
+  const [keyName, setKeyName] = useState('');
+  const [isCreatingKey, setIsCreatingKey] = useState(false);
+  const [keysList, setKeysList] = useState<{ id: string; name: string; key: string; date: string }[]>([]);
+
+  // Voucher / balance state
+  const [voucherCode, setVoucherCode] = useState('');
+  const [voucherSuccess, setVoucherSuccess] = useState<string | null>(null);
+  const [balance, setBalance] = useState(userBalance);
+
+  // Recent requests (may be overridden by real-time data in the future)
+  const [recentRequests] = useState<RecentRequestItem[]>(initialRecentRequests);
+
+  // Derived metrics from active model list
+  const activeKeys = keysList.length;
 
   const getPackageDesc = (pkg: (typeof CHEAP_DAILY_PACKAGES)[number]) =>
     locale === 'en' && pkg.descEn ? pkg.descEn : pkg.desc;
@@ -66,6 +109,30 @@ export default function DeveloperGateway({ session, userBalance = 0, initialMode
   const activeModelList = useMemo(() => {
     return initialModels && initialModels.length > 0 ? initialModels : INFERENCE_MODELS;
   }, [initialModels]);
+
+  // Derived metrics — prefer server-side pre-computed values (accurate, from real DB);
+  // fall back to client-side parsing of dailyRate strings only for static INFERENCE_MODELS.
+  const modelCount = serverModelCount ?? activeModelList.length;
+  const minInputRate = useMemo(() => {
+    if (serverMinInputRate !== undefined) return serverMinInputRate;
+    const rates = activeModelList
+      .map((m) => parseInt((m.dailyRate ?? '').replace(/[^0-9]/g, ''), 10))
+      .filter((r) => !isNaN(r) && r > 0);
+    return rates.length > 0 ? Math.min(...rates) : 0;
+  }, [activeModelList, serverMinInputRate]);
+  const avgCreditsPer1m = useMemo(() => {
+    if (serverAvgCreditsPer1m !== undefined) return serverAvgCreditsPer1m;
+    const rates = activeModelList
+      .map((m) => parseInt((m.dailyRate ?? '').replace(/[^0-9]/g, ''), 10))
+      .filter((r) => !isNaN(r) && r > 0);
+    return rates.length > 0 ? rates.reduce((a, b) => a + b, 0) / rates.length : 0;
+  }, [activeModelList, serverAvgCreditsPer1m]);
+
+  // Usage summary (placeholder — replace with real fetched data)
+  const usage = useMemo<{ totalTokens: number; promptTokens: number; completionTokens: number }>(
+    () => ({ totalTokens: 0, promptTokens: 0, completionTokens: 0 }),
+    [],
+  );
 
   const filteredModels = useMemo(
     () =>
@@ -88,7 +155,7 @@ export default function DeveloperGateway({ session, userBalance = 0, initialMode
     setTimeout(() => {
       const hex = Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
       setKeysList((prev) => [
-        { id: `k-${Date.now()}`, name: keyName, key: `mp-live-${hex}`, date: t.dashboard.justNow },
+        { id: `k-${Date.now()}`, name: keyName, key: `mp-live-${hex}`, date: locale === 'id' ? 'Baru saja' : 'Just now' },
         ...prev,
       ]);
       setKeyName('');
@@ -108,8 +175,15 @@ export default function DeveloperGateway({ session, userBalance = 0, initialMode
     setTimeout(() => setVoucherSuccess(null), 5000);
   };
 
+  const copyBaseUrl = () => {
+    navigator.clipboard.writeText(BASE_URL).then(() => {
+      setBaseUrlCopied(true);
+      setTimeout(() => setBaseUrlCopied(false), 2000);
+    });
+  };
+
   const estimatedTokens =
-    avgCreditsPer1m > 0 ? Math.floor((userBalance / avgCreditsPer1m) * 1_000_000) : 0;
+    avgCreditsPer1m > 0 ? Math.floor((balance / avgCreditsPer1m) * 1_000_000) : 0;
   const inputPct =
     usage.totalTokens > 0 ? Math.round((usage.promptTokens / usage.totalTokens) * 100) : 0;
   const outputPct = usage.totalTokens > 0 ? 100 - inputPct : 0;

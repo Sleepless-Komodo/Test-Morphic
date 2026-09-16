@@ -1,5 +1,5 @@
 import { headers } from 'next/headers';
-import { eq } from 'drizzle-orm';
+import { eq, sql, desc, and } from 'drizzle-orm';
 import { auth } from '@/lib/auth';
 import { db, schema as s } from '@morphic/db';
 import { getBalance } from '@morphic/db/billing';
@@ -32,12 +32,13 @@ async function getModelsFromDb(): Promise<ModelItem[] | undefined> {
 
     return dbModels.map((m) => {
       // Map DB capability array tags to UI CapabilityTag union
-      const caps: ('Chat' | 'Code' | 'Reasoning' | 'Multimodal' | 'Image' | 'Video')[] = [];
+      const caps: ('Chat' | 'Code' | 'Reasoning' | 'Vision' | 'Long Context')[] = [];
       const rawCaps = Array.isArray(m.capabilities) ? m.capabilities : [];
       if (rawCaps.includes('coding')) caps.push('Code');
       if (rawCaps.includes('reasoning')) caps.push('Reasoning');
       if (rawCaps.includes('chat') || rawCaps.includes('general')) caps.push('Chat');
-      if (rawCaps.includes('multimodal')) caps.push('Multimodal');
+      if (rawCaps.includes('multimodal') || rawCaps.includes('vision')) caps.push('Vision');
+      if ((m.contextLength || 0) >= 128000) caps.push('Long Context');
       if (caps.length === 0) caps.push('Chat');
 
       const contextK = Math.round((m.contextLength || 0) / 1024);
@@ -52,15 +53,18 @@ async function getModelsFromDb(): Promise<ModelItem[] | undefined> {
         provider: formattedProvider,
         capabilities: caps,
         contextWindow,
-        rate: `${m.inputCreditsPer1m || 100} credits / 1M in`,
-        dailyPrice: `Rp ${((m.inputCreditsPer1m || 100) * 25).toLocaleString('id-ID')} / hari`,
-        category: `${formattedProvider} Family`,
-        description: m.description || `${m.displayName} AI model`,
-        descriptionEn: m.description || `${m.displayName} AI model`,
-        isAvailable: m.status === 'active',
-        section: 'inference',
+        category: caps.includes('Code') ? 'Coding' : caps.includes('Reasoning') ? 'Reasoning' : caps.includes('Vision') ? 'Multimodal' : 'Chat',
+        dailyRate: `Rp ${((m.inputCreditsPer1m || 100) * 25).toLocaleString('id-ID')} / hari`,
+        dailyRateEn: `Rp ${((m.inputCreditsPer1m || 100) * 25).toLocaleString('en-US')} / day`,
+        speed: 'Fast' as const,
+        estimatedLatency: '~200ms',
+        description: {
+          id: m.description || `${m.displayName} AI model`,
+          en: m.description || `${m.displayName} AI model`,
+        },
         badge: formattedProvider.toUpperCase(),
         badgeEn: formattedProvider.toUpperCase(),
+        badgeType: 'popular' as const,
       };
     });
   } catch (error) {
@@ -163,6 +167,10 @@ export default async function DashboardPage() {
       session={session}
       userBalance={userBalance}
       initialModels={initialModels}
+      recentRequests={recentRequests}
+      serverModelCount={modelCount}
+      serverAvgCreditsPer1m={avgCreditsPer1m}
+      serverMinInputRate={minInputRate}
     />
   );
 }
