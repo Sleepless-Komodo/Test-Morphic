@@ -88,14 +88,6 @@ v1.get('/models/:id', async (c) => {
   });
 });
 
-v1.get('/ping-dahl', async (c) => {
-  try {
-    const res = await fetch('https://inference.dahl.global/v1/models', { signal: AbortSignal.timeout(5000) });
-    return c.json({ status: res.status, ok: res.ok });
-  } catch (e: any) {
-    return c.json({ error: e.message, stack: e.stack }, 500);
-  }
-});
 
 v1.post('/chat/completions', async (c) => {
   const requestId = randomUUID();
