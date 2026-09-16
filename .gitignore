@@ -10,6 +10,7 @@ build/
 *.tsbuildinfo
 apps/web/.next/
 apps/api/dist/
+apps/api/api/
 
 # Caches
 .turbo/
