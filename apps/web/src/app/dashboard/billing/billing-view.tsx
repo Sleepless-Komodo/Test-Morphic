@@ -12,6 +12,7 @@ interface BillingViewProps {
   packages: any[];
   entitlements: any[];
   payments: any[];
+  ledger: any[];
 }
 
 export function BillingView({
@@ -19,6 +20,7 @@ export function BillingView({
   packages: initialPackages,
   entitlements,
   payments,
+  ledger,
 }: BillingViewProps) {
   const router = useRouter();
   const { t, locale } = useTranslation();
@@ -186,6 +188,55 @@ export function BillingView({
                             ? (locale === 'en' ? 'Success' : 'Berhasil')
                             : p.status}
                         </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+      {/* Credit Ledger History */}
+      <div className="space-y-3">
+        <h2 suppressHydrationWarning className="font-heading font-bold text-base text-neutral-950">
+          {t.dashboard.ledgerHistoryTitle}
+        </h2>
+        <div className="rounded-2xl bg-white border border-neutral-200/90 shadow-2xs overflow-hidden">
+          {ledger.length === 0 ? (
+            <div suppressHydrationWarning className="p-8 text-center text-xs text-neutral-500 font-mono">
+              {t.dashboard.noLedgerHistory}
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr suppressHydrationWarning className="border-b border-neutral-200 bg-neutral-50/70 text-[11px] font-mono uppercase text-neutral-500">
+                    <th className="px-5 py-3">{t.dashboard.thLedgerType}</th>
+                    <th className="px-5 py-3">{t.dashboard.thLedgerAmount}</th>
+                    <th className="px-5 py-3">{t.dashboard.thLedgerRef}</th>
+                    <th className="px-5 py-3">{t.dashboard.thLedgerDate}</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-neutral-100">
+                  {ledger.map((entry) => (
+                    <tr key={entry.id}>
+                      <td className="px-5 py-3 font-mono font-bold text-neutral-800">
+                        {entry.entry_type}
+                      </td>
+                      <td className={`px-5 py-3 font-mono font-bold ${
+                        entry.amount >= 0 ? 'text-emerald-600' : 'text-rose-600'
+                      }`}>
+                        {entry.amount >= 0 ? '+' : ''}{entry.amount.toLocaleString()}
+                      </td>
+                      <td className="px-5 py-3 text-neutral-500 max-w-[200px] truncate">
+                        {entry.reference ?? '—'}
+                      </td>
+                      <td className="px-5 py-3 text-neutral-400 font-mono whitespace-nowrap">
+                        {new Date(entry.created_at).toLocaleString(
+                          locale === 'en' ? 'en-US' : 'id-ID',
+                          { dateStyle: 'short', timeStyle: 'short' }
+                        )}
                       </td>
                     </tr>
                   ))}

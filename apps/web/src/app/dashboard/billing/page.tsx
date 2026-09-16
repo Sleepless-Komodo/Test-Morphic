@@ -2,6 +2,7 @@ import { eq, desc, and, gt } from 'drizzle-orm';
 import { db, schema as s } from '@morphic/db';
 import { requireUser } from '@/lib/actions';
 import { getBalance } from '@morphic/db/billing';
+import { fetchBackendApi } from '@/lib/api-client';
 import { BillingView } from './billing-view';
 
 const FALLBACK_CHEAP_PACKAGES = [
@@ -73,6 +74,7 @@ export default async function BillingPage() {
   let displayPackages: any[] = FALLBACK_CHEAP_PACKAGES;
   let entitlements: any[] = [];
   let payments: any[] = [];
+  let ledger: any[] = [];
 
   try {
     const [b, dbPackages, dbEntitlements, dbPayments] = await Promise.all([
@@ -111,12 +113,21 @@ export default async function BillingPage() {
     console.warn('[BillingPage] Database offline, showing fallback packages and zero balance:', err);
   }
 
+  // Fetch credit ledger from backend API (authenticated via session cookie forwarding)
+  const ledgerRes = await fetchBackendApi<{ data: any[]; total: number }>(
+    '/v1/account/transactions?limit=50',
+  );
+  if (ledgerRes.data?.data) {
+    ledger = ledgerRes.data.data;
+  }
+
   return (
     <BillingView
       balance={balance}
       packages={displayPackages}
       entitlements={entitlements}
       payments={payments}
+      ledger={ledger}
     />
   );
 }
