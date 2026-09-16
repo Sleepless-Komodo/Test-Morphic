@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { db, schema as s } from '@morphic/db';
 import { eq, and, desc, gte, lte, count } from 'drizzle-orm';
-import { sessionAuth } from '../middleware/session-auth.ts';
+import { sessionAuth } from '../middleware/session-auth';
 
 const account = new Hono();
 

@@ -78,7 +78,6 @@ export default async function UsagePage() {
       total={total}
       topModels={topModels}
       recent={recent}
-      totalCount={total.requests}
     />
   );
 }

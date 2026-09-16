@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import type { Context, Next } from 'hono';
 import { db, schema as s } from '@morphic/db';
 import { eq, and } from 'drizzle-orm';
-import { checkRateLimit, trackConcurrency, releaseConcurrency } from '../ratelimit.ts';
+import { checkRateLimit, trackConcurrency, releaseConcurrency } from '../ratelimit';
 
 export interface AuthedKey {
   keyId: string;
@@ -64,8 +64,8 @@ export async function apiKeyAuth(c: Context, next: Next) {
     );
   }
 
-  // touch last_used_at (fire-and-forget, non-blocking)
-  db.update(s.apiKeys)
+  // touch last_used_at (blocking to ensure connection is released before next)
+  await db.update(s.apiKeys)
     .set({ lastUsedAt: new Date() })
     .where(eq(s.apiKeys.id, key.id))
     .catch(() => {});

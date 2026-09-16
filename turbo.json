@@ -3,7 +3,26 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": [".next/**", "!.next/cache/**", "!.next/standalone/**", "dist/**"]
+      "outputs": [".next/**", "!.next/cache/**", "!.next/standalone/**", "dist/**"],
+      "env": [
+        "NODE_ENV",
+        "DATABASE_URL",
+        "BETTER_AUTH_SECRET",
+        "BETTER_AUTH_URL",
+        "GOOGLE_CLIENT_ID",
+        "GOOGLE_CLIENT_SECRET",
+        "API_PORT",
+        "PROVIDER_ENC_KEY",
+        "INTERNAL_API_SECRET",
+        "HARD_RESERVE_CAP",
+        "RESERVATION_TTL_MINUTES",
+        "DAHL_API_KEY",
+        "MOCK_PAYMENT_WEBHOOK_SECRET",
+        "DUITKU_MERCHANT_CODE",
+        "DUITKU_API_KEY",
+        "DUITKU_ENV",
+        "NEXT_PUBLIC_APP_URL"
+      ]
     },
     "dev": {
       "cache": false,

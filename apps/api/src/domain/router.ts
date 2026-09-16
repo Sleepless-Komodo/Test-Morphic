@@ -2,7 +2,7 @@ import { db, schema as s } from '@morphic/db';
 import { eq, and, or } from 'drizzle-orm';
 import { resolveProviderCredential } from '@morphic/shared/provider-crypto';
 import { normalizeModelId } from '@morphic/shared/models';
-import { isCircuitOpen } from './circuit-breaker.ts';
+import { isCircuitOpen } from './circuit-breaker';
 
 export interface ResolvedRoute {
   providerName: string;
@@ -17,7 +17,10 @@ export interface ResolvedRoute {
   deprecationWarning: string | null;
 }
 
-const UPSTREAM_TIMEOUT_MS = Number(process.env.UPSTREAM_TIMEOUT_MS ?? 60_000);
+// Default 55s: leaves 5s buffer for DB settle before Vercel's 60s maxDuration kills the function.
+// Override with UPSTREAM_TIMEOUT_MS env var (e.g. set to 110000 if on Pro plan with 120s limit).
+const envTimeout = process.env.UPSTREAM_TIMEOUT_MS ? Number(process.env.UPSTREAM_TIMEOUT_MS) : 55_000;
+const UPSTREAM_TIMEOUT_MS = Number.isNaN(envTimeout) || envTimeout <= 0 ? 55_000 : envTimeout;
 
 interface ModelRow {
   modelId: string;
@@ -171,19 +174,16 @@ export class OpenAiCompatibleAdapter implements IAiProviderAdapter {
     const url = `${route.baseUrl.replace(/\/$/, '')}/chat/completions`;
     const payload = { ...body, model: route.providerModelId, stream };
 
-    const headers: Record<string, string> = { 'content-type': 'application/json' };
+    const headers: Record<string, string> = { 'content-type': 'application/json', 'connection': 'close' };
     if (route.credential) headers['authorization'] = `Bearer ${route.credential}`;
 
     const timeoutSignal = AbortSignal.timeout(UPSTREAM_TIMEOUT_MS);
-    const combinedSignal = signal
-      ? AbortSignal.any([signal, timeoutSignal])
-      : timeoutSignal;
-
+    
     return fetch(url, {
       method: 'POST',
       headers,
       body: JSON.stringify(payload),
-      signal: combinedSignal,
+      signal: timeoutSignal,
     });
   }
 }

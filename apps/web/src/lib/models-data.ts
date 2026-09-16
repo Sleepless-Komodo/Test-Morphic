@@ -1,8 +1,11 @@
+export type CapabilityTag = 'Code' | 'Reasoning' | 'Chat' | 'Vision' | 'Long Context';
+
 export interface ModelItem {
   id: string;
   name: string;
   provider: string;
   category: 'Coding' | 'Reasoning' | 'Chat' | 'Multimodal';
+  capabilities: CapabilityTag[];
   contextWindow: string;
   dailyRate: string;
   dailyRateEn: string;
@@ -23,6 +26,7 @@ export const ALL_MODELS: ModelItem[] = [
     name: 'Claude 3.5 Sonnet',
     provider: 'Anthropic',
     category: 'Coding',
+    capabilities: ['Code', 'Reasoning', 'Chat'],
     contextWindow: '200K Tokens',
     dailyRate: 'Rp 8.500 / hari',
     dailyRateEn: 'Rp 8,500 / day',
@@ -41,6 +45,7 @@ export const ALL_MODELS: ModelItem[] = [
     name: 'DeepSeek V4 Coder',
     provider: 'DeepSeek',
     category: 'Coding',
+    capabilities: ['Code', 'Chat'],
     contextWindow: '64K Tokens',
     dailyRate: 'Rp 2.500 / hari',
     dailyRateEn: 'Rp 2,500 / day',
@@ -59,6 +64,7 @@ export const ALL_MODELS: ModelItem[] = [
     name: 'DeepSeek R1 Reasoning',
     provider: 'DeepSeek',
     category: 'Reasoning',
+    capabilities: ['Reasoning', 'Code'],
     contextWindow: '128K Tokens',
     dailyRate: 'Rp 4.500 / hari',
     dailyRateEn: 'Rp 4,500 / day',
@@ -77,6 +83,7 @@ export const ALL_MODELS: ModelItem[] = [
     name: 'Qwen 2.5 Max',
     provider: 'Alibaba Cloud',
     category: 'Chat',
+    capabilities: ['Chat', 'Reasoning', 'Long Context'],
     contextWindow: '128K Tokens',
     dailyRate: 'Rp 3.500 / hari',
     dailyRateEn: 'Rp 3,500 / day',
@@ -95,6 +102,7 @@ export const ALL_MODELS: ModelItem[] = [
     name: 'Kimi Coding 256K',
     provider: 'Moonshot AI',
     category: 'Coding',
+    capabilities: ['Code', 'Long Context'],
     contextWindow: '256K Tokens',
     dailyRate: 'Rp 4.000 / hari',
     dailyRateEn: 'Rp 4,000 / day',
@@ -113,6 +121,7 @@ export const ALL_MODELS: ModelItem[] = [
     name: 'GPT-4o Mini Gateway',
     provider: 'OpenAI',
     category: 'Multimodal',
+    capabilities: ['Vision', 'Chat', 'Code'],
     contextWindow: '128K Tokens',
     dailyRate: 'Rp 3.500 / hari',
     dailyRateEn: 'Rp 3,500 / day',
@@ -131,6 +140,7 @@ export const ALL_MODELS: ModelItem[] = [
     name: 'GLM-4 Air',
     provider: 'Zhipu AI',
     category: 'Chat',
+    capabilities: ['Chat', 'Long Context'],
     contextWindow: '128K Tokens',
     dailyRate: 'Rp 1.500 / hari',
     dailyRateEn: 'Rp 1,500 / day',
@@ -149,6 +159,7 @@ export const ALL_MODELS: ModelItem[] = [
     name: 'Yi Lightning',
     provider: '01.AI',
     category: 'Chat',
+    capabilities: ['Chat'],
     contextWindow: '16K Tokens',
     dailyRate: 'Rp 1.000 / hari',
     dailyRateEn: 'Rp 1,000 / day',
@@ -163,6 +174,9 @@ export const ALL_MODELS: ModelItem[] = [
     },
   },
 ];
+
+/** Alias used by DeveloperGateway as static fallback when no DB models are available. */
+export const INFERENCE_MODELS = ALL_MODELS;
 
 export function getModelDailyRate(model: ModelItem, locale: string): string {
   if (locale === 'en') {
