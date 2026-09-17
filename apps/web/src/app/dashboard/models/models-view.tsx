@@ -86,8 +86,8 @@ export function ModelsView({ initialModels }: { initialModels: any[] }) {
         </div>
       </div>
 
-      {/* Grid of Models */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      {/* Grid of Models (High-density compact square cards) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-[repeat(auto-fill,minmax(195px,225px))] gap-3">
         {filtered.map((m: any) => {
           const dailyRateFormatted =
             locale === 'en'
@@ -98,58 +98,98 @@ export function ModelsView({ initialModels }: { initialModels: any[] }) {
           return (
             <div
               key={m.publicModelId}
-              className="p-5 rounded-2xl bg-white border border-neutral-200/90 shadow-2xs flex flex-col justify-between hover:border-neutral-300 hover:shadow-xs transition-all group"
+              className="p-3.5 rounded-2xl bg-white border border-neutral-200/90 shadow-2xs flex flex-col justify-between hover:border-neutral-900/30 hover:shadow-xs transition-all group min-w-0 min-h-[205px] max-h-[220px]"
             >
               <div>
-                <div className="flex items-start justify-between gap-2 mb-2">
-                  <div>
-                    <h3 className="font-heading font-bold text-base text-neutral-950">{m.displayName}</h3>
-                    <div className="text-[10px] text-neutral-400 font-mono">{m.providerName ?? (locale === 'en' ? 'Official' : 'Resmi')}</div>
-                  </div>
-                  <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md bg-neutral-100 text-neutral-700 border border-neutral-200">
-                    {t.dashboard.modelStatusReady}
+                {/* Provider + Status */}
+                <div className="flex items-center justify-between gap-1.5 mb-1.5">
+                  <span className="text-[10px] text-neutral-400 font-mono uppercase tracking-wider font-semibold truncate">
+                    {m.providerName ?? (locale === 'en' ? 'Official' : 'Resmi')}
+                  </span>
+                  {m.circuitBreakerState?.state === 'open' ? (
+                    <span
+                      className="inline-flex items-center gap-1 text-[9px] font-mono font-medium px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 shrink-0"
+                      title={locale === 'en' ? 'Upstream degraded, automatically routed via fallback provider' : 'Upstream terganggu, otomatis dialihkan via rute cadangan'}
+                    >
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                      <span>{locale === 'en' ? 'Fallback' : 'Cadangan'}</span>
+                    </span>
+                  ) : m.circuitBreakerState?.state === 'half-open' ? (
+                    <span
+                      className="inline-flex items-center gap-1 text-[9px] font-mono font-medium px-1.5 py-0.5 rounded-full bg-sky-50 text-sky-800 border border-sky-200 shrink-0"
+                      title={locale === 'en' ? 'Upstream recovering, testing trial queries' : 'Upstream dalam pemulihan'}
+                    >
+                      <span className="w-1.5 h-1.5 rounded-full bg-sky-500 animate-pulse" />
+                      <span>{locale === 'en' ? 'Testing' : 'Pemulihan'}</span>
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 text-[9px] font-mono font-medium px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/60 shrink-0">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                      <span>{t.dashboard.modelStatusReady}</span>
+                    </span>
+                  )}
+                </div>
+
+                {/* Model Title */}
+                <h3 className="font-heading font-bold text-xs sm:text-[13px] text-neutral-950 truncate" title={m.displayName}>
+                  {m.displayName}
+                </h3>
+
+                {/* Model ID Pill with 1-click copy */}
+                <div
+                  onClick={() => copyId(m.publicModelId)}
+                  title={t.dashboard.copy}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => e.key === 'Enter' && copyId(m.publicModelId)}
+                  className="group/id my-1.5 flex items-center justify-between gap-1 px-2 py-1 rounded-lg bg-neutral-50 hover:bg-neutral-100/90 border border-neutral-200/70 cursor-pointer transition-colors"
+                >
+                  <code className="text-[10px] font-mono text-neutral-700 truncate select-all">
+                    {m.publicModelId}
+                  </code>
+                  <span className="shrink-0 text-neutral-400 group-hover/id:text-neutral-900 transition-colors">
+                    {copiedId === m.publicModelId ? (
+                      <Check className="h-3 w-3 text-emerald-600" />
+                    ) : (
+                      <Copy className="h-3 w-3" />
+                    )}
                   </span>
                 </div>
 
-                <div className="flex items-center gap-2 mb-3">
-                  <code className="text-[11px] font-mono text-neutral-600 bg-neutral-100 px-2 py-0.5 rounded-md truncate max-w-[200px]">
-                    {m.publicModelId}
-                  </code>
-                  <button
-                    onClick={() => copyId(m.publicModelId)}
-                    className="p-1 rounded-md text-neutral-400 hover:text-black hover:bg-neutral-100 transition-colors cursor-pointer"
-                    title={t.dashboard.copy}
-                  >
-                    {copiedId === m.publicModelId ? (
-                      <Check className="h-3.5 w-3.5 text-emerald-600" />
-                    ) : (
-                      <Copy className="h-3.5 w-3.5" />
-                    )}
-                  </button>
-                </div>
+                {/* Description (Single line to keep card height clean and square) */}
+                <p className="text-[10px] text-neutral-500 leading-snug line-clamp-1 mb-2" title={descriptionText}>
+                  {descriptionText}
+                </p>
 
-                <p className="text-xs text-neutral-600 leading-relaxed mb-4">{descriptionText}</p>
-
-                <div className="flex gap-1.5 flex-wrap mb-4">
-                  {(m.capabilities ?? []).map((cap: string) => (
+                {/* Capabilities (Top 2 tags) */}
+                <div className="flex gap-1 flex-wrap mb-2">
+                  {(m.capabilities ?? []).slice(0, 2).map((cap: string) => (
                     <span
                       key={cap}
-                      className="px-2 py-0.5 rounded-md text-[10px] font-mono font-medium bg-neutral-100 text-neutral-700 border border-neutral-200 capitalize"
+                      className="px-1.5 py-0.5 rounded text-[9px] font-mono font-medium bg-neutral-100/80 text-neutral-600 border border-neutral-200/60 capitalize"
                     >
                       {cap.replace('-', ' ')}
                     </span>
                   ))}
+                  {(m.capabilities?.length ?? 0) > 2 && (
+                    <span className="px-1 py-0.5 rounded text-[9px] font-mono text-neutral-400">
+                      +{(m.capabilities?.length ?? 0) - 2}
+                    </span>
+                  )}
                 </div>
               </div>
 
-              <div className="pt-3 border-t border-neutral-100 space-y-1.5">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-neutral-500">{t.dashboard.dailyRateLabel}</span>
-                  <span className="font-bold font-mono text-neutral-950">{dailyRateFormatted}</span>
+              {/* Pricing & Context Specs Footer */}
+              <div className="pt-2 border-t border-neutral-100 mt-auto space-y-0.5">
+                <div className="flex items-baseline justify-between gap-1 text-[10.5px]">
+                  <span className="text-neutral-400 truncate text-[10px]">{t.dashboard.dailyRateLabel}</span>
+                  <span className="font-bold font-mono text-neutral-950 text-[11px] shrink-0">{dailyRateFormatted}</span>
                 </div>
-                <div className="flex items-center justify-between text-[11px] text-neutral-400 font-mono">
-                  <span>{formatCredits(m.contextLength)} {t.dashboard.context.replace(':', '').trim().toLowerCase()}</span>
-                  <span>{locale === 'en' ? 'in' : 'masuk'} {formatCredits(m.inputCreditsPer1m)} / {locale === 'en' ? 'out' : 'keluar'} {formatCredits(m.outputCreditsPer1m)}</span>
+                <div className="flex items-center justify-between text-[9.5px] text-neutral-400 font-mono">
+                  <span>{formatCredits(m.contextLength)} ctx</span>
+                  <span className="truncate">
+                    {locale === 'en' ? 'in' : 'msk'} {formatCredits(m.inputCreditsPer1m)} / {locale === 'en' ? 'out' : 'klr'} {formatCredits(m.outputCreditsPer1m)}
+                  </span>
                 </div>
               </div>
             </div>

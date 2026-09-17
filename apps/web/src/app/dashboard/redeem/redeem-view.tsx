@@ -39,26 +39,24 @@ export function RedeemView() {
   };
 
   return (
-    <div className="max-w-xl mx-auto py-12 px-4 sm:px-6">
-      <div className="text-center mb-10">
-        <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-blue-50 text-blue-600 mb-4">
-          <Gift className="w-8 h-8" />
+    <div className="max-w-xl mx-auto py-8 sm:py-12 px-4 sm:px-6">
+      <div className="text-center mb-8">
+        <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-neutral-100 text-neutral-900 border border-neutral-200 mb-4 shadow-2xs">
+          <Gift className="w-7 h-7" />
         </div>
-        <h1 className="text-3xl font-extrabold font-heading text-neutral-900 tracking-tight">
-          {locale === 'en' ? 'Redeem Code' : 'Tukar Kode Redeem'}
+        <h1 suppressHydrationWarning className="text-2xl sm:text-3xl font-extrabold font-heading text-neutral-950 tracking-tight">
+          {t.dashboard.redeemPageTitle}
         </h1>
-        <p className="mt-3 text-neutral-500 text-sm max-w-sm mx-auto">
-          {locale === 'en' 
-            ? 'Enter your gift code below to claim credits or package entitlements.'
-            : 'Masukkan kode hadiah kamu di bawah ini untuk klaim kredit atau paket.'}
+        <p suppressHydrationWarning className="mt-2 text-neutral-500 text-xs sm:text-sm max-w-md mx-auto leading-relaxed">
+          {t.dashboard.redeemPageSubtitle}
         </p>
       </div>
 
-      <div className="bg-white border border-neutral-200 rounded-3xl p-6 sm:p-8 shadow-sm">
-        <form onSubmit={handleSubmit} className="space-y-6">
+      <div className="bg-white border border-neutral-200/90 rounded-3xl p-6 sm:p-8 shadow-2xs space-y-6">
+        <form onSubmit={handleSubmit} className="space-y-5">
           <div>
-            <label htmlFor="code" className="block text-sm font-semibold text-neutral-900 mb-2">
-              {locale === 'en' ? 'Gift Code' : 'Kode Hadiah'}
+            <label htmlFor="code" suppressHydrationWarning className="block text-xs font-mono font-bold uppercase tracking-wider text-neutral-600 mb-2">
+              {t.dashboard.voucherInputLabel}
             </label>
             <input
               type="text"
@@ -66,8 +64,8 @@ export function RedeemView() {
               name="code"
               value={code}
               onChange={(e) => setCode(e.target.value.toUpperCase())}
-              placeholder={locale === 'en' ? 'e.g., WELCOME2024' : 'Cth: WELCOME2024'}
-              className="w-full px-4 py-3 rounded-2xl border border-neutral-200 bg-neutral-50 text-neutral-900 text-lg font-mono font-bold placeholder:font-sans placeholder:font-normal placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all uppercase"
+              placeholder={t.dashboard.voucherInputPlaceholder}
+              className="w-full px-4 py-3 rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 text-base sm:text-lg font-mono font-bold placeholder:font-sans placeholder:font-normal placeholder:text-neutral-400 focus:outline-none focus:border-black focus:bg-white transition-all uppercase shadow-2xs"
               disabled={status === 'loading'}
             />
           </div>
@@ -75,36 +73,36 @@ export function RedeemView() {
           <button
             type="submit"
             disabled={!code.trim() || status === 'loading'}
-            className="w-full py-3.5 px-4 rounded-2xl bg-neutral-950 hover:bg-neutral-800 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-bold transition-all shadow-md flex items-center justify-center gap-2"
+            className="w-full py-3.5 px-4 rounded-xl bg-neutral-950 hover:bg-neutral-800 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs sm:text-sm font-bold transition-all shadow-xs flex items-center justify-center gap-2 cursor-pointer active:scale-[0.99]"
           >
             {status === 'loading' && <Loader2 className="w-4 h-4 animate-spin" />}
-            {status === 'loading' 
-              ? (locale === 'en' ? 'Redeeming...' : 'Menukarkan...') 
-              : (locale === 'en' ? 'Redeem Now' : 'Tukar Sekarang')}
+            <span suppressHydrationWarning>
+              {status === 'loading' ? t.dashboard.redeemingBtn : t.dashboard.redeemSubmitBtn}
+            </span>
           </button>
         </form>
 
         {/* Status Messages */}
         {status === 'error' && (
-          <div className="mt-6 p-4 rounded-2xl bg-red-50 border border-red-100 flex items-start gap-3 animate-in fade-in slide-in-from-top-2">
-            <XCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+          <div className="p-4 rounded-2xl bg-red-50/80 border border-red-200/70 flex items-start gap-3 animate-in fade-in slide-in-from-top-2">
+            <XCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
             <div>
-              <h3 className="text-sm font-bold text-red-800">
+              <h3 className="text-xs sm:text-sm font-bold text-red-900">
                 {locale === 'en' ? 'Redemption Failed' : 'Gagal Menukarkan'}
               </h3>
-              <p className="text-sm text-red-600 mt-1">{errorMsg}</p>
+              <p className="text-xs text-red-700 mt-0.5">{errorMsg}</p>
             </div>
           </div>
         )}
 
         {status === 'success' && reward && (
-          <div className="mt-6 p-5 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-start gap-4 animate-in fade-in zoom-in-95">
-            <CheckCircle2 className="w-6 h-6 text-emerald-500 shrink-0 mt-1" />
+          <div className="p-5 rounded-2xl bg-emerald-50/90 border border-emerald-200/80 flex items-start gap-3.5 animate-in fade-in zoom-in-95">
+            <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
             <div>
-              <h3 className="text-base font-bold text-emerald-800">
-                {locale === 'en' ? 'Successfully Redeemed!' : 'Berhasil Ditukarkan!'}
+              <h3 className="text-sm font-bold text-emerald-950">
+                {locale === 'en' ? 'Redeem Code Applied Successfully!' : 'Redeem Code Berhasil Diklaim!'}
               </h3>
-              <p className="text-sm text-emerald-700 mt-1">
+              <p className="text-xs text-emerald-800 mt-1 leading-relaxed">
                 {reward.type === 'credits' 
                   ? (locale === 'en' 
                       ? `You received ${formatCredits(reward.credits)} credits.` 
@@ -117,6 +115,18 @@ export function RedeemView() {
             </div>
           </div>
         )}
+
+        {/* Guidelines section */}
+        <div className="pt-4 border-t border-neutral-100 text-xs text-neutral-500 space-y-2">
+          <div suppressHydrationWarning className="font-semibold text-neutral-800 flex items-center gap-1.5">
+            <span>{t.dashboard.termsCardTitle}</span>
+          </div>
+          <ul className="space-y-1.5 text-[11px] text-neutral-500 pl-4 list-disc marker:text-neutral-400">
+            <li suppressHydrationWarning>{t.dashboard.termItem1}</li>
+            <li suppressHydrationWarning>{t.dashboard.termItem2}</li>
+            <li suppressHydrationWarning>{t.dashboard.termItem3}</li>
+          </ul>
+        </div>
       </div>
     </div>
   );

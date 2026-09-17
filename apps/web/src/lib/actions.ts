@@ -2,11 +2,13 @@
 
 import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { eq, and, desc, sql } from 'drizzle-orm';
+import { eq, and, desc, sql, gte, lte } from 'drizzle-orm';
 import { db, schema as s } from '@morphic/db';
 import { generateApiKey, maskedKey } from '@morphic/shared/keys';
 import { grantCredits, grantEntitlement } from '@morphic/db/billing';
 import { auth } from '@/lib/auth';
+
+import { fetchBackendApi } from '@/lib/api-client';
 
 async function requireUser() {
   const session = await auth.api.getSession({ headers: await headers() });
@@ -27,14 +29,36 @@ export { requireUser, requireAdmin };
 // ── API Keys ──────────────────────────────────────────
 
 export async function listApiKeys() {
-  const user = await requireUser();
+  await requireUser();
+
+  // 1. Try fetching from Backend API
   try {
+    const apiRes = await fetchBackendApi<{ data: any[] }>('/v1/keys');
+    if (apiRes.data?.data) {
+      return apiRes.data.data.map((k: any) => ({
+        id: k.id,
+        name: k.name,
+        keyPrefix: k.prefix,
+        status: k.status,
+        expiresAt: k.expires_at ? new Date(k.expires_at) : null,
+        lastUsedAt: k.last_used_at ? new Date(k.last_used_at) : null,
+        createdAt: k.created_at ? new Date(k.created_at) : new Date(),
+      }));
+    }
+  } catch (err) {
+    console.warn('[listApiKeys] Backend API fetch failed, falling back to direct DB:', err);
+  }
+
+  // 2. Direct DB fallback
+  try {
+    const user = await requireUser();
     return await db
       .select({
         id: s.apiKeys.id,
         name: s.apiKeys.name,
         keyPrefix: s.apiKeys.keyPrefix,
         status: s.apiKeys.status,
+        expiresAt: s.apiKeys.expiresAt,
         lastUsedAt: s.apiKeys.lastUsedAt,
         createdAt: s.apiKeys.createdAt,
       })
@@ -42,31 +66,79 @@ export async function listApiKeys() {
       .where(and(eq(s.apiKeys.userId, user.id), eq(s.apiKeys.status, 'active')))
       .orderBy(desc(s.apiKeys.createdAt));
   } catch (err) {
-    console.warn('[listApiKeys] Error fetching api keys:', err);
+    console.warn('[listApiKeys] Error fetching api keys from DB:', err);
     return [];
   }
 }
 
 export async function createApiKey(_prev: { raw: string | null }, formData: FormData) {
   const user = await requireUser();
-  const { raw, hash, prefix } = generateApiKey();
   const name = String(formData.get('name') ?? '').trim() || 'default';
+  const expiresIn = String(formData.get('expiresIn') ?? 'none');
+
+  // 1. Try creating via Backend API
+  try {
+    const apiRes = await fetchBackendApi<{
+      id: string;
+      name: string;
+      prefix: string;
+      key: string;
+      status: string;
+      expires_at: string | null;
+    }>('/v1/keys', {
+      method: 'POST',
+      body: JSON.stringify({ name, expiresIn }),
+    });
+
+    if (apiRes.data?.key) {
+      return {
+        raw: apiRes.data.key,
+        prefix: apiRes.data.prefix,
+        id: apiRes.data.id,
+        expiresAt: apiRes.data.expires_at ? new Date(apiRes.data.expires_at) : null,
+      };
+    }
+  } catch (err) {
+    console.warn('[createApiKey] Backend API create failed, falling back to direct DB:', err);
+  }
+
+  // 2. Direct DB fallback
+  const { raw, hash, prefix } = generateApiKey();
   let createdId: string | null = null;
+  let expiresAt: Date | null = null;
+  if (expiresIn === '30d') {
+    expiresAt = new Date(Date.now() + 30 * 86_400_000);
+  } else if (expiresIn === '90d') {
+    expiresAt = new Date(Date.now() + 90 * 86_400_000);
+  }
+
   try {
     const [inserted] = await db
       .insert(s.apiKeys)
-      .values({ userId: user.id, name, keyHash: hash, keyPrefix: prefix })
+      .values({ userId: user.id, name, keyHash: hash, keyPrefix: prefix, expiresAt })
       .returning({ id: s.apiKeys.id });
     createdId = inserted?.id ?? null;
   } catch (err) {
     console.warn('[createApiKey] Database offline, generated mock API key:', err);
   }
-  return { raw, prefix, id: createdId };
+  return { raw, prefix, id: createdId, expiresAt };
 }
 
 export async function revokeApiKey(formData: FormData) {
   const user = await requireUser();
   const id = String(formData.get('id'));
+
+  // 1. Try revoking via Backend API
+  try {
+    const apiRes = await fetchBackendApi(`/v1/keys/${id}`, {
+      method: 'DELETE',
+    });
+    if (apiRes.status === 200) return;
+  } catch (err) {
+    console.warn('[revokeApiKey] Backend API delete failed, falling back to direct DB:', err);
+  }
+
+  // 2. Direct DB fallback
   try {
     await db
       .update(s.apiKeys)
@@ -86,6 +158,34 @@ export async function redeemCodeDirect(code: string): Promise<{ ok: boolean; mes
   if (!cleanCode) return { ok: false, message: 'Enter a code', reward: undefined };
 
   const user = await requireUser();
+
+  // 1. Try redeeming via Backend API
+  try {
+    const apiRes = await fetchBackendApi<{
+      ok: boolean;
+      message: string;
+      reward?: any;
+    }>('/v1/redeem', {
+      method: 'POST',
+      body: JSON.stringify({ code: cleanCode }),
+    });
+
+    if (apiRes.status === 200 && apiRes.data?.ok) {
+      return {
+        ok: true,
+        message: apiRes.data.message || 'Code redeemed successfully',
+        reward: apiRes.data.reward,
+      };
+    }
+
+    if (apiRes.error && apiRes.status !== 0) {
+      return { ok: false, message: apiRes.error, reward: undefined };
+    }
+  } catch (err) {
+    console.warn('[redeemCodeDirect] Backend API unavailable, falling back to direct DB:', err);
+  }
+
+  // 2. Direct DB transaction fallback
   try {
     return await db.transaction(async (tx) => {
       const [rc] = await tx.select().from(s.redeemCodes).where(eq(s.redeemCodes.code, cleanCode)).for('update');
@@ -231,3 +331,175 @@ export async function simulatePaymentWebhook(formData: FormData) {
   if (!res.ok) return { ok: false, message: `Webhook failed: ${res.status}` };
   return { ok: true, message: 'Payment confirmed' };
 }
+
+// ── Duitku Payments ───────────────────────────────────
+
+export async function createPaymentAction(packageId: string) {
+  const session = await auth.api.getSession({ headers: await headers() });
+  if (!session) redirect('/login');
+
+  const res = await fetchBackendApi<{
+    paymentId: string;
+    merchantOrderId: string;
+    paymentUrl: string;
+    qrString?: string;
+    reference: string;
+    amountIDR: number;
+    expiresAt: string;
+    package: { id: string | null; name: string; creditAllowance: number };
+  }>('/v1/payments/create', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${session.session.token}`,
+    },
+    body: JSON.stringify({ packageId }),
+  });
+
+  if (res.error || !res.data) {
+    throw new Error(res.error ?? 'Gagal membuat transaksi pembayaran');
+  }
+
+  return res.data;
+}
+
+export async function checkPaymentStatusAction(paymentId: string) {
+  const session = await auth.api.getSession({ headers: await headers() });
+  if (!session) redirect('/login');
+
+  const res = await fetchBackendApi<{ status: string; credits?: number }>(
+    `/v1/payments/${paymentId}`,
+    {
+      headers: {
+        Authorization: `Bearer ${session.session.token}`,
+      },
+    }
+  );
+
+  if (res.error || !res.data) {
+    throw new Error(res.error ?? 'Gagal memeriksa status');
+  }
+
+  return res.data;
+}
+
+// ── Usage Logs ─────────────────────────────────────────
+
+export async function getUsageLogsAction(params: {
+  page?: number;
+  limit?: number;
+  from?: string;
+  to?: string;
+} = {}) {
+  const session = await auth.api.getSession({ headers: await headers() });
+  if (!session) redirect('/login');
+
+  const page = Math.max(1, params.page ?? 1);
+  const limit = Math.min(100, Math.max(1, params.limit ?? 50));
+
+  let query = `?page=${page}&limit=${limit}`;
+  if (params.from) query += `&from=${encodeURIComponent(params.from)}`;
+  if (params.to) query += `&to=${encodeURIComponent(params.to)}`;
+
+  // 1. Try Backend API with user session token
+  try {
+    const apiRes = await fetchBackendApi<{
+      data: any[];
+      total: number;
+      page: number;
+      limit: number;
+    }>(`/v1/account/usage${query}`, {
+      headers: {
+        Authorization: `Bearer ${session.session.token}`,
+      },
+    });
+
+    if (apiRes.data?.data && Array.isArray(apiRes.data.data)) {
+      return {
+        data: apiRes.data.data.map((u: any) => ({
+          id: u.id,
+          requestId: u.request_id,
+          model: u.model,
+          publicModelId: u.model,
+          promptTokens: u.prompt_tokens,
+          completionTokens: u.completion_tokens,
+          totalTokens: u.total_tokens,
+          credits: u.credits_consumed,
+          status: u.status,
+          streamed: u.streamed,
+          latencyMs: u.latency_ms,
+          createdAt: u.created_at,
+        })),
+        total: apiRes.data.total ?? 0,
+        page: apiRes.data.page ?? page,
+        limit: apiRes.data.limit ?? limit,
+      };
+    }
+  } catch (err) {
+    console.warn('[getUsageLogsAction] Backend API usage fetch failed, using DB fallback:', err);
+  }
+
+  // 2. Direct DB fallback with same filters and pagination
+  try {
+    const conditions = [eq(s.usageRecords.userId, session.user.id)];
+    if (params.from) {
+      const fromDate = new Date(params.from);
+      if (!isNaN(fromDate.getTime())) conditions.push(gte(s.usageRecords.createdAt, fromDate));
+    }
+    if (params.to) {
+      const toDate = new Date(params.to);
+      if (!isNaN(toDate.getTime())) conditions.push(lte(s.usageRecords.createdAt, toDate));
+    }
+
+    const whereClause = and(...conditions);
+    const offset = (page - 1) * limit;
+
+    const [[totalRes], rows] = await Promise.all([
+      db.select({ count: sql<number>`count(*)::int` }).from(s.usageRecords).where(whereClause),
+      db
+        .select({
+          id: s.usageRecords.id,
+          requestId: s.usageRecords.requestId,
+          model: s.models.displayName,
+          publicModelId: s.models.publicModelId,
+          promptTokens: s.usageRecords.promptTokens,
+          completionTokens: s.usageRecords.completionTokens,
+          totalTokens: s.usageRecords.totalTokens,
+          credits: s.usageRecords.creditsConsumed,
+          status: s.usageRecords.status,
+          streamed: s.usageRecords.streamed,
+          latencyMs: s.usageRecords.latencyMs,
+          createdAt: s.usageRecords.createdAt,
+        })
+        .from(s.usageRecords)
+        .leftJoin(s.models, eq(s.usageRecords.modelId, s.models.id))
+        .where(whereClause)
+        .orderBy(desc(s.usageRecords.createdAt))
+        .limit(limit)
+        .offset(offset),
+    ]);
+
+    return {
+      data: rows.map((u) => ({
+        id: u.id,
+        requestId: u.requestId,
+        model: u.model,
+        publicModelId: u.publicModelId,
+        promptTokens: u.promptTokens,
+        completionTokens: u.completionTokens,
+        totalTokens: u.totalTokens,
+        credits: u.credits,
+        status: u.status,
+        streamed: u.streamed,
+        latencyMs: u.latencyMs,
+        createdAt: u.createdAt.toISOString(),
+      })),
+      total: totalRes?.count ?? 0,
+      page,
+      limit,
+    };
+  } catch (err) {
+    console.warn('[getUsageLogsAction] Database fallback failed:', err);
+    return { data: [], total: 0, page: 1, limit };
+  }
+}
+

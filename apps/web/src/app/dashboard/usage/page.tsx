@@ -1,6 +1,6 @@
 import { eq, desc, sql, and, gte } from 'drizzle-orm';
 import { db, schema as s } from '@morphic/db';
-import { requireUser } from '@/lib/actions';
+import { requireUser, getUsageLogsAction } from '@/lib/actions';
 import { UsageView } from './usage-view';
 
 export default async function UsagePage() {
@@ -16,6 +16,23 @@ export default async function UsagePage() {
   let topModels: any[] = [];
   let recent: any[] = [];
 
+  // 1. Fetch initial logs via getUsageLogsAction (BE /v1/account/usage with DB fallback)
+  try {
+    const usageRes = await getUsageLogsAction({ limit: 50 });
+    if (usageRes.data && Array.isArray(usageRes.data)) {
+      recent = usageRes.data.map((u: any) => ({
+        ...u,
+        createdAt: new Date(u.createdAt),
+      }));
+    }
+    if (usageRes.total) {
+      total = { requests: usageRes.total };
+    }
+  } catch (err) {
+    console.warn('[UsagePage] Failed to fetch initial usage records:', err);
+  }
+
+  // 2. Aggregate metrics from DB (and recent records if API had none)
   try {
     const [[t], [m], [tot], tm, rec] = await Promise.all([
       db
@@ -41,32 +58,34 @@ export default async function UsagePage() {
         .where(eq(s.usageRecords.userId, user.id))
         .groupBy(s.models.displayName)
         .orderBy(desc(sql`sum(${s.usageRecords.creditsConsumed})`)),
-      db
-        .select({
-          id: s.usageRecords.id,
-          requestId: s.usageRecords.requestId,
-          model: s.models.displayName,
-          publicModelId: s.models.publicModelId,
-          promptTokens: s.usageRecords.promptTokens,
-          completionTokens: s.usageRecords.completionTokens,
-          totalTokens: s.usageRecords.totalTokens,
-          credits: s.usageRecords.creditsConsumed,
-          status: s.usageRecords.status,
-          streamed: s.usageRecords.streamed,
-          latencyMs: s.usageRecords.latencyMs,
-          createdAt: s.usageRecords.createdAt,
-        })
-        .from(s.usageRecords)
-        .leftJoin(s.models, eq(s.usageRecords.modelId, s.models.id))
-        .where(eq(s.usageRecords.userId, user.id))
-        .orderBy(desc(s.usageRecords.createdAt))
-        .limit(50),
+      recent.length === 0
+        ? db
+            .select({
+              id: s.usageRecords.id,
+              requestId: s.usageRecords.requestId,
+              model: s.models.displayName,
+              publicModelId: s.models.publicModelId,
+              promptTokens: s.usageRecords.promptTokens,
+              completionTokens: s.usageRecords.completionTokens,
+              totalTokens: s.usageRecords.totalTokens,
+              credits: s.usageRecords.creditsConsumed,
+              status: s.usageRecords.status,
+              streamed: s.usageRecords.streamed,
+              latencyMs: s.usageRecords.latencyMs,
+              createdAt: s.usageRecords.createdAt,
+            })
+            .from(s.usageRecords)
+            .leftJoin(s.models, eq(s.usageRecords.modelId, s.models.id))
+            .where(eq(s.usageRecords.userId, user.id))
+            .orderBy(desc(s.usageRecords.createdAt))
+            .limit(50)
+        : Promise.resolve([]),
     ]);
     if (t) today = t;
     if (m) month = m;
     if (tot) total = tot;
     topModels = tm;
-    recent = rec;
+    if (recent.length === 0 && rec.length > 0) recent = rec;
   } catch (err) {
     console.warn('[UsagePage] Database offline, showing empty usage preview:', err);
   }

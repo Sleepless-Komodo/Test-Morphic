@@ -7,6 +7,7 @@ export default async function KeysPage() {
     const rawKeys = await listApiKeys();
     keys = (rawKeys || []).map((k: any) => ({
       ...k,
+      expiresAt: k.expiresAt ? new Date(k.expiresAt) : null,
       lastUsedAt: k.lastUsedAt ? new Date(k.lastUsedAt) : null,
       createdAt: k.createdAt ? new Date(k.createdAt) : new Date(),
     }));

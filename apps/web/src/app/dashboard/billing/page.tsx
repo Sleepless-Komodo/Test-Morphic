@@ -83,6 +83,7 @@ export default async function BillingPage() {
       db
         .select({
           id: s.entitlements.id,
+          allowance: s.entitlements.allowance,
           remaining: s.entitlements.remaining,
           expiresAt: s.entitlements.expiresAt,
           packageName: s.packages.name,
@@ -111,6 +112,16 @@ export default async function BillingPage() {
     payments = dbPayments;
   } catch (err) {
     console.warn('[BillingPage] Database offline, showing fallback packages and zero balance:', err);
+  }
+
+  // Fetch balance from backend API if available
+  try {
+    const balRes = await fetchBackendApi<{ credits: number }>('/v1/account/balance');
+    if (balRes.data?.credits != null) {
+      balance = balRes.data.credits;
+    }
+  } catch {
+    // Keep balance from getBalance
   }
 
   // Fetch credit ledger from backend API (authenticated via session cookie forwarding)
