@@ -4,6 +4,8 @@ import { db, schema as s } from '@morphic/db';
 import { sweepExpiredReservations } from '@morphic/db/billing';
 import { lt } from 'drizzle-orm';
 
+import { checkProviderHealth } from './lib/alert';
+
 const port = Number(process.env.API_PORT ?? 8787);
 serve({ fetch: app.fetch, port }, (info) => {
   console.log(`morphic api listening on :${info.port}`);
@@ -26,3 +28,11 @@ const purgeInterval = setInterval(() => {
     .catch((e: unknown) => console.error('[logger] purge error:', e));
 }, 24 * 60 * 60_000);
 purgeInterval.unref();
+
+// Observability alert job: monitor provider error rates every 5 minutes (§5.7)
+const ALERT_CHECK_INTERVAL_MS = Number(process.env.ALERT_CHECK_INTERVAL_MS ?? 5 * 60_000);
+const alertInterval = setInterval(() => {
+  checkProviderHealth().catch((e: unknown) => console.error('[alert] check error:', e));
+}, ALERT_CHECK_INTERVAL_MS);
+alertInterval.unref();
+

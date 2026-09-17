@@ -19,6 +19,8 @@ function getDb(): PostgresJsDatabase<typeof schema> {
     postgres(getConnectionString(), {
       max: 10,
       prepare: false,
+      connect_timeout: 15,
+      idle_timeout: 30,
     }),
     { schema },
   );
