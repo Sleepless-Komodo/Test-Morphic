@@ -1,4 +1,4 @@
-import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 
 // ── Config ────────────────────────────────────────────
 
@@ -181,6 +181,13 @@ export interface DuitkuCallbackPayload {
   customerName?: string;
 }
 
+function safeCompare(a: string, b: string): boolean {
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  if (bufA.length !== bufB.length) return false;
+  return timingSafeEqual(bufA, bufB);
+}
+
 /**
  * Verify Duitku callback signature (inbound webhook).
  * Signature is MD5(merchantCode + amount + merchantOrderId + apiKey)
@@ -193,5 +200,5 @@ export function verifyCallbackSignature(payload: DuitkuCallbackPayload): boolean
   const expectedSha256 = sha256(stringToSign).toLowerCase();
 
   const receivedSig = (payload.signature || '').toLowerCase();
-  return receivedSig === expectedMd5 || receivedSig === expectedSha256;
+  return safeCompare(receivedSig, expectedMd5) || safeCompare(receivedSig, expectedSha256);
 }
