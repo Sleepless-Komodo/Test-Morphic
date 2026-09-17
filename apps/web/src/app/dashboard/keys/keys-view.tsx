@@ -14,6 +14,7 @@ interface KeyItem {
   name: string;
   keyPrefix: string;
   status: string;
+  expiresAt?: Date | null;
   lastUsedAt: Date | null;
   createdAt: Date;
 }
@@ -41,6 +42,7 @@ export function KeysView({ initialKeys }: { initialKeys: KeyItem[] }) {
   const { t, locale } = useTranslation();
   const [keys, setKeys] = useState<KeyItem[]>(initialKeys);
   const [newKeyName, setNewKeyName] = useState('');
+  const [expiresIn, setExpiresIn] = useState<'none' | '30d' | '90d'>('none');
   const [createdRawKey, setCreatedRawKey] = useState<string | null>(null);
   const [copiedKey, setCopiedKey] = useState(false);
   const [confirmRevokeId, setConfirmRevokeId] = useState<string | null>(null);
@@ -53,17 +55,20 @@ export function KeysView({ initialKeys }: { initialKeys: KeyItem[] }) {
     startTransition(async () => {
       const fd = new FormData();
       fd.set('name', newKeyName.trim());
+      fd.set('expiresIn', expiresIn);
       const res = await createApiKey({ raw: null }, fd);
       if (res.raw) {
         setCreatedRawKey(res.raw);
         const actualPrefix = (res as any).prefix || res.raw.slice(0, 16);
         const realId = (res as any).id || `k-${Date.now()}`;
+        const expiresAt = (res as any).expiresAt || null;
         setKeys((prev) => [
           {
             id: realId,
             name: newKeyName.trim(),
             keyPrefix: actualPrefix,
             status: 'active',
+            expiresAt,
             lastUsedAt: null,
             createdAt: new Date(),
           },
@@ -111,6 +116,15 @@ export function KeysView({ initialKeys }: { initialKeys: KeyItem[] }) {
             placeholder={t.dashboard.keyNameInputPlaceholder}
             className="flex-1 bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-2.5 text-xs text-neutral-900 focus:outline-none focus:border-black focus-visible:ring-2 focus-visible:ring-neutral-950/20 transition-colors"
           />
+          <select
+            value={expiresIn}
+            onChange={(e) => setExpiresIn(e.target.value as any)}
+            className="bg-neutral-50 border border-neutral-200 rounded-xl px-3 py-2.5 text-xs text-neutral-800 focus:outline-none focus:border-black focus-visible:ring-2 focus-visible:ring-neutral-950/20 transition-colors shrink-0 cursor-pointer"
+          >
+            <option value="none">{t.dashboard.expiryNever}</option>
+            <option value="30d">{t.dashboard.expiry30Days}</option>
+            <option value="90d">{t.dashboard.expiry90Days}</option>
+          </select>
           <button
             type="submit"
             disabled={isPending || !newKeyName.trim()}
@@ -176,6 +190,7 @@ export function KeysView({ initialKeys }: { initialKeys: KeyItem[] }) {
                   <th className="px-6 py-3.5">{t.dashboard.thName}</th>
                   <th className="px-6 py-3.5">{t.dashboard.thKey}</th>
                   <th className="px-6 py-3.5">{t.dashboard.thStatus}</th>
+                  <th className="px-6 py-3.5">{t.dashboard.thExpires}</th>
                   <th className="px-6 py-3.5">{t.dashboard.thLastUsed}</th>
                   <th className="px-6 py-3.5">{t.dashboard.thCreated}</th>
                   <th className="px-6 py-3.5 text-right">{t.dashboard.thAction}</th>
@@ -204,6 +219,21 @@ export function KeysView({ initialKeys }: { initialKeys: KeyItem[] }) {
                           <span className="w-1.5 h-1.5 rounded-full bg-neutral-400" />
                           <span>{k.status}</span>
                         </span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 font-mono text-[11px]">
+                      {k.expiresAt ? (
+                        new Date(k.expiresAt).getTime() < Date.now() ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-bold">
+                            {locale === 'en' ? 'Expired' : 'Kadaluwarsa'}
+                          </span>
+                        ) : (
+                          <span className="text-neutral-700 font-semibold" title={new Date(k.expiresAt).toLocaleString(locale === 'en' ? 'en-US' : 'id-ID')}>
+                            {new Date(k.expiresAt).toLocaleDateString(locale === 'en' ? 'en-US' : 'id-ID')}
+                          </span>
+                        )
+                      ) : (
+                        <span className="text-neutral-400">{locale === 'en' ? 'Never' : 'Tidak Pernah'}</span>
                       )}
                     </td>
                     <td className="px-6 py-4 text-neutral-500 font-mono text-[11px]">

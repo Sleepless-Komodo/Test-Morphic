@@ -94,23 +94,18 @@ export function DashboardShell({ session, balance, children }: DashboardShellPro
   const sidebarContent = (
     <>
       {/* Brand Header */}
-      <div className="px-4 pt-1 pb-4 flex items-center justify-between">
-        <Link href="/" className="flex items-center gap-3 group">
+      <div className="px-4 pt-1 pb-4 flex items-center justify-between gap-2">
+        <Link href="/" className="flex items-center group shrink-0">
           <Image
-            src="/morphic-symbol.jpg"
+            src="/morphic-brand-clean.png"
             alt="Morphic logo"
-            width={36}
-            height={36}
+            width={125}
+            height={30}
             priority
-            className="w-9 h-9 rounded-full object-cover ring-1 ring-neutral-200 shadow-xs transition-transform group-hover:scale-105 transform-gpu"
+            className="h-6 sm:h-7 w-auto object-contain transition-transform group-hover:scale-105 transform-gpu"
           />
-          <div className="min-w-0">
-            <span className="block font-heading font-extrabold text-lg tracking-tight text-neutral-950 truncate">
-              Morphic
-            </span>
-          </div>
         </Link>
-        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-neutral-100 text-neutral-700 border border-neutral-200/80">
+        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-neutral-100 text-neutral-700 border border-neutral-200/80 shrink-0">
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
           <span>v1.0</span>
         </span>

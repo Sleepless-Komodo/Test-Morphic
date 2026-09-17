@@ -16,7 +16,11 @@ import {
   Check,
   Search,
   Filter,
+  ChevronLeft,
+  ChevronRight,
+  Loader2,
 } from 'lucide-react';
+import { getUsageLogsAction } from '@/lib/actions';
 
 interface RecentRecord {
   id: string;
@@ -71,10 +75,71 @@ export function UsageView({ today, month, total, topModels, recent }: UsageViewP
   const { t, locale } = useTranslation();
   const isId = locale === 'id';
 
+  const [items, setItems] = useState<RecentRecord[]>(recent);
+  const [page, setPage] = useState(1);
+  const [dateFilter, setDateFilter] = useState<'all' | 'today' | '7d' | '30d'>('all');
+  const [isLoadingPage, setIsLoadingPage] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'success' | 'error'>('all');
+  const [totalCount, setTotalCount] = useState(total?.requests ?? items.length);
 
-  const filteredRecent = recent.filter((r) => {
+  const totalPages = Math.max(1, Math.ceil(totalCount / 50));
+
+  const fetchUsage = async (targetPage: number, range: 'all' | 'today' | '7d' | '30d') => {
+    setIsLoadingPage(true);
+    try {
+      let from: string | undefined;
+      if (range === 'today') {
+        const start = new Date();
+        start.setHours(0, 0, 0, 0);
+        from = start.toISOString();
+      } else if (range === '7d') {
+        const d = new Date(Date.now() - 7 * 86_400_000);
+        from = d.toISOString();
+      } else if (range === '30d') {
+        const d = new Date(Date.now() - 30 * 86_400_000);
+        from = d.toISOString();
+      }
+
+      const res = await getUsageLogsAction({ page: targetPage, limit: 50, from });
+      if (res?.data && Array.isArray(res.data)) {
+        setItems(
+          res.data.map((u: any) => ({
+            id: u.id,
+            requestId: u.requestId,
+            model: u.model,
+            publicModelId: u.publicModelId,
+            promptTokens: u.promptTokens,
+            completionTokens: u.completionTokens,
+            totalTokens: u.totalTokens,
+            credits: u.credits,
+            status: u.status,
+            streamed: u.streamed,
+            latencyMs: u.latencyMs,
+            createdAt: new Date(u.createdAt),
+          }))
+        );
+        setPage(res.page || targetPage);
+        setTotalCount(res.total);
+      }
+    } catch (err) {
+      console.warn('[UsageView] Error fetching usage data:', err);
+    } finally {
+      setIsLoadingPage(false);
+    }
+  };
+
+  const handlePageChange = (newPage: number) => {
+    if (newPage < 1 || newPage > totalPages || isLoadingPage) return;
+    fetchUsage(newPage, dateFilter);
+  };
+
+  const handleDateFilterChange = (range: 'all' | 'today' | '7d' | '30d') => {
+    setDateFilter(range);
+    fetchUsage(1, range);
+  };
+
+  const filteredRecent = items.filter((r) => {
     const matchesSearch =
       searchTerm === '' ||
       (r.model && r.model.toLowerCase().includes(searchTerm.toLowerCase())) ||
@@ -192,7 +257,55 @@ export function UsageView({ today, month, total, topModels, recent }: UsageViewP
           </div>
 
           {/* Search & Filter Controls */}
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Date Range Chips */}
+            <div className="flex items-center bg-neutral-100 p-1 rounded-xl text-[11px] font-semibold">
+              <button
+                type="button"
+                onClick={() => handleDateFilterChange('all')}
+                className={`px-2.5 py-1 rounded-lg cursor-pointer transition-all duration-150 active:scale-95 ${
+                  dateFilter === 'all'
+                    ? 'bg-white text-neutral-950 shadow-2xs font-bold'
+                    : 'text-neutral-500 hover:text-neutral-900'
+                }`}
+              >
+                {t.dashboard.usageFilterAllTime}
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDateFilterChange('today')}
+                className={`px-2.5 py-1 rounded-lg cursor-pointer transition-all duration-150 active:scale-95 ${
+                  dateFilter === 'today'
+                    ? 'bg-white text-neutral-950 shadow-2xs font-bold'
+                    : 'text-neutral-500 hover:text-neutral-900'
+                }`}
+              >
+                {t.dashboard.usageFilterToday}
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDateFilterChange('7d')}
+                className={`px-2.5 py-1 rounded-lg cursor-pointer transition-all duration-150 active:scale-95 ${
+                  dateFilter === '7d'
+                    ? 'bg-white text-neutral-950 shadow-2xs font-bold'
+                    : 'text-neutral-500 hover:text-neutral-900'
+                }`}
+              >
+                {t.dashboard.usageFilter7Days}
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDateFilterChange('30d')}
+                className={`px-2.5 py-1 rounded-lg cursor-pointer transition-all duration-150 active:scale-95 ${
+                  dateFilter === '30d'
+                    ? 'bg-white text-neutral-950 shadow-2xs font-bold'
+                    : 'text-neutral-500 hover:text-neutral-900'
+                }`}
+              >
+                {t.dashboard.usageFilter30Days}
+              </button>
+            </div>
+
             <div className="relative">
               <Search className="h-3.5 w-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none" />
               <input
@@ -200,7 +313,7 @@ export function UsageView({ today, month, total, topModels, recent }: UsageViewP
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 placeholder={isId ? 'Filter model / Trace ID...' : 'Filter model / Trace ID...'}
-                className="pl-8 pr-3 py-1.5 rounded-xl border border-neutral-200 bg-white text-xs text-neutral-900 placeholder-neutral-400 focus:outline-none focus:ring-1 focus:ring-neutral-950 w-44 sm:w-56"
+                className="pl-8 pr-3 py-1.5 rounded-xl border border-neutral-200 bg-white text-xs text-neutral-900 placeholder-neutral-400 focus:outline-none focus:ring-1 focus:ring-neutral-950 w-36 sm:w-48"
               />
             </div>
 
@@ -255,8 +368,9 @@ export function UsageView({ today, month, total, topModels, recent }: UsageViewP
               </div>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
+            <>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
                 <thead>
                   <tr suppressHydrationWarning className="border-b border-neutral-200 bg-neutral-50/70 text-[11px] font-mono uppercase text-neutral-500">
                     <th className="px-5 py-3.5">{t.dashboard.thUsageStatus || 'Status'}</th>
@@ -358,7 +472,38 @@ export function UsageView({ today, month, total, topModels, recent }: UsageViewP
                 </tbody>
               </table>
             </div>
-          )}
+
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between px-6 py-3.5 border-t border-neutral-100 bg-neutral-50/50">
+                <div className="text-xs text-neutral-500 font-mono flex items-center gap-2">
+                  {isLoadingPage && <Loader2 className="h-3.5 w-3.5 animate-spin text-neutral-500" />}
+                  <span>{locale === 'en' ? `Page ${page} of ${totalPages}` : `Halaman ${page} dari ${totalPages}`}</span>
+                  <span className="text-neutral-400">({totalCount} {locale === 'en' ? 'total requests' : 'total request'})</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => handlePageChange(page - 1)}
+                    disabled={page <= 1 || isLoadingPage}
+                    className="p-1.5 rounded-lg border border-neutral-200 bg-white hover:bg-neutral-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-neutral-700 cursor-pointer shadow-2xs"
+                    title={locale === 'en' ? 'Previous page' : 'Halaman sebelumnya'}
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handlePageChange(page + 1)}
+                    disabled={page >= totalPages || isLoadingPage}
+                    className="p-1.5 rounded-lg border border-neutral-200 bg-white hover:bg-neutral-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-neutral-700 cursor-pointer shadow-2xs"
+                    title={locale === 'en' ? 'Next page' : 'Halaman berikutnya'}
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
+        )}
         </div>
       </div>
     </div>
