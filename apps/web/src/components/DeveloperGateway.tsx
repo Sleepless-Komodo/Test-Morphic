@@ -66,6 +66,8 @@ interface DeveloperGatewayProps {
   serverModelCount?: number;
   serverAvgCreditsPer1m?: number;
   serverMinInputRate?: number;
+  activeKeys?: number;
+  serverUsage?: { totalTokens: number; promptTokens: number; completionTokens: number };
 }
 
 export default function DeveloperGateway({
@@ -76,6 +78,8 @@ export default function DeveloperGateway({
   serverModelCount,
   serverAvgCreditsPer1m,
   serverMinInputRate,
+  activeKeys: serverActiveKeys,
+  serverUsage,
 }: DeveloperGatewayProps) {
   const { t, locale } = useTranslation();
   const isId = locale === 'id';
@@ -99,8 +103,8 @@ export default function DeveloperGateway({
   // Recent requests (may be overridden by real-time data in the future)
   const [recentRequests] = useState<RecentRequestItem[]>(initialRecentRequests);
 
-  // Derived metrics from active model list
-  const activeKeys = keysList.length;
+  // Derived metrics from active model list / server data
+  const activeKeys = serverActiveKeys !== undefined ? serverActiveKeys : keysList.length;
 
   const getPackageDesc = (pkg: (typeof CHEAP_DAILY_PACKAGES)[number]) =>
     locale === 'en' && pkg.descEn ? pkg.descEn : pkg.desc;
@@ -128,10 +132,10 @@ export default function DeveloperGateway({
     return rates.length > 0 ? rates.reduce((a, b) => a + b, 0) / rates.length : 0;
   }, [activeModelList, serverAvgCreditsPer1m]);
 
-  // Usage summary (placeholder — replace with real fetched data)
+  // Real or server-provided usage summary
   const usage = useMemo<{ totalTokens: number; promptTokens: number; completionTokens: number }>(
-    () => ({ totalTokens: 0, promptTokens: 0, completionTokens: 0 }),
-    [],
+    () => serverUsage ?? { totalTokens: 0, promptTokens: 0, completionTokens: 0 },
+    [serverUsage],
   );
 
   const filteredModels = useMemo(

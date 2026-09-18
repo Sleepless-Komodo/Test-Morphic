@@ -12,8 +12,10 @@ import { apiKeyAuth, gatewayGuards } from '../middleware/auth';
 
 const v1 = new Hono();
 
-v1.use('*', apiKeyAuth);
-v1.use('*', gatewayGuards({ rpm: 120, concurrency: 5 }));
+// Apply API key authentication and rate limiting specifically to inference & model endpoints
+v1.use('/models', apiKeyAuth, gatewayGuards({ rpm: 120, concurrency: 5 }));
+v1.use('/models/*', apiKeyAuth, gatewayGuards({ rpm: 120, concurrency: 5 }));
+v1.use('/chat/*', apiKeyAuth, gatewayGuards({ rpm: 120, concurrency: 5 }));
 
 v1.get('/models', async (c) => {
   const { db, schema: s } = await import('@morphic/db');

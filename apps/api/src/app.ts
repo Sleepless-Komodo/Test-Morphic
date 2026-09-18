@@ -33,13 +33,38 @@ app.onError((err, c) => {
     return err.getResponse();
   }
 
+  const isDev = process.env.NODE_ENV !== 'production';
   return c.json(
-    { error: { message: 'Internal Server Error', type: 'internal_error', code: 'internal_error' } },
+    {
+      error: {
+        message: isDev ? err.message : 'Internal Server Error',
+        type: 'internal_error',
+        code: 'internal_error',
+      },
+    },
     500,
   );
 });
 
-app.get('/health', (c) => c.json({ ok: true }));
+app.get('/health', async (c) => {
+  try {
+    const { getProviderHealth } = await import('./lib/alert');
+    const providers = await getProviderHealth().catch(() => []);
+    const anyDegraded = providers.some((p) => p.status === 'degraded' || p.status === 'alerting');
+    return c.json({
+      ok: true,
+      status: anyDegraded ? 'degraded' : 'operational',
+      providers: providers.map((p) => ({
+        name: p.providerName,
+        status: p.status,
+        errorRate: p.errorRate,
+        requests: p.totalRequests,
+      })),
+    });
+  } catch {
+    return c.json({ ok: true, status: 'operational', providers: [] });
+  }
+});
 app.route('/v1', v1);
 app.route('/webhooks', webhooks);
 app.route('/v1/keys', keys);

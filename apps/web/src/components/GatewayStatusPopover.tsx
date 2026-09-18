@@ -22,6 +22,7 @@ export default function GatewayStatusPopover() {
   const [open, setOpen] = useState(false);
   const [state, setState] = useState<GatewayState>('checking');
   const [pingMs, setPingMs] = useState<number | null>(null);
+  const [liveProviders, setLiveProviders] = useState<Array<{ name: string; status: string; errorRate: number }>>([]);
   const rootRef = useRef<HTMLDivElement>(null);
 
   const ping = useCallback(async () => {
@@ -30,7 +31,15 @@ export default function GatewayStatusPopover() {
       const res = await fetch(HEALTH_ENDPOINT, { cache: 'no-store' });
       const latency = Math.round(performance.now() - started);
       setPingMs(latency);
-      setState(res.ok ? 'operational' : 'degraded');
+      if (res.ok) {
+        const data = await res.json();
+        setState(data.status ?? 'operational');
+        if (Array.isArray(data.providers) && data.providers.length > 0) {
+          setLiveProviders(data.providers);
+        }
+      } else {
+        setState('degraded');
+      }
     } catch {
       setPingMs(null);
       setState('degraded');
@@ -127,27 +136,54 @@ export default function GatewayStatusPopover() {
           </div>
 
           <div className="space-y-1.5 border-t border-neutral-100 pt-3">
-            {SERVICES.map((service) => (
-              <div key={service.name} className="flex items-center justify-between text-xs py-1">
-                <span suppressHydrationWarning className="text-neutral-600">
-                  {locale === 'id' ? service.nameId : service.name}
-                </span>
-                <span
-                  className={`inline-flex items-center gap-1.5 font-semibold ${
-                    operational ? 'text-emerald-700' : 'text-amber-700'
-                  }`}
-                >
+            {liveProviders.length > 0 ? (
+              liveProviders.map((prov) => {
+                const isHealthy = prov.status === 'healthy';
+                return (
+                  <div key={prov.name} className="flex items-center justify-between text-xs py-1">
+                    <span className="text-neutral-700 capitalize font-medium">
+                      {prov.name}
+                    </span>
+                    <span
+                      className={`inline-flex items-center gap-1.5 font-semibold text-[11px] ${
+                        isHealthy ? 'text-emerald-700' : 'text-amber-700'
+                      }`}
+                    >
+                      <span
+                        className={`h-1.5 w-1.5 rounded-full ${
+                          isHealthy ? 'bg-emerald-500' : 'bg-amber-500'
+                        }`}
+                      />
+                      {isHealthy
+                        ? (locale === 'id' ? 'Aktif' : 'Operational')
+                        : (locale === 'id' ? 'Terganggu' : 'Degraded')}
+                    </span>
+                  </div>
+                );
+              })
+            ) : (
+              SERVICES.map((service) => (
+                <div key={service.name} className="flex items-center justify-between text-xs py-1">
+                  <span suppressHydrationWarning className="text-neutral-600">
+                    {locale === 'id' ? service.nameId : service.name}
+                  </span>
                   <span
-                    className={`h-1.5 w-1.5 rounded-full ${
-                      operational ? 'bg-emerald-500' : 'bg-amber-500'
+                    className={`inline-flex items-center gap-1.5 font-semibold ${
+                      operational ? 'text-emerald-700' : 'text-amber-700'
                     }`}
-                  />
-                  {operational
-                    ? t.dashboard.statusServiceOperational
-                    : (locale === 'id' ? 'Terganggu' : 'Degraded')}
-                </span>
-              </div>
-            ))}
+                  >
+                    <span
+                      className={`h-1.5 w-1.5 rounded-full ${
+                        operational ? 'bg-emerald-500' : 'bg-amber-500'
+                      }`}
+                    />
+                    {operational
+                      ? t.dashboard.statusServiceOperational
+                      : (locale === 'id' ? 'Terganggu' : 'Degraded')}
+                  </span>
+                </div>
+              ))
+            )}
           </div>
 
           <div className="mt-4 border-t border-neutral-100 pt-3 text-[11px] text-neutral-400">

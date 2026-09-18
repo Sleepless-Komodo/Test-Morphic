@@ -12,10 +12,11 @@ export async function GET() {
       signal: AbortSignal.timeout(3000),
     });
     if (!res.ok) {
-      return NextResponse.json({ ok: false, latencyMs: Date.now() - started }, { status: 503 });
+      return NextResponse.json({ ok: false, status: 'degraded', latencyMs: Date.now() - started }, { status: 503 });
     }
-    return NextResponse.json({ ok: true, latencyMs: Date.now() - started });
+    const data = await res.json();
+    return NextResponse.json({ ...data, latencyMs: Date.now() - started });
   } catch {
-    return NextResponse.json({ ok: false, latencyMs: Date.now() - started }, { status: 503 });
+    return NextResponse.json({ ok: false, status: 'degraded', latencyMs: Date.now() - started }, { status: 503 });
   }
 }
