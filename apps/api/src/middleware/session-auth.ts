@@ -49,6 +49,7 @@ export async function sessionAuth(c: Context, next: Next) {
       suspended: s.users.suspended,
     })
     .from(s.sessions)
+    .innerJoin(s.users, eq(s.sessions.userId, s.users.id))
     .where(
       and(
         or(eq(s.sessions.token, rawToken), eq(s.sessions.token, unsignedToken!)),

@@ -170,7 +170,7 @@ export interface IAiProviderAdapter {
 
 export class OpenAiCompatibleAdapter implements IAiProviderAdapter {
   async dispatchRequest(req: UpstreamRequest): Promise<Response> {
-    const { route, body, stream, signal } = req;
+    const { route, body, stream } = req;
     const url = `${route.baseUrl.replace(/\/$/, '')}/chat/completions`;
     const payload = { ...body, model: route.providerModelId, stream };
 
