@@ -7,7 +7,7 @@ import { ALL_MODELS, getModelDailyRate, getModelBadge } from '@/lib/models-data'
 import { ModelProviderLogo } from './ProviderLogos';
 import { useTranslation } from '@/lib/i18n';
 import { useReducedMotionSafe } from '@/lib/use-reduced-motion-safe';
-import { ArrowUpRight, ChevronRight, Sparkles } from 'lucide-react';
+import { ArrowUpRight, ChevronRight, Bot } from 'lucide-react';
 
 const EASE = [0.16, 1, 0.3, 1] as const;
 
@@ -15,37 +15,13 @@ export default function ModelCatalogTeaser({ isLoggedIn = false }: { isLoggedIn?
   const { t, locale } = useTranslation();
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
-  const [tilt, setTilt] = useState({ x: 0, y: 0 });
   const reduced = useReducedMotionSafe();
 
-  // Show top 4 flagship/popular models on landing page
   const teaserModels = ALL_MODELS.slice(0, 4);
   const activeModel = teaserModels[selectedIndex] || teaserModels[0];
 
-  // Auto-advance carousel every 5 seconds (pauses on hover)
-  useEffect(() => {
-    if (isPaused || reduced) return;
-    const timer = setInterval(() => {
-      setSelectedIndex((prev) => (prev + 1) % teaserModels.length);
-    }, 5200);
-    return () => clearInterval(timer);
-  }, [isPaused, reduced, teaserModels.length]);
-
   const handleNext = () => {
     setSelectedIndex((prev) => (prev + 1) % teaserModels.length);
-  };
-
-  // Subtle 3D tilt interaction for showcase card on mouse move
-  const handleCardMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (reduced) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = (e.clientX - rect.left) / rect.width - 0.5;
-    const y = (e.clientY - rect.top) / rect.height - 0.5;
-    setTilt({ x: y * -7, y: x * 7 });
-  };
-
-  const handleCardMouseLeave = () => {
-    setTilt({ x: 0, y: 0 });
   };
 
   return (
@@ -63,8 +39,8 @@ export default function ModelCatalogTeaser({ isLoggedIn = false }: { isLoggedIn?
           className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-12"
         >
           <div>
-            <div className="inline-flex items-center gap-2 text-xs sm:text-sm font-mono uppercase tracking-[0.2em] text-neutral-400 font-bold mb-3">
-              <Sparkles className="w-3.5 h-3.5 text-neutral-900" />
+            <div className="inline-flex items-center gap-2 text-xs sm:text-sm font-mono uppercase tracking-[0.2em] text-neutral-500 font-bold mb-3">
+              <Bot className="w-3.5 h-3.5 text-neutral-900" />
               <span>{t.models.badge}</span>
             </div>
             <h2 className="text-4xl sm:text-5xl lg:text-6xl font-heading font-extrabold tracking-tight text-neutral-950">
@@ -105,13 +81,14 @@ export default function ModelCatalogTeaser({ isLoggedIn = false }: { isLoggedIn?
                   key={model.id}
                   onClick={() => setSelectedIndex(idx)}
                   onMouseEnter={() => setSelectedIndex(idx)}
-                  className={`group relative flex items-center justify-between py-5 sm:py-6 px-3 sm:px-4 text-left transition-all duration-200 cursor-pointer rounded-2xl ${
+                  aria-label={`Select model ${model.name}`}
+                  className={`group relative flex items-center justify-between py-5 sm:py-6 px-3 sm:px-4 text-left transition-all duration-200 cursor-pointer rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 focus-visible:ring-offset-2 ${
                     isSelected
                       ? 'bg-neutral-100/70 text-neutral-950 shadow-2xs translate-x-1 sm:translate-x-2'
                       : 'text-neutral-500 hover:text-neutral-900 hover:bg-neutral-50 hover:translate-x-1'
                   }`}
                 >
-                  {/* Dynamic Progress indicator when auto-advancing */}
+                  {/* Selection indicator line */}
                   {isSelected && (
                     <motion.span
                       layoutId="activeModelIndicator"
@@ -120,26 +97,12 @@ export default function ModelCatalogTeaser({ isLoggedIn = false }: { isLoggedIn?
                     />
                   )}
 
-                  {/* Auto-advance timer progress line on selected item */}
-                  {isSelected && !reduced && (
-                    <motion.span
-                      key={`timer-${selectedIndex}`}
-                      initial={{ scaleX: 0 }}
-                      animate={{ scaleX: 1 }}
-                      transition={{ duration: 5.2, ease: 'linear' }}
-                      style={{ originX: 0 }}
-                      className={`absolute bottom-0 left-0 right-0 h-[2.5px] bg-neutral-950 z-20 transition-opacity duration-200 ${
-                        isPaused ? 'opacity-30' : 'opacity-100'
-                      }`}
-                    />
-                  )}
-
                   <div className="flex items-baseline gap-3.5 sm:gap-4.5 min-w-0 pr-4">
                     <span
                       className={`font-mono text-xs tabular-nums transition-colors ${
                         isSelected
                           ? 'text-neutral-950 font-extrabold scale-105'
-                          : 'text-neutral-400 group-hover:text-neutral-700'
+                          : 'text-neutral-500 group-hover:text-neutral-700'
                       }`}
                     >
                       {String(idx + 1).padStart(2, '0')}
@@ -148,7 +111,7 @@ export default function ModelCatalogTeaser({ isLoggedIn = false }: { isLoggedIn?
                       <span className="text-xl sm:text-2xl font-heading font-bold tracking-tight truncate transition-transform group-hover:translate-x-0.5">
                         {model.name}
                       </span>
-                      <span className="font-mono text-[10px] sm:text-[11px] tracking-[0.18em] uppercase text-neutral-400 font-semibold mt-0.5">
+                      <span className="font-mono text-[10px] sm:text-[11px] tracking-[0.18em] uppercase text-neutral-500 font-semibold mt-0.5">
                         {model.provider}
                       </span>
                     </div>
@@ -162,7 +125,7 @@ export default function ModelCatalogTeaser({ isLoggedIn = false }: { isLoggedIn?
                       className={`w-8 h-8 rounded-full border flex items-center justify-center transition-all duration-200 ${
                         isSelected
                           ? 'border-neutral-950 bg-neutral-950 text-white shadow-xs scale-105 rotate-45'
-                          : 'border-neutral-200 text-neutral-400 group-hover:border-neutral-400 group-hover:text-neutral-900 group-hover:rotate-45'
+                          : 'border-neutral-200 text-neutral-500 group-hover:border-neutral-400 group-hover:text-neutral-900 group-hover:rotate-45'
                       }`}
                     >
                       <ArrowUpRight className="w-4 h-4" />
@@ -173,15 +136,9 @@ export default function ModelCatalogTeaser({ isLoggedIn = false }: { isLoggedIn?
             })}
           </div>
 
-          {/* Right Column: Prominent 3D Interactive Showcase Card */}
+          {/* Right Column: Model Showcase Card */}
           <div
-            onMouseMove={handleCardMouseMove}
-            onMouseLeave={handleCardMouseLeave}
-            style={{
-              transform: `perspective(900px) rotateX(${tilt.x}deg) rotateY(${tilt.y}deg)`,
-              transition: 'transform 0.18s ease-out',
-            }}
-            className="relative overflow-hidden rounded-3xl border border-neutral-200/90 bg-white p-6 sm:p-8 shadow-[0_24px_50px_-20px_rgba(0,0,0,0.08)] transform-gpu"
+            className="relative overflow-hidden rounded-3xl border border-neutral-200/90 bg-white p-6 sm:p-8 shadow-[0_24px_50px_-20px_rgba(0,0,0,0.08)]"
           >
             <AnimatePresence mode="wait" initial={false}>
               <motion.div
@@ -214,14 +171,15 @@ export default function ModelCatalogTeaser({ isLoggedIn = false }: { isLoggedIn?
                     {/* Quick next model button */}
                     <button
                       onClick={handleNext}
-                      className="text-xs font-mono text-neutral-400 hover:text-neutral-950 flex items-center gap-1 transition-colors cursor-pointer py-1 px-2 rounded-lg hover:bg-neutral-100"
-                      title="Next Model"
+                      className="text-xs font-mono text-neutral-600 hover:text-neutral-950 flex items-center gap-1 transition-colors cursor-pointer py-1 px-2 rounded-lg hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
+                      title={locale === 'en' ? 'Next Model' : 'Model Berikutnya'}
+                      aria-label={locale === 'en' ? 'Next Model' : 'Model Berikutnya'}
                     >
-                      <span>Next</span>
+                      <span>{locale === 'en' ? 'Next' : 'Berikutnya'}</span>
                       <ChevronRight className="w-3.5 h-3.5" />
                     </button>
                   </div>
-                  <p className="font-mono text-[11px] tracking-wider text-neutral-400 mt-1">
+                  <p className="font-mono text-[11px] tracking-wider text-neutral-500 mt-1">
                     {activeModel.id}
                   </p>
                 </div>
@@ -233,7 +191,7 @@ export default function ModelCatalogTeaser({ isLoggedIn = false }: { isLoggedIn?
                 {/* Price & Context spec boxes */}
                 <div className="grid grid-cols-2 gap-3 mt-6 pt-5 border-t border-neutral-100">
                   <div className="rounded-2xl border border-neutral-200/80 bg-neutral-50/80 p-3.5 hover:border-neutral-300 transition-colors">
-                    <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-neutral-400 font-bold">
+                    <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-neutral-500 font-bold">
                       {t.models.priceLabel}
                     </p>
                     <p className="mt-1 font-mono text-base sm:text-lg font-bold text-neutral-900">
@@ -241,7 +199,7 @@ export default function ModelCatalogTeaser({ isLoggedIn = false }: { isLoggedIn?
                     </p>
                   </div>
                   <div className="rounded-2xl border border-neutral-200/80 bg-neutral-50/80 p-3.5 hover:border-neutral-300 transition-colors">
-                    <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-neutral-400 font-bold">
+                    <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-neutral-500 font-bold">
                       {t.models.contextLabel}
                     </p>
                     <p className="mt-1 font-mono text-base sm:text-lg font-bold text-neutral-900">

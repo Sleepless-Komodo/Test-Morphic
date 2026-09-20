@@ -53,7 +53,6 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
-  // Focus input on open
   useEffect(() => {
     if (isOpen) {
       const timer = setTimeout(() => {
@@ -65,7 +64,6 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
     }
   }, [isOpen]);
 
-  // Global keydown listener for Cmd+K / Ctrl+K and Escape
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
@@ -94,11 +92,9 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
     [onClose]
   );
 
-  // Build items catalog
   const items: PaletteItem[] = useMemo(() => {
     const list: PaletteItem[] = [];
 
-    // 1. AI Models
     ALL_MODELS.forEach((m) => {
       list.push({
         id: `model-${m.id}`,
@@ -115,16 +111,15 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
       });
     });
 
-    // 2. Navigation
     const navs = [
-      { path: '/', title: locale === 'en' ? 'Home' : 'Beranda', sub: 'Landing page overview', icon: Compass },
-      { path: '/models', title: locale === 'en' ? 'Model Catalog' : 'Katalog Model', sub: 'Explore all AI models & pricing', icon: Bot },
-      { path: '/pricing', title: locale === 'en' ? 'Pricing & Packages' : 'Harga & Paket Saldo', sub: 'Pay-as-you-go credit packages', icon: Coins },
-      { path: '/docs', title: locale === 'en' ? 'Documentation' : 'Dokumentasi API', sub: 'API schemas, SDKs & guides', icon: FileText },
-      { path: '/dashboard', title: 'Dashboard', sub: 'Overview metrics & stats', icon: LayoutDashboard },
-      { path: '/dashboard/keys', title: locale === 'en' ? 'API Keys' : 'Kunci API', sub: 'Generate & manage secret tokens', icon: KeyRound },
-      { path: '/dashboard/usage', title: locale === 'en' ? 'Usage & Logs' : 'Penggunaan & Log', sub: 'Real-time telemetry and spend', icon: Terminal },
-      { path: '/dashboard/billing', title: locale === 'en' ? 'Billing & Top-up' : 'Top-up Saldo QRIS', sub: 'Instant QRIS payment & history', icon: Coins },
+      { path: '/', title: locale === 'en' ? 'Home' : 'Beranda', sub: locale === 'en' ? 'Landing page overview' : 'Ikhtisar halaman utama', icon: Compass },
+      { path: '/models', title: locale === 'en' ? 'Model Catalog' : 'Katalog Model', sub: locale === 'en' ? 'Explore all AI models & pricing' : 'Eksplorasi seluruh model AI & tarif', icon: Bot },
+      { path: '/pricing', title: locale === 'en' ? 'Pricing & Packages' : 'Harga & Paket Saldo', sub: locale === 'en' ? 'Pay-as-you-go credit packages' : 'Paket saldo top-up bayar sesuai pakai', icon: Coins },
+      { path: '/docs', title: locale === 'en' ? 'Documentation' : 'Dokumentasi API', sub: locale === 'en' ? 'API schemas, SDKs & guides' : 'Skema API, SDK & panduan integrasi', icon: FileText },
+      { path: '/dashboard', title: 'Dashboard', sub: locale === 'en' ? 'Overview metrics & stats' : 'Metrik ringkasan & statistik', icon: LayoutDashboard },
+      { path: '/dashboard/keys', title: locale === 'en' ? 'API Keys' : 'Kunci API', sub: locale === 'en' ? 'Generate & manage secret tokens' : 'Buat & kelola token rahasia', icon: KeyRound },
+      { path: '/dashboard/usage', title: locale === 'en' ? 'Usage & Logs' : 'Penggunaan & Log', sub: locale === 'en' ? 'Real-time telemetry and spend' : 'Telemetri real-time dan konsumsi saldo', icon: Terminal },
+      { path: '/dashboard/billing', title: locale === 'en' ? 'Billing & Top-up' : 'Top-up Saldo QRIS', sub: locale === 'en' ? 'Instant QRIS payment & history' : 'Pembayaran QRIS instan & riwayat', icon: Coins },
     ];
 
     navs.forEach((n) => {
@@ -144,12 +139,11 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
       });
     });
 
-    // 3. Quick Code Snippets
     list.push({
       id: 'snip-base-url',
       section: 'snippets',
       sectionLabel: locale === 'en' ? 'Quick Actions' : 'Tindakan Cepat',
-      title: 'Copy Base URL',
+      title: locale === 'en' ? 'Copy Base URL' : 'Salin Base URL',
       subtitle: API_BASE_URL,
       badge: 'OpenAI Schema',
       icon: Code2,
@@ -163,7 +157,7 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
       id: 'snip-curl',
       section: 'snippets',
       sectionLabel: locale === 'en' ? 'Quick Actions' : 'Tindakan Cepat',
-      title: 'Copy cURL Snippet',
+      title: locale === 'en' ? 'Copy cURL Snippet' : 'Salin Contoh cURL',
       subtitle: `curl ${API_BASE_URL}/chat/completions ...`,
       badge: 'Terminal',
       icon: Terminal,
@@ -178,8 +172,8 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
       id: 'snip-cursor',
       section: 'snippets',
       sectionLabel: locale === 'en' ? 'Quick Actions' : 'Tindakan Cepat',
-      title: 'Copy Cursor IDE Base URL',
-      subtitle: 'Paste in Cursor Settings > Models > OpenAI API Key',
+      title: locale === 'en' ? 'Copy Cursor IDE Base URL' : 'Salin Base URL Cursor IDE',
+      subtitle: locale === 'en' ? 'Paste in Cursor Settings > Models > OpenAI API Key' : 'Tempel di Pengaturan Cursor > Models > OpenAI API Key',
       badge: 'Cursor',
       icon: Code2,
       keywords: 'cursor ide windsurf cline setup config',
@@ -188,7 +182,6 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
       },
     });
 
-    // 4. Locale switch
     list.push({
       id: 'locale-toggle',
       section: 'locale',
@@ -207,7 +200,6 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
     return list;
   }, [locale, router, onClose, copyToClipboard, setLocale]);
 
-  // Filter items
   const filteredItems = useMemo(() => {
     if (!query.trim()) return items;
     const q = query.toLowerCase().trim();
@@ -220,7 +212,6 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
     );
   }, [items, query]);
 
-  // Keyboard navigation within list
   const handleKeyDownList = (e: React.KeyboardEvent) => {
     if (e.key === 'ArrowDown') {
       e.preventDefault();
@@ -236,7 +227,6 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
     }
   };
 
-  // Keep highlighted item in view
   useEffect(() => {
     if (!listRef.current) return;
     const activeEl = listRef.current.querySelector(`[data-index="${selectedIndex}"]`);
@@ -262,6 +252,9 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
 
         {/* Solid, sharp Command Dialog Box (Linear/Raycast aesthetic) */}
         <motion.div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Command palette"
           initial={{ opacity: 0, scale: 0.98, y: -8 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.98, y: -8 }}
@@ -275,6 +268,11 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
             <input
               ref={inputRef}
               type="text"
+              aria-label={
+                locale === 'en'
+                  ? 'Search models, docs, actions, or jump to page'
+                  : 'Cari model, dokumen, aksi, atau buka halaman'
+              }
               value={query}
               onChange={(e) => {
                 setQuery(e.target.value);
@@ -363,7 +361,7 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
                       {isCopied ? (
                         <span className="inline-flex items-center gap-1 text-[10px] font-mono font-bold text-emerald-600">
                           <Check className="w-3.5 h-3.5" />
-                          <span>Copied!</span>
+                          <span>{locale === 'en' ? 'Copied!' : 'Tersalin!'}</span>
                         </span>
                       ) : item.section === 'models' || item.section === 'snippets' ? (
                         <Copy
@@ -392,13 +390,13 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
                 <kbd className="px-1 py-0.5 rounded bg-white border border-neutral-200 text-[9px] font-medium text-neutral-600">
                   ↑↓
                 </kbd>
-                <span>Navigate</span>
+                <span>{locale === 'en' ? 'Navigate' : 'Navigasi'}</span>
               </span>
               <span className="inline-flex items-center gap-1">
                 <kbd className="px-1.5 py-0.5 rounded bg-white border border-neutral-200 text-[9px] font-medium text-neutral-600">
                   ↵
                 </kbd>
-                <span>Select / Copy</span>
+                <span>{locale === 'en' ? 'Select / Copy' : 'Pilih / Salin'}</span>
               </span>
             </div>
             <div className="flex items-center gap-1.5">

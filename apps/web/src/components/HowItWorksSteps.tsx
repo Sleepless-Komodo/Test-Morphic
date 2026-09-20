@@ -13,7 +13,6 @@ import {
   TerminalSquare,
   ArrowUpRight,
   Shield,
-  Zap,
 } from 'lucide-react';
 import { useTranslation } from '@/lib/i18n';
 import { useReducedMotionSafe } from '@/lib/use-reduced-motion-safe';
@@ -22,7 +21,6 @@ interface HowItWorksStepsProps {
   isLoggedIn?: boolean;
 }
 
-/* ── Step 04: live auto-cycling router switcher ─────────────── */
 const ROUTER_MODELS = [
   { id: 'deepseek-v4', label: 'DeepSeek V4 Coder', latency: '138ms', costId: 'Hemat 70%', costEn: 'Save 70%' },
   { id: 'claude-3.5-sonnet-proxy', label: 'Claude 3.5 Sonnet', latency: '152ms', costId: 'Auto-Routing', costEn: 'Auto-Routing' },
@@ -32,15 +30,6 @@ const ROUTER_MODELS = [
 
 function RouterSwitcher({ locale }: { locale: string }) {
   const [idx, setIdx] = useState(0);
-  const reduced = useReducedMotionSafe();
-
-  useEffect(() => {
-    if (reduced) return;
-    const interval = setInterval(() => {
-      setIdx((prev) => (prev + 1) % ROUTER_MODELS.length);
-    }, 2400);
-    return () => clearInterval(interval);
-  }, [reduced]);
 
   const cur = ROUTER_MODELS[idx];
 
@@ -53,8 +42,8 @@ function RouterSwitcher({ locale }: { locale: string }) {
             {cur.label}
           </span>
         </div>
-        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-50 text-[10px] font-mono font-bold text-emerald-700 border border-emerald-200/60 shrink-0">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
+        <span className="inline-flex items-center gap-1.5 text-[11px] font-mono font-medium text-neutral-700 shrink-0">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
           ACTIVE
         </span>
       </div>
@@ -77,14 +66,13 @@ function RouterSwitcher({ locale }: { locale: string }) {
       </div>
 
       <div className="flex items-center justify-between text-[10px] font-mono text-neutral-500 pt-1 border-t border-neutral-100">
-        <span>Failover: 0ms (Zero Drop)</span>
-        <span className="text-emerald-600 font-bold">{locale === 'en' ? '100% Concurrency Ready' : '100% Siap Konkurensi'}</span>
+        <span>{locale === 'en' ? 'Failover: Automated Upstream' : 'Failover: Multi-Upstream Otomatis'}</span>
+        <span className="text-neutral-500 font-mono font-medium">{locale === 'en' ? 'High Concurrency Ready' : 'Siap Konkurensi Tinggi'}</span>
       </div>
     </div>
   );
 }
 
-/* ── Step 02: interactive API Key generator with copy ───────── */
 const MOCK_KEY = 'mp-live-9f8e7d6c5b4a';
 
 function KeyGeneratorPreview({ locale }: { locale: string }) {
@@ -105,7 +93,7 @@ function KeyGeneratorPreview({ locale }: { locale: string }) {
           {locale === 'en' ? 'Generated API Key' : 'Kunci API Terverifikasi'}
         </span>
         <span className="inline-flex items-center gap-1 text-[10px] font-mono font-semibold text-neutral-500">
-          <Shield className="w-3 h-3 text-emerald-600" />
+          <Shield className="w-3 h-3 text-neutral-400" />
           SHA-256
         </span>
       </div>
@@ -125,12 +113,12 @@ function KeyGeneratorPreview({ locale }: { locale: string }) {
           {copied ? (
             <>
               <Check className="w-3 h-3 text-emerald-400" />
-              <span className="text-emerald-400">Copied!</span>
+              <span className="text-emerald-400">{locale === 'en' ? 'Copied!' : 'Tersalin!'}</span>
             </>
           ) : (
             <>
               <Copy className="w-3 h-3 text-neutral-400" />
-              <span>Copy</span>
+              <span>{locale === 'en' ? 'Copy' : 'Salin'}</span>
             </>
           )}
         </button>
@@ -146,7 +134,7 @@ function KeyGeneratorPreview({ locale }: { locale: string }) {
         <span className="px-2 py-0.5 rounded-md bg-neutral-100 border border-neutral-200 text-[10px] font-mono font-semibold text-neutral-700">
           Windsurf
         </span>
-        <span className="ml-auto text-[10px] font-mono text-emerald-600 font-bold">
+        <span className="ml-auto text-[10px] font-mono text-neutral-500 font-medium">
           {locale === 'en' ? '✓ Unlimited Keys' : '✓ Kunci Tak Terbatas'}
         </span>
       </div>
@@ -154,7 +142,6 @@ function KeyGeneratorPreview({ locale }: { locale: string }) {
   );
 }
 
-/* ── Step 03: IDE Connection Code Tabs ───────────────────────── */
 function CodeConnectionPreview({ locale }: { locale: string }) {
   const [tab, setTab] = useState<'python' | 'cursor'>('python');
 
@@ -185,7 +172,7 @@ function CodeConnectionPreview({ locale }: { locale: string }) {
             Cursor / IDE Config
           </button>
         </div>
-        <span className="text-[10px] font-mono text-emerald-600 font-bold">
+        <span className="text-[10px] font-mono text-neutral-400 font-medium">
           {locale === 'en' ? 'OpenAI Format' : 'Format OpenAI'}
         </span>
       </div>
@@ -222,15 +209,14 @@ function CodeConnectionPreview({ locale }: { locale: string }) {
         </div>
       )}
 
-      <div className="flex items-center gap-1.5 text-[10px] font-mono font-bold text-emerald-600 pt-1">
-        <Check className="h-3.5 w-3.5 shrink-0" />
+      <div className="flex items-center gap-1.5 text-[10px] font-mono text-neutral-400 pt-1">
+        <Check className="h-3.5 w-3.5 shrink-0 text-neutral-400" />
         <span>{locale === 'en' ? 'Drop-in replacement · zero code overhaul' : 'Drop-in replacement · tanpa bongkar kode'}</span>
       </div>
     </div>
   );
 }
 
-/* ── Main Component ─────────────────────────────────────────── */
 export default function HowItWorksSteps({ isLoggedIn = false }: HowItWorksStepsProps) {
   const { t, locale } = useTranslation();
   const reduced = useReducedMotionSafe();
@@ -238,7 +224,6 @@ export default function HowItWorksSteps({ isLoggedIn = false }: HowItWorksStepsP
   const desktopContainerRef = useRef<HTMLDivElement>(null);
   const [activeStep, setActiveStep] = useState(0);
 
-  /* Scroll-driven step progression on desktop */
   const { scrollYProgress } = useScroll({
     target: desktopContainerRef,
     offset: ['start start', 'end end'],
@@ -274,7 +259,6 @@ export default function HowItWorksSteps({ isLoggedIn = false }: HowItWorksStepsP
     }
   };
 
-  /* Mobile scroll-reveal (< lg only) */
   useEffect(() => {
     const section = sectionRef.current;
     if (!section) return;
@@ -350,9 +334,9 @@ export default function HowItWorksSteps({ isLoggedIn = false }: HowItWorksStepsP
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-2 rounded-xl bg-emerald-50 border border-emerald-200/70 px-3 py-2">
-            <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
-            <span className="text-[11px] font-mono font-bold text-emerald-800">
+          <div className="flex items-center gap-2 rounded-xl bg-neutral-50 border border-neutral-200/80 px-3 py-2">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" />
+            <span className="text-[11px] font-mono font-semibold text-neutral-700">
               {locale === 'en' ? 'Auto Confirmed · Instant Balance Ready' : 'Terkonfirmasi Otomatis · Saldo Langsung Masuk'}
             </span>
           </div>
@@ -390,8 +374,8 @@ export default function HowItWorksSteps({ isLoggedIn = false }: HowItWorksStepsP
           ? 'Point base_url to https://api.morphic.sh/v1 with standard OpenAI API schema'
           : 'Arahkan base_url ke https://api.morphic.sh/v1 dengan skema OpenAI standar',
         locale === 'en'
-          ? 'Zero code changes needed — compatible with Cursor, Cline, Windsurf & Python/Node SDK'
-          : 'Tanpa bongkar kode — langsung jalan di Cursor, Cline, Windsurf & SDK resmi',
+          ? 'Zero code changes needed: compatible with Cursor, Cline, Windsurf & Python/Node SDK'
+          : 'Tanpa bongkar kode: langsung jalan di Cursor, Cline, Windsurf & SDK resmi',
       ],
       preview: <CodeConnectionPreview locale={locale} />,
     },
@@ -408,8 +392,8 @@ export default function HowItWorksSteps({ isLoggedIn = false }: HowItWorksStepsP
           ? 'High concurrency up to 180 RPM for non-stop prompt and code completions'
           : 'High concurrency hingga 180 RPM untuk prompt dan code completion tanpa jeda',
         locale === 'en'
-          ? 'Automatic upstream failover ensures 99.9% uptime across global AI clusters'
-          : 'Failover multi-provider otomatis menjaga 99.9% uptime di seluruh cluster AI',
+          ? 'Automatic upstream failover ensures uninterrupted service across AI clusters'
+          : 'Failover multi-provider otomatis menjaga ketersediaan layanan di seluruh cluster AI',
       ],
       preview: <RouterSwitcher locale={locale} />,
     },
@@ -435,7 +419,7 @@ export default function HowItWorksSteps({ isLoggedIn = false }: HowItWorksStepsP
               transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
               className="text-center max-w-3xl mx-auto mb-5"
             >
-              <div className="text-xs font-mono uppercase tracking-[0.2em] text-neutral-400 font-bold mb-1.5">
+              <div className="text-xs font-mono uppercase tracking-[0.2em] text-neutral-500 font-bold mb-1.5">
                 {locale === 'en' ? 'HOW IT WORKS' : 'CARA KERJA'}
               </div>
               <h2 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold tracking-tight text-neutral-950 font-heading mb-2">
@@ -456,7 +440,9 @@ export default function HowItWorksSteps({ isLoggedIn = false }: HowItWorksStepsP
                     key={step.num}
                     type="button"
                     onClick={() => scrollToStep(idx)}
-                    className={`group relative text-left p-3.5 sm:p-4 rounded-2xl border transition-all duration-200 cursor-pointer overflow-hidden ${
+                    aria-current={isActive ? 'step' : undefined}
+                    aria-label={`Jump to Step ${step.num}: ${step.title}`}
+                    className={`group relative text-left p-3.5 sm:p-4 rounded-2xl border transition-all duration-200 cursor-pointer overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 focus-visible:ring-offset-2 ${
                       isActive
                         ? 'bg-white border-neutral-900 shadow-md ring-1 ring-neutral-900'
                         : 'bg-neutral-50/70 border-neutral-200/80 hover:bg-white hover:border-neutral-300 text-neutral-600'
@@ -465,14 +451,14 @@ export default function HowItWorksSteps({ isLoggedIn = false }: HowItWorksStepsP
                     <div className="flex items-center justify-between mb-1.5">
                       <span
                         className={`font-mono text-xs font-bold transition-colors ${
-                          isActive ? 'text-neutral-950' : 'text-neutral-400 group-hover:text-neutral-700'
+                          isActive ? 'text-neutral-950' : 'text-neutral-500 group-hover:text-neutral-700'
                         }`}
                       >
                         STEP {step.num}
                       </span>
                       <Icon
                         className={`w-4 h-4 transition-colors ${
-                          isActive ? 'text-neutral-950' : 'text-neutral-400 group-hover:text-neutral-700'
+                          isActive ? 'text-neutral-950' : 'text-neutral-500 group-hover:text-neutral-700'
                         }`}
                       />
                     </div>
@@ -515,13 +501,41 @@ export default function HowItWorksSteps({ isLoggedIn = false }: HowItWorksStepsP
                   <div className="col-span-6">
                     <div className="rounded-2xl border border-neutral-200/90 bg-white shadow-xs overflow-hidden flex flex-col justify-center min-h-[250px]">
                       <div className="flex items-center justify-between border-b border-neutral-100 px-4 py-2.5 bg-neutral-50/90">
-                        <div className="flex items-center gap-1.5">
-                          <span className="h-2.5 w-2.5 rounded-full bg-neutral-300" />
-                          <span className="h-2.5 w-2.5 rounded-full bg-neutral-300" />
-                          <span className="h-2.5 w-2.5 rounded-full bg-neutral-300" />
-                        </div>
+                        {activeStep === 2 ? (
+                          <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-1.5">
+                              <span className="w-2.5 h-2.5 rounded-full bg-[#ff5f56] border border-[#e0443e]/50 shadow-2xs" />
+                              <span className="w-2.5 h-2.5 rounded-full bg-[#ffbd2e] border border-[#dea123]/50 shadow-2xs" />
+                              <span className="w-2.5 h-2.5 rounded-full bg-[#27c93f] border border-[#1aab29]/50 shadow-2xs" />
+                            </div>
+                            <span className="text-[11px] font-mono text-neutral-500 font-medium ml-1">
+                              bash — 80x24
+                            </span>
+                          </div>
+                        ) : activeStep === 0 ? (
+                          <div className="flex items-center gap-2">
+                            <span className="w-1.5 h-1.5 rounded-full bg-neutral-400" />
+                            <span className="text-[11px] font-mono font-semibold text-neutral-600">
+                              Morphic Instant Checkout
+                            </span>
+                          </div>
+                        ) : activeStep === 1 ? (
+                          <div className="flex items-center gap-2">
+                            <KeyRound className="w-3.5 h-3.5 text-neutral-400" />
+                            <span className="text-[11px] font-mono font-semibold text-neutral-600">
+                              Morphic Key Vault
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                            <span className="text-[11px] font-mono font-semibold text-neutral-600">
+                              Gateway Routing Telemetry
+                            </span>
+                          </div>
+                        )}
                         <span className="font-mono text-xs tracking-[0.2em] uppercase font-bold text-neutral-400">
-                          MORPHIC · {currentStep.label}
+                          {currentStep.label}
                         </span>
                       </div>
                       <div className="p-5 sm:p-6 flex-1 flex flex-col justify-center">
@@ -550,7 +564,7 @@ export default function HowItWorksSteps({ isLoggedIn = false }: HowItWorksStepsP
                     <div className="space-y-2 mb-6 w-full">
                       {currentStep.bullets.map((b) => (
                         <div key={b} className="flex items-start gap-2 text-xs sm:text-sm text-neutral-700 font-medium">
-                          <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                          <Check className="w-4 h-4 text-neutral-900 shrink-0 mt-0.5" />
                           <span>{b}</span>
                         </div>
                       ))}
@@ -559,7 +573,7 @@ export default function HowItWorksSteps({ isLoggedIn = false }: HowItWorksStepsP
                     {/* Bottom Action Bar */}
                     <div className="flex items-center justify-between w-full pt-4 border-t border-neutral-100 mt-auto">
                       <div className="flex items-center gap-1.5 text-xs text-neutral-500 font-medium">
-                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        <CheckCircle2 className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
                         <span>{locale === 'en' ? 'Setup in ~2 minutes' : 'Setup dalam ~2 menit'}</span>
                       </div>
 
@@ -669,7 +683,7 @@ export default function HowItWorksSteps({ isLoggedIn = false }: HowItWorksStepsP
                     <div className="mt-auto space-y-1.5 pt-3 border-t border-neutral-100">
                       {step.bullets.map((b) => (
                         <div key={b} className="flex items-start gap-2 text-[11px] text-neutral-600">
-                          <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                          <Check className="w-3.5 h-3.5 text-neutral-900 shrink-0 mt-0.5" />
                           <span>{b}</span>
                         </div>
                       ))}

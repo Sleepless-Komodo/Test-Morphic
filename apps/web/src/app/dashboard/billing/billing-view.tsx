@@ -4,7 +4,7 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslation } from '@/lib/i18n';
 import { formatCredits } from '@/lib/utils';
-import { Zap, CreditCard, Clock, QrCode, RefreshCw } from 'lucide-react';
+import { Wallet, CreditCard, Clock, QrCode, RefreshCw } from 'lucide-react';
 import { CheckoutModal } from './checkout-modal';
 import { fetchBackendApi } from '@/lib/api-client';
 
@@ -71,7 +71,7 @@ export function BillingView({
 
         <div className="p-4 rounded-2xl bg-white border border-neutral-200/90 shadow-2xs flex items-center gap-4 shrink-0">
           <div className="w-10 h-10 rounded-xl bg-neutral-100 border border-neutral-200 flex items-center justify-center text-neutral-900">
-            <Zap className="h-5 w-5 text-emerald-600" />
+            <Wallet className="h-5 w-5 text-neutral-700" />
           </div>
           <div>
             <div suppressHydrationWarning className="text-[10px] uppercase font-mono text-neutral-400 font-bold">
@@ -111,7 +111,7 @@ export function BillingView({
                 <div>
                   <div className="flex items-center justify-between gap-1 mb-2.5">
                     <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md bg-neutral-100 text-neutral-700 border border-neutral-200/80">
-                      {p.durationHours ? `${p.durationHours}h Pass` : (locale === 'en' ? 'Pass' : 'Paket')}
+                      {p.durationHours ? `${p.durationHours}h Pass` : t.dashboard.billingPassLabel}
                     </span>
                     <span className="text-[11px] font-mono font-extrabold text-emerald-600">
                       +{formatCredits(p.creditAllowance)}
@@ -176,7 +176,7 @@ export function BillingView({
                   <div className="flex items-center justify-between">
                     <div>
                       <div className="font-bold text-sm text-neutral-950">
-                        {e.packageName ?? (locale === 'en' ? 'Active Pass' : 'Pass Aktif')}
+                        {e.packageName ?? t.dashboard.billingActivePass}
                       </div>
                       <div suppressHydrationWarning className="text-[11px] text-neutral-500 font-mono mt-0.5">
                         {t.dashboard.expiresPrefix}{' '}
@@ -185,7 +185,7 @@ export function BillingView({
                               dateStyle: 'medium',
                               timeStyle: 'short',
                             })
-                          : (locale === 'en' ? 'Today' : 'Hari Ini')}
+                          : t.dashboard.billingToday}
                       </div>
                     </div>
                     <span suppressHydrationWarning className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 shadow-2xs inline-flex items-center gap-1.5">
@@ -228,12 +228,12 @@ export function BillingView({
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead>
-                  <tr suppressHydrationWarning className="border-b border-neutral-200 bg-neutral-50/70 text-[11px] font-mono uppercase text-neutral-500">
-                    <th className="px-5 py-3">{locale === 'en' ? 'Date' : 'Tanggal'}</th>
-                    <th className="px-5 py-3">{locale === 'en' ? 'Package' : 'Paket'}</th>
-                    <th className="px-5 py-3">{locale === 'en' ? 'Amount' : 'Nominal'}</th>
-                    <th className="px-5 py-3">{locale === 'en' ? 'Status' : 'Status'}</th>
-                  </tr>
+                    <tr suppressHydrationWarning className="border-b border-neutral-200 bg-neutral-50/70 text-[11px] font-mono uppercase text-neutral-500">
+                      <th className="px-5 py-3">{t.dashboard.billingPaymentDate}</th>
+                      <th className="px-5 py-3">{t.dashboard.billingPaymentPackage}</th>
+                      <th className="px-5 py-3">{t.dashboard.billingPaymentAmount}</th>
+                      <th className="px-5 py-3">{t.dashboard.billingPaymentStatus}</th>
+                    </tr>
                 </thead>
                 <tbody className="divide-y divide-neutral-100">
                   {paymentsList.map((p) => {
@@ -245,22 +245,25 @@ export function BillingView({
                         <td className="px-5 py-3 text-neutral-500">
                           {new Date(p.createdAt).toLocaleDateString(locale === 'en' ? 'en-US' : 'id-ID')}
                         </td>
-                        <td className="px-5 py-3 font-bold text-neutral-900">{p.packageName ?? (locale === 'en' ? 'Top-up' : 'Isi Ulang')}</td>
+                        <td className="px-5 py-3 font-bold text-neutral-900">{p.packageName ?? t.dashboard.billingTopup}</td>
                         <td className="px-5 py-3 font-mono">Rp {(p.amountCents ?? 0).toLocaleString('id-ID')}</td>
                         <td className="px-5 py-3">
                           <div className="flex items-center gap-2">
-                            <span suppressHydrationWarning className={`px-2 py-0.5 rounded-md text-[10px] font-mono font-bold ${
-                              isSuccess
-                                ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                                : isPending
-                                ? 'bg-amber-50 text-amber-800 border border-amber-200'
-                                : 'bg-neutral-100 text-neutral-800 border border-neutral-200'
-                            }`}>
-                              {isSuccess
-                                ? (locale === 'en' ? 'Success' : 'Berhasil')
-                                : isPending
-                                ? (locale === 'en' ? 'Pending' : 'Menunggu')
-                                : p.status}
+                            <span className="inline-flex items-center gap-1.5 text-xs font-mono font-medium text-neutral-700">
+                              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                                isSuccess
+                                  ? 'bg-emerald-500'
+                                  : isPending
+                                  ? 'bg-amber-500'
+                                  : 'bg-neutral-400'
+                              }`} />
+                              <span suppressHydrationWarning>
+                                {isSuccess
+                                  ? t.dashboard.billingStatusSuccess
+                                  : isPending
+                                  ? t.dashboard.billingStatusPending
+                                  : p.status}
+                              </span>
                             </span>
                             {isPending && (
                               <button
@@ -268,10 +271,10 @@ export function BillingView({
                                 onClick={() => handleCheckPaymentStatus(p.id)}
                                 disabled={checkingPaymentId === p.id}
                                 className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border border-neutral-200 bg-white hover:bg-neutral-100 text-[10px] font-semibold text-neutral-700 transition cursor-pointer active:scale-95 disabled:opacity-50 shadow-2xs"
-                                title={locale === 'en' ? 'Check latest status from payment gateway' : 'Cek status terbaru dari payment gateway'}
+                                title={t.dashboard.billingCheckStatus}
                               >
                                 <RefreshCw className={`h-2.5 w-2.5 ${checkingPaymentId === p.id ? 'animate-spin text-neutral-500' : ''}`} />
-                                <span>{checkingPaymentId === p.id ? (locale === 'en' ? 'Checking...' : 'Mengecek...') : (locale === 'en' ? 'Check Status' : 'Cek Status')}</span>
+                                <span>{checkingPaymentId === p.id ? t.dashboard.billingChecking : t.dashboard.billingCheckStatus}</span>
                               </button>
                             )}
                           </div>
