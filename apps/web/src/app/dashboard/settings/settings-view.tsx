@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useTranslation } from '@/lib/i18n';
@@ -55,6 +55,15 @@ export function SettingsView({ user }: SettingsViewProps) {
     setTimeout(() => setCopiedSupport(false), 2000);
   };
 
+  useEffect(() => {
+    if (!showDeleteModal) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowDeleteModal(false);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [showDeleteModal]);
+
   const memberSince = user.createdAt
     ? new Date(user.createdAt).toLocaleDateString(isId ? 'id-ID' : 'en-US', {
         month: 'long',
@@ -78,11 +87,8 @@ export function SettingsView({ user }: SettingsViewProps) {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-mono font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200/80 shadow-2xs">
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
-              </span>
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-mono font-medium text-neutral-800 border border-neutral-200 bg-neutral-50/80">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
               <span>{isId ? 'Akun Aktif' : 'Account Active'}</span>
             </span>
           </div>
@@ -137,8 +143,8 @@ export function SettingsView({ user }: SettingsViewProps) {
                   <h3 className="text-base sm:text-lg font-bold text-neutral-950 truncate">
                     {user.name || (isId ? 'Pengembang Morphic' : 'Morphic Developer')}
                   </h3>
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200/60">
-                    <CheckCircle2 className="h-3 w-3 text-emerald-600" />
+                  <span className="inline-flex items-center gap-1 text-[11px] font-medium text-neutral-600">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
                     <span>{isId ? 'Terverifikasi' : 'Verified'}</span>
                   </span>
                 </div>
@@ -250,9 +256,9 @@ export function SettingsView({ user }: SettingsViewProps) {
                     <span className="text-xs sm:text-sm font-semibold text-neutral-950">
                       {isId ? 'Perangkat Ini (Sesi Aktif)' : 'Current Device (Active Session)'}
                     </span>
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200/70">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                      {isId ? 'Online' : 'Online'}
+                    <span className="inline-flex items-center gap-1 text-[11px] font-mono text-neutral-600">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                      <span>Online</span>
                     </span>
                   </div>
                   <p className="text-xs text-neutral-500 truncate mt-0.5">
@@ -318,8 +324,8 @@ export function SettingsView({ user }: SettingsViewProps) {
                 </p>
               </div>
             </div>
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200/80">
-              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-mono font-medium text-neutral-800 border border-neutral-200 bg-neutral-50/80">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
               <span>{isId ? 'ZDR Aktif' : 'ZDR Enforced'}</span>
             </span>
           </div>
@@ -331,7 +337,7 @@ export function SettingsView({ user }: SettingsViewProps) {
                   <span className="text-xs font-bold text-neutral-950">
                     {isId ? 'Zero Data Retention (ZDR)' : 'Zero Data Retention (ZDR)'}
                   </span>
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-semibold">
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-neutral-100 text-neutral-700 font-semibold border border-neutral-200/60">
                     100% PASS-THROUGH
                   </span>
                 </div>
@@ -430,14 +436,24 @@ export function SettingsView({ user }: SettingsViewProps) {
 
       {/* Confirmation Modal for Delete Account */}
       {showDeleteModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs">
-          <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-xl border border-neutral-200 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+        <div
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowDeleteModal(false);
+          }}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs"
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-account-title"
+            className="w-full max-w-md rounded-3xl bg-white p-6 shadow-xl border border-neutral-200 space-y-4 animate-in fade-in zoom-in-95 duration-150"
+          >
             <div className="flex items-center gap-3 text-red-600">
               <div className="w-10 h-10 rounded-2xl bg-red-50 border border-red-200 flex items-center justify-center shrink-0">
                 <AlertTriangle className="h-5 w-5 text-red-600" />
               </div>
               <div>
-                <h4 className="text-base font-bold text-neutral-950 font-heading">
+                <h4 id="delete-account-title" className="text-base font-bold text-neutral-950 font-heading">
                   {isId ? 'Konfirmasi Hapus Akun' : 'Confirm Account Deletion'}
                 </h4>
                 <p className="text-xs text-neutral-500">{user.email}</p>

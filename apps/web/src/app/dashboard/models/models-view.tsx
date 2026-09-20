@@ -3,7 +3,7 @@
 import { useState, useMemo } from 'react';
 import { useTranslation } from '@/lib/i18n';
 import { formatCredits } from '@/lib/utils';
-import { Search, Terminal, Copy, Check, Sparkles, Cpu } from 'lucide-react';
+import { Search, Terminal, Copy, Check, Cpu } from 'lucide-react';
 
 export function ModelsView({ initialModels }: { initialModels: any[] }) {
   const { t, locale } = useTranslation();
@@ -53,7 +53,8 @@ export function ModelsView({ initialModels }: { initialModels: any[] }) {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder={t.dashboard.modelsSearchPlaceholder}
-            className="w-full pl-9.5 pr-4 py-2 bg-white border border-neutral-200 rounded-xl text-xs text-neutral-900 focus:outline-none focus:border-black transition-colors shadow-2xs"
+            aria-label={t.dashboard.modelsSearchPlaceholder}
+            className="w-full pl-9.5 pr-4 py-2 bg-white border border-neutral-200 rounded-xl text-xs text-neutral-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 focus:border-neutral-950 transition-colors shadow-2xs"
           />
         </div>
       </div>
@@ -108,23 +109,23 @@ export function ModelsView({ initialModels }: { initialModels: any[] }) {
                   </span>
                   {m.circuitBreakerState?.state === 'open' ? (
                     <span
-                      className="inline-flex items-center gap-1 text-[9px] font-mono font-medium px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 shrink-0"
+                      className="inline-flex items-center gap-1.5 text-[10px] font-mono font-medium text-amber-700 shrink-0"
                       title={locale === 'en' ? 'Upstream degraded, automatically routed via fallback provider' : 'Upstream terganggu, otomatis dialihkan via rute cadangan'}
                     >
-                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
                       <span>{locale === 'en' ? 'Fallback' : 'Cadangan'}</span>
                     </span>
                   ) : m.circuitBreakerState?.state === 'half-open' ? (
                     <span
-                      className="inline-flex items-center gap-1 text-[9px] font-mono font-medium px-1.5 py-0.5 rounded-full bg-sky-50 text-sky-800 border border-sky-200 shrink-0"
+                      className="inline-flex items-center gap-1.5 text-[10px] font-mono font-medium text-neutral-600 shrink-0"
                       title={locale === 'en' ? 'Upstream recovering, testing trial queries' : 'Upstream dalam pemulihan'}
                     >
-                      <span className="w-1.5 h-1.5 rounded-full bg-sky-500 animate-pulse" />
+                      <span className="w-1.5 h-1.5 rounded-full bg-neutral-400 shrink-0" />
                       <span>{locale === 'en' ? 'Testing' : 'Pemulihan'}</span>
                     </span>
                   ) : (
-                    <span className="inline-flex items-center gap-1 text-[9px] font-mono font-medium px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/60 shrink-0">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                    <span className="inline-flex items-center gap-1.5 text-[10px] font-mono font-medium text-neutral-700 shrink-0">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
                       <span>{t.dashboard.modelStatusReady}</span>
                     </span>
                   )}

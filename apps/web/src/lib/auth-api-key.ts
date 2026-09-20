@@ -46,7 +46,6 @@ export const apiKeyAuth = (): BetterAuthPlugin => {
             });
           }
 
-          // Check user in database for suspension status
           const [dbUser] = await db
             .select({
               id: s.users.id,
@@ -78,7 +77,6 @@ export const apiKeyAuth = (): BetterAuthPlugin => {
             });
           }
 
-          // Update last used timestamp in background
           await db
             .update(s.apiKeys)
             .set({ lastUsedAt: new Date() })

@@ -177,9 +177,9 @@ export default function LoginView({ googleConfigured, githubConfigured }: LoginV
           {/* Conditional View: When Already Logged In */}
           {session?.user ? (
             <div>
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-semibold mb-3">
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Active Session</span>
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-neutral-50 text-neutral-800 border border-neutral-200 text-xs font-mono font-medium mb-3">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                <span>{locale === 'id' ? 'Sesi Aktif' : 'Active Session'}</span>
               </div>
 
               <h1 suppressHydrationWarning className="text-xl sm:text-2xl font-heading font-extrabold text-neutral-950 tracking-tight mb-1">
@@ -212,7 +212,6 @@ export default function LoginView({ googleConfigured, githubConfigured }: LoginV
               </div>
             </div>
           ) : (
-            /* Normal Sign-in View */
             <div>
               <h1 suppressHydrationWarning className="text-2xl font-heading font-extrabold text-neutral-950 tracking-tight mb-2">
                 {t.login.title}
@@ -221,7 +220,6 @@ export default function LoginView({ googleConfigured, githubConfigured }: LoginV
                 {t.login.subtitle}
               </p>
 
-              {/* Auth Error Banner */}
               {authError && (
                 <div className="mb-4 p-3 rounded-2xl bg-amber-50 border border-amber-200 text-left animate-in fade-in duration-200">
                   <div className="flex items-start gap-2">
@@ -307,7 +305,6 @@ export default function LoginView({ googleConfigured, githubConfigured }: LoginV
                   </button>
                 </div>
               ) : (
-                /* Real API Key Input Mode */
                 <form onSubmit={handleKeySignIn} className="space-y-4 text-left animate-in fade-in zoom-in-95 duration-150">
                   <div>
                     <label className="text-xs font-bold text-neutral-800 block mb-1.5">
@@ -330,8 +327,8 @@ export default function LoginView({ googleConfigured, githubConfigured }: LoginV
                       </div>
                     )}
                     {keySuccess && (
-                      <div className="p-2.5 mt-2 rounded-xl bg-emerald-50 border border-emerald-200 text-[11px] text-emerald-800 font-semibold flex items-center gap-2">
-                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                      <div className="p-2.5 mt-2 rounded-xl bg-neutral-50 border border-neutral-200 text-[11px] text-neutral-900 font-medium flex items-center gap-2">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
                         <span>{locale === 'id' ? 'Kunci valid! Mengalihkan ke dashboard...' : 'Valid key! Redirecting to dashboard...'}</span>
                       </div>
                     )}
@@ -370,7 +367,31 @@ export default function LoginView({ googleConfigured, githubConfigured }: LoginV
 
               {/* Bottom terms */}
               <div suppressHydrationWarning className="mt-8 pt-6 border-t border-neutral-100 text-[11px] text-neutral-400 leading-relaxed">
-                {t.login.termsNotice}
+                {locale === 'id' ? (
+                  <>
+                    Dengan masuk, Anda menyetujui{' '}
+                    <Link href="/terms" className="underline hover:text-neutral-700">
+                      Ketentuan Layanan
+                    </Link>{' '}
+                    dan{' '}
+                    <Link href="/privacy" className="underline hover:text-neutral-700">
+                      Kebijakan Privasi
+                    </Link>{' '}
+                    Morphic.
+                  </>
+                ) : (
+                  <>
+                    By signing in, you agree to Morphic{' '}
+                    <Link href="/terms" className="underline hover:text-neutral-700">
+                      Terms of Service
+                    </Link>{' '}
+                    and{' '}
+                    <Link href="/privacy" className="underline hover:text-neutral-700">
+                      Privacy Policy
+                    </Link>
+                    .
+                  </>
+                )}
               </div>
             </div>
           )}

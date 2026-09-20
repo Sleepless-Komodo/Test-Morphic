@@ -8,7 +8,6 @@ import {
   Copy,
   Cpu,
   KeyRound,
-  Zap,
   Activity,
   Terminal,
   CheckCircle2,
@@ -21,7 +20,7 @@ import QuickstartHub from '@/components/QuickstartHub';
 import { INFERENCE_MODELS, CapabilityTag, ModelItem } from '@/lib/models-data';
 export type { ModelItem } from '@/lib/models-data';
 
-const BASE_URL = API_BASE_URL;
+const BASE_URL = 'https://api.morphic.sh/v1';
 
 const CHEAP_DAILY_PACKAGES = [
   { id: 'starter', label: 'Starter', labelEn: 'Starter', desc: 'Rp 10.000 / bulan', descEn: 'Rp 10,000 / month', credits: 10000 },
@@ -253,10 +252,9 @@ export default function DeveloperGateway({
         <div className="md:col-span-5 p-6 rounded-3xl bg-neutral-950 text-white border border-neutral-800 shadow-md flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-2">
-              <span suppressHydrationWarning className="text-xs font-semibold text-neutral-400">
+              <span suppressHydrationWarning className="text-xs font-mono font-semibold tracking-wider uppercase text-neutral-400">
                 {t.dashboard.creditBalance}
               </span>
-              <Zap className="h-4 w-4 text-emerald-500" />
             </div>
             <div suppressHydrationWarning className="text-2xl sm:text-3xl font-heading font-black text-white mb-1 font-mono tabular-nums">
               Rp {userBalance.toLocaleString(locale === 'id' ? 'id-ID' : 'en-US')}
@@ -300,7 +298,7 @@ export default function DeveloperGateway({
             <KeyRound className="h-4 w-4 text-neutral-400 group-hover:text-neutral-950 transition-colors shrink-0 mt-0.5" />
           </div>
           <div className="mt-4 pt-3 border-t border-neutral-100 flex items-center justify-between text-[11px] font-medium text-neutral-500 group-hover:text-neutral-950 transition-colors">
-            <span>{locale === 'en' ? 'Manage Keys' : 'Kelola API Key'}</span>
+            <span>{t.dashboard.manageKeys}</span>
             <ArrowUpRight className="h-3.5 w-3.5 text-neutral-400 group-hover:text-neutral-950 transition-colors" />
           </div>
         </Link>
@@ -333,7 +331,7 @@ export default function DeveloperGateway({
             </div>
           ) : (
             <div className="mt-4 pt-3 border-t border-neutral-100 flex items-center justify-between text-[11px] font-medium text-neutral-500 group-hover:text-neutral-950 transition-colors">
-              <span>{locale === 'en' ? 'View Usage Logs' : 'Lihat Log Pemakaian'}</span>
+              <span>{t.dashboard.viewUsageLogs}</span>
               <ArrowUpRight className="h-3.5 w-3.5 text-neutral-400 group-hover:text-neutral-950 transition-colors" />
             </div>
           )}
@@ -358,7 +356,7 @@ export default function DeveloperGateway({
             <Cpu className="h-4 w-4 text-neutral-400 group-hover:text-neutral-950 transition-colors shrink-0 mt-0.5" />
           </div>
           <div className="mt-4 pt-3 border-t border-neutral-100 flex items-center justify-between text-[11px] font-medium text-neutral-500 group-hover:text-neutral-950 transition-colors">
-            <span>{locale === 'en' ? 'Explore Catalog' : 'Jelajahi Model'}</span>
+            <span>{t.dashboard.exploreCatalog}</span>
             <ArrowUpRight className="h-3.5 w-3.5 text-neutral-400 group-hover:text-neutral-950 transition-colors" />
           </div>
         </Link>
@@ -374,13 +372,11 @@ export default function DeveloperGateway({
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
               </span>
               <h2 className="font-heading font-bold text-base text-neutral-950 tracking-tight">
-                {isId ? 'Telemetri Permintaan Terakhir' : 'Recent Request Telemetry'}
+                {t.dashboard.telemetryTitle}
               </h2>
             </div>
             <p className="text-xs text-neutral-500 mt-1">
-              {isId
-                ? 'Riwayat pemanggilan model AI dari Cursor, Cline, dan kode Anda'
-                : 'Live model invocations from your IDEs, coding agents, and SDKs'}
+              {t.dashboard.telemetryDesc}
             </p>
           </div>
 
@@ -388,7 +384,7 @@ export default function DeveloperGateway({
             href="/dashboard/usage"
             className="inline-flex items-center gap-1.5 text-xs font-semibold text-neutral-700 hover:text-neutral-950 cursor-pointer group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 rounded-lg py-1 px-2.5 hover:bg-neutral-100 transition-colors shrink-0 self-start sm:self-auto"
           >
-            <span>{isId ? 'Lihat Semua Log Aktivitas' : 'View Full Logs & Analytics'}</span>
+            <span>{t.dashboard.viewFullLogs}</span>
             <ArrowUpRight className="h-3.5 w-3.5 text-neutral-400 group-hover:text-neutral-950 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all" />
           </Link>
         </div>
@@ -400,12 +396,10 @@ export default function DeveloperGateway({
             </div>
             <div className="space-y-1">
               <h3 className="font-heading font-bold text-sm text-neutral-900">
-                {isId ? 'Belum Ada Permintaan API yang Masuk' : 'No API Requests Recorded Yet'}
+                {t.dashboard.noRequestsTitle}
               </h3>
               <p className="text-xs text-neutral-500 max-w-md mx-auto leading-relaxed">
-                {isId
-                  ? `Hubungkan Base URL ${BASE_URL} dan API Key Anda di Cursor, Cline, atau SDK untuk melihat log real-time di sini.`
-                  : `Configure Base URL ${BASE_URL} and your API Key in Cursor, Cline, or the SDK to see real-time request telemetry here.`}
+                {t.dashboard.noRequestsDesc.replace('{baseUrl}', BASE_URL)}
               </p>
             </div>
           </div>
@@ -414,13 +408,13 @@ export default function DeveloperGateway({
             <table className="w-full text-left text-xs">
               <thead>
                 <tr className="border-b border-neutral-200 bg-neutral-50/70 text-[11px] font-mono uppercase text-neutral-500">
-                  <th className="px-5 py-3.5">Status</th>
-                  <th className="px-5 py-3.5">Trace ID</th>
-                  <th className="px-5 py-3.5">Model</th>
-                  <th className="px-5 py-3.5 text-right">Tokens</th>
-                  <th className="px-5 py-3.5 text-right">Cost</th>
-                  <th className="px-5 py-3.5 text-right">Latency</th>
-                  <th className="px-5 py-3.5 text-right">Time</th>
+                  <th className="px-5 py-3.5">{t.dashboard.thUsageStatus}</th>
+                  <th className="px-5 py-3.5">{t.dashboard.thUsageTraceId}</th>
+                  <th className="px-5 py-3.5">{t.dashboard.thUsageModel}</th>
+                  <th className="px-5 py-3.5 text-right">{t.dashboard.thUsageTokens}</th>
+                  <th className="px-5 py-3.5 text-right">{t.dashboard.thCost}</th>
+                  <th className="px-5 py-3.5 text-right">{t.dashboard.thUsageLatency}</th>
+                  <th className="px-5 py-3.5 text-right">{t.dashboard.thUsageTime}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100 font-mono text-[11px]">
@@ -431,13 +425,13 @@ export default function DeveloperGateway({
                       {/* Status */}
                       <td className="px-5 py-3.5 whitespace-nowrap">
                         {isSuccess ? (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-50 text-emerald-800 border border-emerald-200/80 shadow-2xs">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 ring-2 ring-emerald-500/20" />
+                          <span className="inline-flex items-center gap-1.5 text-xs font-mono font-medium text-neutral-700">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
                             <span>200 OK</span>
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-rose-50 text-rose-800 border border-rose-200/80 shadow-2xs">
-                            <span className="w-1.5 h-1.5 rounded-full bg-rose-500 ring-2 ring-rose-500/20" />
+                          <span className="inline-flex items-center gap-1.5 text-xs font-mono font-medium text-red-600">
+                            <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />
                             <span>ERR</span>
                           </span>
                         )}

@@ -21,6 +21,7 @@ interface KeyItem {
 
 function CopyPrefixButton({ prefix }: { prefix: string }) {
   const [copied, setCopied] = useState(false);
+  const { t } = useTranslation();
   const onCopy = () => {
     navigator.clipboard.writeText(prefix);
     setCopied(true);
@@ -30,7 +31,7 @@ function CopyPrefixButton({ prefix }: { prefix: string }) {
     <button
       type="button"
       onClick={onCopy}
-      title="Salin Prefix Kunci"
+      title={t.dashboard.keyCopyPrefix}
       className="p-1 rounded hover:bg-neutral-200/60 text-neutral-400 hover:text-neutral-700 transition cursor-pointer"
     >
       {copied ? <Check className="h-3 w-3 text-emerald-600" /> : <Copy className="h-3 w-3" />}
@@ -114,12 +115,14 @@ export function KeysView({ initialKeys }: { initialKeys: KeyItem[] }) {
             value={newKeyName}
             onChange={(e) => setNewKeyName(e.target.value)}
             placeholder={t.dashboard.keyNameInputPlaceholder}
-            className="flex-1 bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-2.5 text-xs text-neutral-900 focus:outline-none focus:border-black focus-visible:ring-2 focus-visible:ring-neutral-950/20 transition-colors"
+            aria-label={t.dashboard.keyNameInputPlaceholder}
+            className="flex-1 bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-2.5 text-xs text-neutral-900 focus:outline-none focus:border-neutral-950 focus-visible:ring-2 focus-visible:ring-neutral-950 transition-colors"
           />
           <select
             value={expiresIn}
             onChange={(e) => setExpiresIn(e.target.value as any)}
-            className="bg-neutral-50 border border-neutral-200 rounded-xl px-3 py-2.5 text-xs text-neutral-800 focus:outline-none focus:border-black focus-visible:ring-2 focus-visible:ring-neutral-950/20 transition-colors shrink-0 cursor-pointer"
+            aria-label={locale === 'en' ? 'API key expiration duration' : 'Masa berlaku kunci API'}
+            className="bg-neutral-50 border border-neutral-200 rounded-xl px-3 py-2.5 text-xs text-neutral-800 focus:outline-none focus:border-neutral-950 focus-visible:ring-2 focus-visible:ring-neutral-950 transition-colors shrink-0 cursor-pointer"
           >
             <option value="none">{t.dashboard.expiryNever}</option>
             <option value="30d">{t.dashboard.expiry30Days}</option>
@@ -210,13 +213,13 @@ export function KeysView({ initialKeys }: { initialKeys: KeyItem[] }) {
                     </td>
                     <td className="px-6 py-4">
                       {k.status === 'active' ? (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-50 text-emerald-800 border border-emerald-200/80 shadow-2xs">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 ring-2 ring-emerald-500/20" />
-                          <span suppressHydrationWarning>{locale === 'en' ? 'Active' : 'Aktif'}</span>
+                        <span className="inline-flex items-center gap-1.5 text-xs font-mono font-medium text-neutral-700">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                          <span suppressHydrationWarning>{t.dashboard.keyStatusActive}</span>
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-neutral-100 text-neutral-600 border border-neutral-200">
-                          <span className="w-1.5 h-1.5 rounded-full bg-neutral-400" />
+                        <span className="inline-flex items-center gap-1.5 text-xs font-mono font-medium text-neutral-500">
+                          <span className="w-1.5 h-1.5 rounded-full bg-neutral-400 shrink-0" />
                           <span>{k.status}</span>
                         </span>
                       )}
@@ -224,8 +227,9 @@ export function KeysView({ initialKeys }: { initialKeys: KeyItem[] }) {
                     <td className="px-6 py-4 font-mono text-[11px]">
                       {k.expiresAt ? (
                         new Date(k.expiresAt).getTime() < Date.now() ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-bold">
-                            {locale === 'en' ? 'Expired' : 'Kadaluwarsa'}
+                          <span className="inline-flex items-center gap-1.5 text-xs font-mono font-medium text-red-600">
+                            <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />
+                            <span>{t.dashboard.keyStatusExpired}</span>
                           </span>
                         ) : (
                           <span className="text-neutral-700 font-semibold" title={new Date(k.expiresAt).toLocaleString(locale === 'en' ? 'en-US' : 'id-ID')}>
@@ -233,7 +237,7 @@ export function KeysView({ initialKeys }: { initialKeys: KeyItem[] }) {
                           </span>
                         )
                       ) : (
-                        <span className="text-neutral-400">{locale === 'en' ? 'Never' : 'Tidak Pernah'}</span>
+                          <span className="text-neutral-400">{t.dashboard.keyStatusNever}</span>
                       )}
                     </td>
                     <td className="px-6 py-4 text-neutral-500 font-mono text-[11px]">
@@ -245,8 +249,8 @@ export function KeysView({ initialKeys }: { initialKeys: KeyItem[] }) {
                     <td className="px-6 py-4 text-right">
                       {confirmRevokeId === k.id ? (
                         <div className="inline-flex items-center gap-1.5 justify-end">
-                          <span className="text-[11px] text-red-600 font-bold">
-                            {locale === 'en' ? 'Revoke?' : 'Cabut?'}
+                            <span className="text-[11px] text-red-600 font-bold">
+                            {t.dashboard.revokeConfirm}
                           </span>
                           <button
                             type="button"
@@ -257,7 +261,7 @@ export function KeysView({ initialKeys }: { initialKeys: KeyItem[] }) {
                             disabled={isPending}
                             className="px-2 py-0.5 rounded-md bg-red-600 hover:bg-red-700 text-white text-[10px] font-bold transition-all active:scale-95 shadow-2xs cursor-pointer"
                           >
-                            {locale === 'en' ? 'Yes' : 'Ya'}
+                            {t.dashboard.revokeYes}
                           </button>
                           <button
                             type="button"
@@ -265,7 +269,7 @@ export function KeysView({ initialKeys }: { initialKeys: KeyItem[] }) {
                             disabled={isPending}
                             className="px-2 py-0.5 rounded-md bg-neutral-100 hover:bg-neutral-200 text-neutral-700 text-[10px] font-semibold transition-all active:scale-95 cursor-pointer"
                           >
-                            {locale === 'en' ? 'Cancel' : 'Batal'}
+                            {t.dashboard.revokeCancel}
                           </button>
                         </div>
                       ) : (
@@ -295,12 +299,10 @@ export function KeysView({ initialKeys }: { initialKeys: KeyItem[] }) {
           </div>
           <div className="text-xs text-neutral-600 leading-relaxed">
             <span className="font-bold text-neutral-950 block sm:inline mr-1.5">
-              {locale === 'id' ? 'Keamanan Kunci API:' : 'API Key Security:'}
+              {t.dashboard.keySecurityLabel}
             </span>
             <span>
-              {locale === 'id'
-                ? 'Jangan pernah membagikan kunci rahasia Anda atau menyimpannya di repository publik. Selalu gunakan environment variable (.env) lokal.'
-                : 'Do not share your secret key with others, or commit it to public repositories. Always use local environment variables.'}
+              {t.dashboard.keySecurityDesc}
             </span>
           </div>
         </div>
@@ -309,7 +311,7 @@ export function KeysView({ initialKeys }: { initialKeys: KeyItem[] }) {
           href="/docs"
           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-neutral-200 hover:border-neutral-300 hover:bg-neutral-50 text-xs font-semibold text-neutral-800 hover:text-neutral-950 transition-all shrink-0 self-start sm:self-auto cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
         >
-          <span>{locale === 'id' ? 'Panduan Setup IDE' : 'Setup Guides'}</span>
+            <span>{t.dashboard.setupGuidesLink}</span>
           <ArrowUpRight className="h-3.5 w-3.5 text-neutral-500" />
         </Link>
       </div>

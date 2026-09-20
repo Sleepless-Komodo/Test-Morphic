@@ -6,7 +6,7 @@ import { formatCredits, timeAgo } from '@/lib/utils';
 import {
   BarChart3,
   Activity,
-  Zap,
+  Coins,
   Cpu,
   Clock,
   Terminal,
@@ -173,7 +173,7 @@ export function UsageView({ today, month, total, topModels, recent }: UsageViewP
             <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-neutral-500">
               {t.dashboard.usageToday}
             </span>
-            <Zap className="h-4 w-4 text-emerald-600" />
+            <Coins className="h-4 w-4 text-neutral-400" />
           </div>
           <div>
             <div className="text-3xl font-heading font-black text-neutral-950 font-mono tabular-nums">
@@ -188,7 +188,7 @@ export function UsageView({ today, month, total, topModels, recent }: UsageViewP
             <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-neutral-500">
               {t.dashboard.usageThisMonth}
             </span>
-            <Activity className="h-4 w-4 text-neutral-900" />
+            <Activity className="h-4 w-4 text-neutral-400" />
           </div>
           <div>
             <div className="text-3xl font-heading font-black text-neutral-950 font-mono tabular-nums">
@@ -203,7 +203,7 @@ export function UsageView({ today, month, total, topModels, recent }: UsageViewP
             <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-neutral-400">
               {t.dashboard.usageTotalRequests}
             </span>
-            <BarChart3 className="h-4 w-4 text-emerald-400" />
+            <BarChart3 className="h-4 w-4 text-neutral-400" />
           </div>
           <div>
             <div className="text-3xl font-heading font-black text-white font-mono tabular-nums">
@@ -313,7 +313,8 @@ export function UsageView({ today, month, total, topModels, recent }: UsageViewP
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 placeholder={isId ? 'Filter model / Trace ID...' : 'Filter model / Trace ID...'}
-                className="pl-8 pr-3 py-1.5 rounded-xl border border-neutral-200 bg-white text-xs text-neutral-900 placeholder-neutral-400 focus:outline-none focus:ring-1 focus:ring-neutral-950 w-36 sm:w-48"
+                aria-label={isId ? 'Filter model atau Trace ID' : 'Filter model or Trace ID'}
+                className="pl-8 pr-3 py-1.5 rounded-xl border border-neutral-200 bg-white text-xs text-neutral-900 placeholder-neutral-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 focus:border-neutral-950 w-36 sm:w-48 transition-all"
               />
             </div>
 
@@ -390,13 +391,13 @@ export function UsageView({ today, month, total, topModels, recent }: UsageViewP
                         {/* Status Badge */}
                         <td className="px-5 py-3.5 whitespace-nowrap">
                           {isSuccess ? (
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-50 text-emerald-800 border border-emerald-200/80 shadow-2xs">
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 ring-2 ring-emerald-500/20" />
+                            <span className="inline-flex items-center gap-1.5 text-xs font-mono font-medium text-neutral-700">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
                               <span>200 OK</span>
                             </span>
                           ) : (
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-rose-50 text-rose-800 border border-rose-200/80 shadow-2xs">
-                              <span className="w-1.5 h-1.5 rounded-full bg-rose-500 ring-2 ring-rose-500/20" />
+                            <span className="inline-flex items-center gap-1.5 text-xs font-mono font-medium text-red-600">
+                              <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />
                               <span>ERR</span>
                             </span>
                           )}

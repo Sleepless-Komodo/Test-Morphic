@@ -4,7 +4,7 @@ import { LanguageProvider, Locale } from '@/lib/i18n';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Morphic — Satu API untuk Berbagai Model AI',
+  title: 'Morphic: Satu API untuk Berbagai Model AI',
   description: 'Akses API Claude 3.5, DeepSeek V4, Qwen Max, dan Kimi melalui satu endpoint OpenAI-compatible dengan pembayaran QRIS lokal.',
 };
 

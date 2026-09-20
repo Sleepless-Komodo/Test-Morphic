@@ -65,7 +65,7 @@ export function RedeemView() {
               value={code}
               onChange={(e) => setCode(e.target.value.toUpperCase())}
               placeholder={t.dashboard.voucherInputPlaceholder}
-              className="w-full px-4 py-3 rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 text-base sm:text-lg font-mono font-bold placeholder:font-sans placeholder:font-normal placeholder:text-neutral-400 focus:outline-none focus:border-black focus:bg-white transition-all uppercase shadow-2xs"
+              className="w-full px-4 py-3 rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 text-base sm:text-lg font-mono font-bold placeholder:font-sans placeholder:font-normal placeholder:text-neutral-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 focus:border-neutral-950 focus:bg-white transition-all uppercase shadow-2xs"
               disabled={status === 'loading'}
             />
           </div>
@@ -73,7 +73,7 @@ export function RedeemView() {
           <button
             type="submit"
             disabled={!code.trim() || status === 'loading'}
-            className="w-full py-3.5 px-4 rounded-xl bg-neutral-950 hover:bg-neutral-800 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs sm:text-sm font-bold transition-all shadow-xs flex items-center justify-center gap-2 cursor-pointer active:scale-[0.99]"
+            className="w-full py-3.5 px-4 rounded-xl bg-neutral-950 hover:bg-neutral-800 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs sm:text-sm font-bold transition-all shadow-xs flex items-center justify-center gap-2 cursor-pointer active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 focus-visible:ring-offset-2"
           >
             {status === 'loading' && <Loader2 className="w-4 h-4 animate-spin" />}
             <span suppressHydrationWarning>

@@ -21,7 +21,7 @@ import {
   Settings,
   Ticket,
   X,
-  Zap,
+  Coins,
 } from 'lucide-react';
 
 interface DashboardShellProps {
@@ -41,7 +41,6 @@ export function DashboardShell({ session, balance, children }: DashboardShellPro
   const pathname = usePathname();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
-  // Group 1: Core Gateway & Developer Tools
   const gatewayNavItems = [
     { href: '/dashboard', label: t.dashboard.navOverview, icon: LayoutDashboard },
     { href: '/dashboard/keys', label: t.dashboard.navKeys, icon: KeyRound },
@@ -49,7 +48,6 @@ export function DashboardShell({ session, balance, children }: DashboardShellPro
     { href: '/dashboard/models', label: t.dashboard.navModels, icon: Cpu },
   ];
 
-  // Group 2: Financial & Voucher
   const managementNavItems = [
     { href: '/dashboard/billing', label: t.dashboard.navBilling, icon: CreditCard },
     { href: '/dashboard/redeem', label: t.dashboard.navVoucher, icon: Ticket },
@@ -115,29 +113,29 @@ export function DashboardShell({ session, balance, children }: DashboardShellPro
       <Link
         href="/dashboard/billing"
         onClick={() => setMobileNavOpen(false)}
-        className="mx-3 mb-4 flex items-center justify-between gap-3 p-3 rounded-2xl bg-neutral-50/90 border border-neutral-200/90 hover:border-neutral-300 hover:bg-neutral-100/70 transition-all group shadow-2xs"
+        className="mx-3 mb-4 flex items-center justify-between gap-3 p-2.5 rounded-xl bg-neutral-50/80 border border-neutral-200/80 hover:border-neutral-300 hover:bg-neutral-100/60 transition-all group shadow-2xs"
       >
         <div className="flex items-center gap-2.5 min-w-0">
-          <div className="w-7 h-7 rounded-lg bg-emerald-100/80 text-emerald-700 flex items-center justify-center shrink-0">
-            <Zap className="h-4 w-4" />
+          <div className="w-8 h-8 rounded-lg bg-white border border-neutral-200/90 text-neutral-700 flex items-center justify-center shrink-0 shadow-2xs group-hover:border-neutral-300 transition-colors">
+            <Coins className="h-4 w-4 text-neutral-700" />
           </div>
           <div className="min-w-0">
             <span
               suppressHydrationWarning
-              className="block text-[10px] font-mono font-bold uppercase tracking-wider text-neutral-500 leading-tight"
+              className="block text-[10px] font-mono font-semibold uppercase tracking-wider text-neutral-400 leading-tight"
             >
               {t.dashboard.balanceLabel}
             </span>
             <span className="block text-xs sm:text-sm font-mono font-bold text-neutral-950 truncate">
               {formatCredits(balance)}{' '}
               <span className="text-[10px] font-sans font-normal text-neutral-500">
-                {locale === 'en' ? 'credits' : 'kredit'}
+                {t.dashboard.creditsUnit}
               </span>
             </span>
           </div>
         </div>
-        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-neutral-900 text-white group-hover:bg-neutral-800 transition-colors shrink-0">
-          + Top Up
+        <span className="text-[11px] font-medium px-2.5 py-1 rounded-lg bg-neutral-900 text-white group-hover:bg-neutral-800 transition-colors shrink-0 shadow-2xs">
+          <span suppressHydrationWarning>{t.dashboard.topUpBtn}</span>
         </span>
       </Link>
 
@@ -149,7 +147,7 @@ export function DashboardShell({ session, balance, children }: DashboardShellPro
             suppressHydrationWarning
             className="px-3 text-[10px] font-mono font-bold uppercase tracking-wider text-neutral-500 mb-1.5"
           >
-            {t.dashboard.navGroupGateway || (locale === 'id' ? 'Gateway & Developer' : 'Gateway & Dev')}
+            {t.dashboard.navGroupGateway}
           </div>
           {renderNavList(gatewayNavItems)}
         </div>
@@ -160,7 +158,7 @@ export function DashboardShell({ session, balance, children }: DashboardShellPro
             suppressHydrationWarning
             className="px-3 text-[10px] font-mono font-bold uppercase tracking-wider text-neutral-500 mb-1.5"
           >
-            {locale === 'id' ? 'Billing & Kredit' : 'Billing & Credits'}
+            {t.dashboard.navGroupBilling}
           </div>
           {renderNavList(managementNavItems)}
         </div>
@@ -183,7 +181,7 @@ export function DashboardShell({ session, balance, children }: DashboardShellPro
         >
           <ArrowUpRight className="h-3.5 w-3.5 shrink-0 text-neutral-500" />
           <span suppressHydrationWarning>
-            {locale === 'id' ? 'Kembali ke Situs' : 'Back to Site'}
+            {t.dashboard.backToSite}
           </span>
         </Link>
 
@@ -191,7 +189,7 @@ export function DashboardShell({ session, balance, children }: DashboardShellPro
         <div className="flex items-center justify-between px-3 py-1.5 rounded-xl text-xs font-semibold text-neutral-600">
           <div className="flex items-center gap-2.5">
             <Globe className="h-3.5 w-3.5 shrink-0 text-neutral-500" />
-            <span suppressHydrationWarning>{locale === 'id' ? 'Bahasa' : 'Language'}</span>
+            <span suppressHydrationWarning>{t.dashboard.languageLabel}</span>
           </div>
           <LanguageToggle />
         </div>
@@ -209,7 +207,7 @@ export function DashboardShell({ session, balance, children }: DashboardShellPro
           <Link
             href="/dashboard/settings"
             onClick={() => setMobileNavOpen(false)}
-            title={locale === 'id' ? 'Pengaturan Akun & Profil' : 'Account & Profile Settings'}
+            title={t.dashboard.navSettings}
             className="flex items-center gap-2.5 min-w-0 flex-1 group cursor-pointer"
           >
             {session?.user?.image ? (
@@ -231,7 +229,7 @@ export function DashboardShell({ session, balance, children }: DashboardShellPro
                 suppressHydrationWarning
                 className="text-xs font-bold text-neutral-950 leading-snug truncate group-hover:text-black transition-colors"
               >
-                {session?.user?.name || (locale === 'en' ? 'Developer' : 'Pengembang')}
+                {session?.user?.name || t.dashboard.developerFallback}
               </div>
               <div className="text-[10px] text-neutral-500 font-mono truncate leading-snug">
                 {session?.user?.email}
