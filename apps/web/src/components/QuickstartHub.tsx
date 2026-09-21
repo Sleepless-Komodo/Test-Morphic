@@ -9,7 +9,7 @@ const BASE_URL = API_BASE_URL;
 
 type TabId = 'ide' | 'curl' | 'sdk';
 
-function CopyButton({ text }: { text: string }) {
+function CopyButton({ text, locale }: { text: string; locale: string }) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = () => {
@@ -22,14 +22,19 @@ function CopyButton({ text }: { text: string }) {
     <button
       type="button"
       onClick={handleCopy}
-      className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-700 bg-neutral-800 px-2.5 py-1 text-[11px] font-semibold text-neutral-300 transition-colors hover:bg-neutral-700 hover:text-white cursor-pointer shrink-0"
+      aria-label={locale === 'en' ? 'Copy snippet' : 'Salin kode'}
+      className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-700 bg-neutral-800 px-2.5 py-1 text-[11px] font-semibold text-neutral-300 transition-colors hover:bg-neutral-700 hover:text-white cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 focus-visible:ring-offset-2 focus-visible:ring-offset-neutral-950"
     >
       {copied ? (
         <Check className="h-3 w-3 text-emerald-400" />
       ) : (
         <Copy className="h-3 w-3" />
       )}
-      <span suppressHydrationWarning>{copied ? 'Copied' : 'Copy'}</span>
+      <span suppressHydrationWarning>
+        {copied
+          ? (locale === 'en' ? 'Copied' : 'Tersalin')
+          : (locale === 'en' ? 'Copy' : 'Salin')}
+      </span>
     </button>
   );
 }
@@ -118,23 +123,24 @@ res = client.chat.completions.create(
               </span>
               <CopyButton
                 text={`Base URL: ${BASE_URL}\nModel: deepseek-v4\nAPI Key: mp-live-xxxxxxxx`}
+                locale={locale}
               />
             </div>
             <div className="space-y-2.5 font-mono text-xs">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 rounded-lg bg-neutral-900 border border-neutral-800 px-3 py-2">
-                <span className="text-neutral-500">Base URL</span>
+                <span className="text-neutral-400">Base URL</span>
                 <span className="text-emerald-400 break-all">{BASE_URL}</span>
               </div>
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 rounded-lg bg-neutral-900 border border-neutral-800 px-3 py-2">
-                <span className="text-neutral-500">Model</span>
+                <span className="text-neutral-400">Model</span>
                 <span className="text-emerald-400">deepseek-v4</span>
               </div>
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 rounded-lg bg-neutral-900 border border-neutral-800 px-3 py-2">
-                <span className="text-neutral-500">API Key</span>
+                <span className="text-neutral-400">API Key</span>
                 <span className="text-neutral-300">mp-live-xxxxxxxx</span>
               </div>
             </div>
-            <p suppressHydrationWarning className="text-[11px] text-neutral-500 mt-3">
+            <p suppressHydrationWarning className="text-[11px] text-neutral-400 mt-3">
               {t.dashboard.quickstartIdeKeyHint}
             </p>
           </div>
@@ -143,7 +149,7 @@ res = client.chat.completions.create(
         {activeTab === 'curl' && (
           <div className="rounded-2xl bg-neutral-950 border border-neutral-800 p-4 sm:p-5">
             <div className="flex justify-end mb-2">
-              <CopyButton text={curlSnippet} />
+              <CopyButton text={curlSnippet} locale={locale} />
             </div>
             <pre className="text-xs font-mono text-neutral-200 leading-relaxed overflow-x-auto">
               {curlSnippet}
@@ -156,7 +162,7 @@ res = client.chat.completions.create(
             <div className="rounded-2xl bg-neutral-950 border border-neutral-800 p-4 sm:p-5">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-[11px] font-mono text-neutral-400">Node.js / TypeScript</span>
-                <CopyButton text={nodeSnippet} />
+                <CopyButton text={nodeSnippet} locale={locale} />
               </div>
               <pre className="text-xs font-mono text-neutral-200 leading-relaxed overflow-x-auto">
                 {nodeSnippet}
@@ -165,7 +171,7 @@ res = client.chat.completions.create(
             <div className="rounded-2xl bg-neutral-950 border border-neutral-800 p-4 sm:p-5">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-[11px] font-mono text-neutral-400">Python</span>
-                <CopyButton text={pythonSnippet} />
+                <CopyButton text={pythonSnippet} locale={locale} />
               </div>
               <pre className="text-xs font-mono text-neutral-200 leading-relaxed overflow-x-auto">
                 {pythonSnippet}

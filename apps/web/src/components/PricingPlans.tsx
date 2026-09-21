@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
-import { ArrowUpRight, Zap, ShieldCheck, Plug, Wallet, Clock } from 'lucide-react';
+import { ArrowUpRight, CheckCircle2, ShieldCheck, Plug, Wallet, Clock } from 'lucide-react';
 import { useTranslation } from '@/lib/i18n';
 import { useReducedMotionSafe } from '@/lib/use-reduced-motion-safe';
 
@@ -46,7 +46,7 @@ export default function PricingPlans({
           className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-12"
         >
           <div>
-            <div className="text-xs sm:text-sm font-mono uppercase tracking-[0.2em] text-neutral-400 font-bold mb-3">
+            <div className="text-xs sm:text-sm font-mono uppercase tracking-[0.2em] text-neutral-500 font-bold mb-3">
               {t.pricing.badge}
             </div>
 
@@ -80,11 +80,15 @@ export default function PricingPlans({
           transition={{ duration: 0.55, delay: 0.1, ease: EASE }}
         >
           <div className="flex flex-col items-center gap-3 mb-12">
-          <div className="inline-flex items-center p-1 rounded-full border border-neutral-200 bg-neutral-100 text-xs select-none shadow-xs">
+          <div role="tablist" aria-label="Pricing billing modes" className="inline-flex items-center p-1 rounded-full border border-neutral-200 bg-neutral-100 text-xs select-none shadow-xs">
             <button
               type="button"
+              role="tab"
+              id="pricing-tab-credits"
+              aria-selected={activeTab === 'credits'}
+              aria-controls="pricing-panel-credits"
               onClick={() => setActiveTab('credits')}
-              className={`flex items-center gap-2 px-4 sm:px-5 py-2 rounded-full transition-all cursor-pointer font-semibold ${
+              className={`flex items-center gap-2 px-4 sm:px-5 py-2 rounded-full transition-all cursor-pointer font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 focus-visible:ring-offset-2 ${
                 activeTab === 'credits'
                   ? 'bg-white text-neutral-950 shadow-sm font-bold'
                   : 'text-neutral-500 hover:text-neutral-900'
@@ -95,8 +99,12 @@ export default function PricingPlans({
             </button>
             <button
               type="button"
+              role="tab"
+              id="pricing-tab-daily"
+              aria-selected={activeTab === 'daily'}
+              aria-controls="pricing-panel-daily"
               onClick={() => setActiveTab('daily')}
-              className={`flex items-center gap-2 px-4 sm:px-5 py-2 rounded-full transition-all cursor-pointer font-semibold ${
+              className={`flex items-center gap-2 px-4 sm:px-5 py-2 rounded-full transition-all cursor-pointer font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 focus-visible:ring-offset-2 ${
                 activeTab === 'daily'
                   ? 'bg-white text-neutral-950 shadow-sm font-bold'
                   : 'text-neutral-500 hover:text-neutral-900'
@@ -156,7 +164,7 @@ export default function PricingPlans({
 
                 {/* Real Developer Value estimate */}
                 <div className="mb-6 rounded-xl bg-neutral-50 border border-neutral-100 px-3.5 py-3">
-                  <div className="text-[10px] font-mono uppercase tracking-wider font-bold text-neutral-400 mb-1">
+                  <div className="text-[10px] font-mono uppercase tracking-wider font-bold text-neutral-500 mb-1">
                     {t.pricing.estimateLabel}
                   </div>
                   <div className="text-[11px] font-mono font-semibold text-neutral-700 leading-relaxed">
@@ -168,7 +176,7 @@ export default function PricingPlans({
                 <div className="mb-8 divide-y divide-neutral-100 border-y border-neutral-100">
                   {tier.features.map((feat, idx) => (
                     <div key={idx} className="py-2.5 text-xs text-neutral-700 flex items-start gap-2">
-                      <span className="text-neutral-300 font-mono select-none shrink-0">—</span>
+                      <span className="text-neutral-500 font-mono select-none shrink-0">•</span>
                       <span suppressHydrationWarning>{feat}</span>
                     </div>
                   ))}
@@ -220,7 +228,7 @@ export default function PricingPlans({
                       <span className="text-3xl font-extrabold text-neutral-950 tracking-tight">
                         {pass.price}
                       </span>
-                      <span className="text-xs font-mono font-semibold text-neutral-400">
+                      <span className="text-xs font-mono font-semibold text-neutral-500">
                         {t.pricing.perDay}
                       </span>
                     </div>
@@ -231,15 +239,15 @@ export default function PricingPlans({
                   {/* Spec strip */}
                   <div className="mb-6 divide-y divide-neutral-100 border-y border-neutral-100 text-[11px] font-mono text-neutral-600">
                     <div className="py-2 flex justify-between">
-                      <span className="text-neutral-400">{locale === 'en' ? 'Duration' : 'Durasi'}</span>
+                      <span className="text-neutral-500">{locale === 'en' ? 'Duration' : 'Durasi'}</span>
                       <span className="font-semibold">{locale === 'en' ? '24 hours' : '24 jam'}</span>
                     </div>
                     <div className="py-2 flex justify-between">
-                      <span className="text-neutral-400">{locale === 'en' ? 'Requests' : 'Permintaan'}</span>
+                      <span className="text-neutral-500">{locale === 'en' ? 'Requests' : 'Permintaan'}</span>
                       <span className="font-semibold">{locale === 'en' ? 'Unlimited' : 'Tak Terbatas'}</span>
                     </div>
                     <div className="py-2 flex justify-between">
-                      <span className="text-neutral-400">{locale === 'en' ? 'Activation' : 'Aktivasi'}</span>
+                      <span className="text-neutral-500">{locale === 'en' ? 'Activation' : 'Aktivasi'}</span>
                       <span className="font-semibold">{locale === 'en' ? 'QRIS · Instant' : 'QRIS · Instan'}</span>
                     </div>
                   </div>
@@ -293,8 +301,8 @@ export default function PricingPlans({
         >
           <div className="flex flex-wrap items-center justify-center gap-x-10 gap-y-4 text-xs text-neutral-600">
             {t.pricing.trustItems.map((item, idx) => {
-              const icons = [Zap, ShieldCheck, Plug];
-              const Icon = icons[idx] || Zap;
+              const icons = [CheckCircle2, ShieldCheck, Plug];
+              const Icon = icons[idx] || CheckCircle2;
               return (
                 <span key={idx} className="flex items-center gap-2">
                   <Icon className="h-4 w-4 text-neutral-950 shrink-0" />

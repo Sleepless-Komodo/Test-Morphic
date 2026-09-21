@@ -41,7 +41,6 @@ export default function Navbar({ session }: NavbarProps) {
 
   const isHome = pathname === '/';
 
-  // Toggle Command Palette with Ctrl+K / Cmd+K
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
@@ -53,7 +52,6 @@ export default function Navbar({ session }: NavbarProps) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // Scroll spy to highlight only the active in-view section on landing page
   React.useEffect(() => {
     if (!isHome) return;
 
@@ -65,7 +63,6 @@ export default function Navbar({ session }: NavbarProps) {
         const el = document.getElementById(id);
         if (el) {
           const rect = el.getBoundingClientRect();
-          // Active when the section intersects the upper viewport threshold
           if (rect.top <= 240 && rect.bottom >= 120) {
             currentSection = `#${id}`;
           }
@@ -176,7 +173,8 @@ export default function Navbar({ session }: NavbarProps) {
           {/* Language Switcher Pill - Stationed on the far right edge */}
           <button
             onClick={toggleLanguage}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-neutral-200 hover:border-neutral-300 text-xs sm:text-sm font-mono font-bold text-neutral-800 hover:text-neutral-950 bg-neutral-50 hover:bg-neutral-100 transition-all cursor-pointer select-none"
+            aria-label="Switch Language (ID / EN)"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-neutral-200 hover:border-neutral-300 text-xs sm:text-sm font-mono font-bold text-neutral-800 hover:text-neutral-950 bg-neutral-50 hover:bg-neutral-100 transition-all cursor-pointer select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
             title="Switch Language (ID / EN)"
           >
             <Globe className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
@@ -188,14 +186,15 @@ export default function Navbar({ session }: NavbarProps) {
         <div className="md:hidden flex items-center gap-2">
           <button
             onClick={toggleLanguage}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-neutral-200 text-xs font-mono font-bold uppercase text-neutral-800 bg-neutral-100"
+            aria-label="Switch Language (ID / EN)"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-neutral-200 text-xs font-mono font-bold uppercase text-neutral-800 bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
           >
             <Globe className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
             <span suppressHydrationWarning>{locale}</span>
           </button>
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="p-2 text-neutral-800 hover:text-neutral-950 rounded-lg"
+            className="p-2 text-neutral-800 hover:text-neutral-950 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
             aria-label="Toggle Navigation Menu"
           >
             {mobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}

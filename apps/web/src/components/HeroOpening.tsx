@@ -3,7 +3,7 @@
 import { useRef } from 'react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
-import { ArrowUpRight, Sparkles } from 'lucide-react';
+import { ArrowUpRight } from 'lucide-react';
 import { useTranslation } from '@/lib/i18n';
 import { useReducedMotionSafe } from '@/lib/use-reduced-motion-safe';
 import ParallaxBackground from '@/components/ParallaxBackground';
@@ -55,28 +55,15 @@ export default function HeroOpening({ isLoggedIn = false }: HeroOpeningProps) {
       ref={sectionRef}
       className="hero-section relative w-full overflow-x-clip flex flex-col items-center justify-center min-h-screen pt-36 sm:pt-44 md:pt-48 pb-36 sm:pb-44 md:pb-52"
     >
-      {/* Parallax visual background — blends seamlessly into #fafafa */}
       <ParallaxBackground sectionRef={sectionRef} />
 
-      {/* Foreground — Grand Centered Developer Hero with Orchestrated Stagger Entrance */}
       <motion.div
         initial={reduced ? false : 'hidden'}
         animate="visible"
         variants={containerVariants}
         className="relative z-10 max-w-5xl mx-auto w-full flex flex-col items-center justify-center text-center px-4 sm:px-6 my-auto"
       >
-        {/* 1. Badge */}
-        <motion.div
-          variants={itemVariants}
-          className="inline-flex items-center gap-2.5 px-4.5 py-2 sm:px-6 sm:py-2.5 rounded-full bg-white/95 border border-neutral-200/90 text-neutral-900 text-xs sm:text-sm md:text-base font-semibold mb-8 sm:mb-10 shadow-2xs"
-        >
-          <Sparkles className="h-4 w-4 sm:h-4.5 sm:w-4.5 text-neutral-950 shrink-0" />
-          <span suppressHydrationWarning>
-            {t?.hero?.badge || (locale === 'id' ? 'Satu API untuk Berbagai Model AI' : 'One API for Multiple AI Models')}
-          </span>
-        </motion.div>
-
-        {/* 2. Grand Headline (Flagship scale, line-by-line stagger reveal) */}
+        {/* Grand Headline (Flagship scale, line-by-line stagger reveal) */}
         <h1
           suppressHydrationWarning
           className="text-5xl sm:text-6xl md:text-7xl lg:text-[5.25rem] xl:text-[5.75rem] font-extrabold tracking-tight leading-[1.04] max-w-4xl sm:max-w-5xl mx-auto mb-8 sm:mb-10 font-heading transform-gpu"

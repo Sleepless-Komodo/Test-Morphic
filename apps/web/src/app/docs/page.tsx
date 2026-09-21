@@ -5,7 +5,7 @@ import Footer from '@/components/Footer';
 import DocsView from './docs-view';
 
 export const metadata = {
-  title: 'Dokumentasi — Morphic AI Gateway',
+  title: 'Dokumentasi | Morphic AI Gateway',
   description:
     'Panduan lengkap integrasi Morphic AI Gateway: setup Cursor, Cline, Windsurf, Claude Code, Python, Node.js SDK, dan referensi endpoint OpenAI-compatible.',
 };

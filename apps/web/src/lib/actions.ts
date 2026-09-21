@@ -26,12 +26,10 @@ async function requireAdmin() {
 
 export { requireUser, requireAdmin };
 
-// ── API Keys ──────────────────────────────────────────
 
 export async function listApiKeys() {
   await requireUser();
 
-  // 1. Try fetching from Backend API
   try {
     const apiRes = await fetchBackendApi<{ data: any[] }>('/v1/keys');
     if (apiRes.data?.data) {
@@ -49,7 +47,6 @@ export async function listApiKeys() {
     console.warn('[listApiKeys] Backend API fetch failed, falling back to direct DB:', err);
   }
 
-  // 2. Direct DB fallback
   try {
     const user = await requireUser();
     return await db
@@ -76,7 +73,6 @@ export async function createApiKey(_prev: { raw: string | null }, formData: Form
   const name = String(formData.get('name') ?? '').trim() || 'default';
   const expiresIn = String(formData.get('expiresIn') ?? 'none');
 
-  // 1. Try creating via Backend API
   try {
     const apiRes = await fetchBackendApi<{
       id: string;
@@ -102,7 +98,6 @@ export async function createApiKey(_prev: { raw: string | null }, formData: Form
     console.warn('[createApiKey] Backend API create failed, falling back to direct DB:', err);
   }
 
-  // 2. Direct DB fallback
   const { raw, hash, prefix } = generateApiKey();
   let createdId: string | null = null;
   let expiresAt: Date | null = null;
@@ -128,7 +123,6 @@ export async function revokeApiKey(formData: FormData) {
   const user = await requireUser();
   const id = String(formData.get('id'));
 
-  // 1. Try revoking via Backend API
   try {
     const apiRes = await fetchBackendApi(`/v1/keys/${id}`, {
       method: 'DELETE',
@@ -138,7 +132,6 @@ export async function revokeApiKey(formData: FormData) {
     console.warn('[revokeApiKey] Backend API delete failed, falling back to direct DB:', err);
   }
 
-  // 2. Direct DB fallback
   try {
     await db
       .update(s.apiKeys)
@@ -151,7 +144,6 @@ export async function revokeApiKey(formData: FormData) {
 
 export { maskedKey };
 
-// ── Redeem ────────────────────────────────────────────
 
 export async function redeemCodeDirect(code: string): Promise<{ ok: boolean; message: string; reward?: any }> {
   const cleanCode = code.trim().toUpperCase();
@@ -159,7 +151,6 @@ export async function redeemCodeDirect(code: string): Promise<{ ok: boolean; mes
 
   const user = await requireUser();
 
-  // 1. Try redeeming via Backend API
   try {
     const apiRes = await fetchBackendApi<{
       ok: boolean;
@@ -185,7 +176,6 @@ export async function redeemCodeDirect(code: string): Promise<{ ok: boolean; mes
     console.warn('[redeemCodeDirect] Backend API unavailable, falling back to direct DB:', err);
   }
 
-  // 2. Direct DB transaction fallback
   try {
     return await db.transaction(async (tx) => {
       const [rc] = await tx.select().from(s.redeemCodes).where(eq(s.redeemCodes.code, cleanCode)).for('update');
@@ -265,7 +255,6 @@ export async function redeemCode(_prev: { ok: boolean; message: string }, formDa
   return redeemCodeDirect(code);
 }
 
-// ── Billing / Payments (mock) ─────────────────────────
 
 export async function createMockPayment(formData: FormData) {
   if (process.env.NODE_ENV === 'production') {
@@ -332,7 +321,6 @@ export async function simulatePaymentWebhook(formData: FormData) {
   return { ok: true, message: 'Payment confirmed' };
 }
 
-// ── Duitku Payments ───────────────────────────────────
 
 export async function createPaymentAction(packageId: string) {
   const session = await auth.api.getSession({ headers: await headers() });
@@ -382,7 +370,6 @@ export async function checkPaymentStatusAction(paymentId: string) {
   return res.data;
 }
 
-// ── Usage Logs ─────────────────────────────────────────
 
 export async function getUsageLogsAction(params: {
   page?: number;
@@ -400,7 +387,6 @@ export async function getUsageLogsAction(params: {
   if (params.from) query += `&from=${encodeURIComponent(params.from)}`;
   if (params.to) query += `&to=${encodeURIComponent(params.to)}`;
 
-  // 1. Try Backend API with user session token
   try {
     const apiRes = await fetchBackendApi<{
       data: any[];
@@ -438,7 +424,6 @@ export async function getUsageLogsAction(params: {
     console.warn('[getUsageLogsAction] Backend API usage fetch failed, using DB fallback:', err);
   }
 
-  // 2. Direct DB fallback with same filters and pagination
   try {
     const conditions = [eq(s.usageRecords.userId, session.user.id)];
     if (params.from) {

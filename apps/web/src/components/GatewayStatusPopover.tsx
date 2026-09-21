@@ -86,26 +86,29 @@ export default function GatewayStatusPopover() {
         onClick={() => setOpen((prev) => !prev)}
         aria-expanded={open}
         aria-haspopup="dialog"
-        className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold shadow-xs transition-colors cursor-pointer ${
+        className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs font-medium shadow-2xs transition-colors cursor-pointer ${
           state === 'degraded'
             ? 'border-amber-300 bg-amber-50/80 text-amber-900 hover:bg-amber-100'
-            : 'border-neutral-200 bg-white text-neutral-700 hover:border-neutral-300 hover:text-neutral-950'
+            : 'border-neutral-200/90 bg-white text-neutral-700 hover:border-neutral-300 hover:text-neutral-950'
         }`}
       >
-        <span className="relative flex h-2 w-2 shrink-0">
+        <span className="relative flex h-1.5 w-1.5 shrink-0">
+          {operational && (
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
+          )}
           <span
-            className={`relative inline-flex h-2 w-2 rounded-full ${
+            className={`relative inline-flex h-1.5 w-1.5 rounded-full ${
               state === 'checking'
                 ? 'bg-neutral-300'
                 : operational
-                  ? 'bg-emerald-500 ring-2 ring-emerald-500/20'
-                  : 'bg-amber-500 ring-2 ring-amber-500/20'
+                  ? 'bg-emerald-500'
+                  : 'bg-amber-500'
             }`}
           />
         </span>
         <span suppressHydrationWarning>{pillLabel}</span>
         <ChevronDown
-          className={`h-3.5 w-3.5 text-neutral-400 transition-transform ${open ? 'rotate-180' : ''}`}
+          className={`h-3 w-3 text-neutral-400 transition-transform duration-150 ${open ? 'rotate-180' : ''}`}
         />
       </button>
 
@@ -113,50 +116,47 @@ export default function GatewayStatusPopover() {
         <div
           role="dialog"
           aria-label={t.dashboard.statusTitle}
-          className="absolute right-0 top-full z-50 mt-2 w-80 rounded-2xl border border-neutral-200 bg-white p-5 shadow-lg animate-in fade-in slide-in-from-top-2 duration-150"
+          className="absolute right-0 top-full z-50 mt-2 w-76 rounded-xl border border-neutral-200/90 bg-white p-4 shadow-xl shadow-neutral-950/5 animate-in fade-in slide-in-from-top-1 duration-150"
         >
-          <div className="flex items-start justify-between gap-3 mb-4">
+          <div className="flex items-start justify-between gap-3 mb-3">
             <div>
               <div
                 suppressHydrationWarning
-                className={`text-sm font-bold ${operational ? 'text-neutral-950' : 'text-amber-700'}`}
+                className={`text-xs font-semibold ${operational ? 'text-neutral-900' : 'text-amber-700'}`}
               >
                 {operational ? t.dashboard.statusAllOperational : t.dashboard.statusDegradedTitle}
               </div>
-              <div suppressHydrationWarning className="text-[11px] text-neutral-500 mt-0.5">
+              <div suppressHydrationWarning className="text-[10px] font-mono text-neutral-400 mt-0.5">
                 {t.dashboard.statusUptime}
               </div>
             </div>
             <div className="text-right shrink-0">
-              <div className="text-[10px] text-neutral-400">{t.dashboard.statusPing}</div>
-              <div className="font-mono text-sm font-bold text-neutral-950">
-                {state === 'checking' ? '—' : pingMs !== null ? `${pingMs} ms` : '—'}
-              </div>
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-neutral-100 border border-neutral-200/60 font-mono text-[11px] font-medium text-neutral-700">
+                {state === 'checking' ? '...' : pingMs !== null ? `${pingMs}ms` : '-'}
+              </span>
             </div>
           </div>
 
-          <div className="space-y-1.5 border-t border-neutral-100 pt-3">
+          <div className="space-y-1 border-t border-neutral-100 pt-2.5">
             {liveProviders.length > 0 ? (
               liveProviders.map((prov) => {
                 const isHealthy = prov.status === 'healthy';
                 return (
                   <div key={prov.name} className="flex items-center justify-between text-xs py-1">
-                    <span className="text-neutral-700 capitalize font-medium">
+                    <span className="text-neutral-700 capitalize text-xs">
                       {prov.name}
                     </span>
-                    <span
-                      className={`inline-flex items-center gap-1.5 font-semibold text-[11px] ${
-                        isHealthy ? 'text-emerald-700' : 'text-amber-700'
-                      }`}
-                    >
+                    <span className="inline-flex items-center gap-1.5 font-mono text-[11px] text-neutral-500">
                       <span
-                        className={`h-1.5 w-1.5 rounded-full ${
+                        className={`h-1.5 w-1.5 rounded-full shrink-0 ${
                           isHealthy ? 'bg-emerald-500' : 'bg-amber-500'
                         }`}
                       />
-                      {isHealthy
-                        ? (locale === 'id' ? 'Aktif' : 'Operational')
-                        : (locale === 'id' ? 'Terganggu' : 'Degraded')}
+                      <span className={isHealthy ? 'text-neutral-500' : 'text-amber-600 font-medium'}>
+                        {isHealthy
+                          ? t.dashboard.statusServiceOperational
+                          : t.dashboard.statusDegradedService}
+                      </span>
                     </span>
                   </div>
                 );
@@ -164,29 +164,27 @@ export default function GatewayStatusPopover() {
             ) : (
               SERVICES.map((service) => (
                 <div key={service.name} className="flex items-center justify-between text-xs py-1">
-                  <span suppressHydrationWarning className="text-neutral-600">
+                  <span suppressHydrationWarning className="text-neutral-700 text-xs">
                     {locale === 'id' ? service.nameId : service.name}
                   </span>
-                  <span
-                    className={`inline-flex items-center gap-1.5 font-semibold ${
-                      operational ? 'text-emerald-700' : 'text-amber-700'
-                    }`}
-                  >
+                  <span className="inline-flex items-center gap-1.5 font-mono text-[11px] text-neutral-500">
                     <span
-                      className={`h-1.5 w-1.5 rounded-full ${
+                      className={`h-1.5 w-1.5 rounded-full shrink-0 ${
                         operational ? 'bg-emerald-500' : 'bg-amber-500'
                       }`}
                     />
-                    {operational
-                      ? t.dashboard.statusServiceOperational
-                      : (locale === 'id' ? 'Terganggu' : 'Degraded')}
+                    <span className={operational ? 'text-neutral-500' : 'text-amber-600 font-medium'}>
+                      {operational
+                        ? t.dashboard.statusServiceOperational
+                        : t.dashboard.statusDegradedService}
+                    </span>
                   </span>
                 </div>
               ))
             )}
           </div>
 
-          <div className="mt-4 border-t border-neutral-100 pt-3 text-[11px] text-neutral-400">
+          <div className="mt-3 border-t border-neutral-100 pt-2 text-[10px] text-neutral-400 font-mono leading-relaxed">
             <span suppressHydrationWarning>{t.dashboard.statusPingNote}</span>
           </div>
         </div>

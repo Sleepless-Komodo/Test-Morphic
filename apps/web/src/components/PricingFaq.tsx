@@ -96,7 +96,7 @@ export default function PricingFaq() {
           transition={{ duration: 0.5, ease: EASE }}
           className="text-center max-w-3xl mx-auto mb-12 sm:mb-16"
         >
-          <div className="inline-flex items-center gap-2 text-xs sm:text-sm font-mono uppercase tracking-[0.2em] text-neutral-400 font-bold mb-3">
+          <div className="inline-flex items-center gap-2 text-xs sm:text-sm font-mono uppercase tracking-[0.2em] text-neutral-500 font-bold mb-3">
             <HelpCircle className="w-3.5 h-3.5 text-neutral-900" />
             <span>{locale === 'en' ? 'Billing & Payments' : 'Tanya Jawab Billing'}</span>
           </div>
@@ -131,12 +131,12 @@ export default function PricingFaq() {
                   type="button"
                   onClick={() => toggle(idx)}
                   aria-expanded={isOpen}
-                  className="w-full py-5 sm:py-6 text-left flex items-center justify-between gap-4 sm:gap-6 cursor-pointer group"
+                  className="w-full py-5 sm:py-6 text-left flex items-center justify-between gap-4 sm:gap-6 cursor-pointer group rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 focus-visible:ring-offset-2"
                 >
                   <span className="flex items-baseline gap-3 sm:gap-4 min-w-0 pr-2">
                     <span
                       className={`font-mono text-xs sm:text-sm tabular-nums shrink-0 transition-colors ${
-                        isOpen ? 'text-neutral-950 font-bold' : 'text-neutral-400 group-hover:text-neutral-600'
+                        isOpen ? 'text-neutral-950 font-bold' : 'text-neutral-500 group-hover:text-neutral-700'
                       }`}
                     >
                       {String(idx + 1).padStart(2, '0')}
