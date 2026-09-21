@@ -131,13 +131,22 @@ export function CheckoutModal({ pkg, onClose, onSuccess }: CheckoutModalProps) {
       // Open Duitku payment page in new tab
       window.open(data.paymentUrl, '_blank', 'noopener,noreferrer');
 
-      // Start polling for completion
       startPolling(data.paymentId);
     } catch (err: any) {
       setStatus('error');
       setErrorMsg(err?.message ?? 'Terjadi kesalahan, coba lagi.');
     }
   };
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
 
   const pkgName = locale === 'en' && pkg.nameEn ? pkg.nameEn : pkg.name;
 
@@ -148,7 +157,14 @@ export function CheckoutModal({ pkg, onClose, onSuccess }: CheckoutModalProps) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
+    <div
+      onClick={(e) => {
+        if (e.target === e.currentTarget && status !== 'creating') {
+          onClose();
+        }
+      }}
+      className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in"
+    >
       <div
         className="bg-white rounded-3xl border border-neutral-200 max-w-sm w-full shadow-2xl overflow-hidden"
         role="dialog"
@@ -163,8 +179,8 @@ export function CheckoutModal({ pkg, onClose, onSuccess }: CheckoutModalProps) {
           <button
             id="checkout-modal-close"
             onClick={onClose}
-            aria-label="Close"
-            className="text-neutral-400 hover:text-neutral-700 transition-colors text-lg cursor-pointer"
+            aria-label="Close modal"
+            className="text-neutral-500 hover:text-neutral-900 transition-colors text-lg cursor-pointer p-1 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
           >
             ✕
           </button>
@@ -202,19 +218,19 @@ export function CheckoutModal({ pkg, onClose, onSuccess }: CheckoutModalProps) {
 
           {status === 'waiting' && (
             <div className="space-y-3">
-              <div className="p-4 rounded-2xl bg-blue-50 border border-blue-100 text-center space-y-2">
-                <div className="flex items-center justify-center gap-2 text-blue-700 text-sm font-semibold">
-                  <Loader2 className="h-4 w-4 animate-spin" />
+              <div className="p-4 rounded-2xl bg-neutral-50 border border-neutral-200 text-center space-y-2">
+                <div className="flex items-center justify-center gap-2 text-neutral-900 text-sm font-semibold">
+                  <Loader2 className="h-4 w-4 animate-spin text-neutral-800" />
                   <span>{locale === 'en' ? 'Waiting for payment…' : 'Menunggu pembayaran…'}</span>
                 </div>
-                <p className="text-xs text-blue-600">
+                <p className="text-xs text-neutral-600">
                   {locale === 'en'
                     ? 'Complete payment in the Duitku tab. This page will update automatically.'
                     : 'Selesaikan pembayaran di tab Duitku. Halaman ini akan otomatis terupdate.'}
                 </p>
                 {secondsLeft !== null && secondsLeft > 0 && (
-                  <div className="flex items-center justify-center gap-1 text-xs text-blue-500 font-mono">
-                    <Clock className="h-3 w-3" />
+                  <div className="flex items-center justify-center gap-1 text-xs text-neutral-500 font-mono font-bold">
+                    <Clock className="h-3.5 w-3.5 text-neutral-500" />
                     <span>{formatCountdown(secondsLeft)}</span>
                   </div>
                 )}
@@ -278,14 +294,13 @@ export function CheckoutModal({ pkg, onClose, onSuccess }: CheckoutModalProps) {
               id="checkout-check-btn"
               onClick={() => {
                 if (paymentId) {
-                  // Reset poll counter to force immediate check
                   pollAttemptsRef.current = Math.max(0, pollAttemptsRef.current - 5);
                 }
               }}
               className="w-full py-2.5 rounded-2xl border border-neutral-200 hover:border-neutral-300 text-neutral-700 text-xs font-medium transition-all cursor-pointer flex items-center justify-center gap-2"
             >
               <RefreshCw className="h-3.5 w-3.5" />
-              {locale === 'en' ? 'I have paid — check again' : 'Sudah bayar — cek sekarang'}
+              {locale === 'en' ? 'I have paid, check again' : 'Sudah bayar, cek sekarang'}
             </button>
           )}
 

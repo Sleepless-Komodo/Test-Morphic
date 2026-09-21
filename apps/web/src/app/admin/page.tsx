@@ -1,19 +1,19 @@
 import { Suspense } from 'react';
+import Link from 'next/link';
 import { sql, eq, gte } from 'drizzle-orm';
 import { db, schema as s } from '@morphic/db';
 import { requireAdmin } from '@/lib/actions';
+import { getServerTranslation } from '@/lib/i18n/server';
 import { formatCredits } from '@/lib/utils';
-import { Activity, AlertTriangle, CheckCircle2, Clock, ServerCrash } from 'lucide-react';
-
-// ── Skeletons ──────────────────────────────────────────────
+import { Activity, AlertTriangle, Users, Cpu, DollarSign, Zap, ServerCrash } from 'lucide-react';
 
 function StatsCardsSkeleton() {
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 animate-pulse">
       {[1, 2, 3, 4].map((i) => (
-        <div key={i} className="card bg-neutral-100/80 p-5 rounded-2xl border border-neutral-200/60 backdrop-blur-sm h-28 flex flex-col justify-between">
-          <div className="h-4 bg-neutral-300/60 rounded w-2/3"></div>
-          <div className="h-8 bg-neutral-300/80 rounded w-1/2"></div>
+        <div key={i} className="bg-white p-5 rounded-2xl border border-neutral-200/80 shadow-xs h-28 flex flex-col justify-between">
+          <div className="h-4 bg-neutral-200 rounded w-2/3"></div>
+          <div className="h-7 bg-neutral-200 rounded w-1/2"></div>
         </div>
       ))}
     </div>
@@ -22,20 +22,18 @@ function StatsCardsSkeleton() {
 
 function SectionCardSkeleton() {
   return (
-    <div className="card bg-neutral-100/60 p-5 rounded-2xl border border-neutral-200/60 backdrop-blur-sm h-64 animate-pulse flex flex-col justify-between">
-      <div className="h-5 bg-neutral-300/70 rounded w-1/3 mb-4"></div>
+    <div className="bg-white p-6 rounded-2xl border border-neutral-200/80 shadow-xs h-72 animate-pulse flex flex-col justify-between">
+      <div className="h-5 bg-neutral-200 rounded w-1/3 mb-4"></div>
       <div className="space-y-3 flex-1">
-        <div className="h-4 bg-neutral-200 rounded w-full"></div>
-        <div className="h-4 bg-neutral-200 rounded w-5/6"></div>
-        <div className="h-4 bg-neutral-200 rounded w-4/6"></div>
+        <div className="h-4 bg-neutral-100 rounded w-full"></div>
+        <div className="h-4 bg-neutral-100 rounded w-5/6"></div>
+        <div className="h-4 bg-neutral-100 rounded w-4/6"></div>
       </div>
     </div>
   );
 }
 
-// ── Async Sub-components ───────────────────────────────────
-
-async function AlertBannerSection() {
+async function AlertBannerSection({ t }: { t: any }) {
   const fiveMinCutoff = new Date(Date.now() - 5 * 60_000);
   let fiveMinStats: { providerName: string | null; total: number; errors: number }[] = [];
   try {
@@ -49,7 +47,7 @@ async function AlertBannerSection() {
       .where(gte(s.requestLogs.createdAt, fiveMinCutoff))
       .groupBy(s.requestLogs.providerName);
   } catch {
-    return null; // Silently skip alert banner if DB is unavailable
+    return null;
   }
 
   const alertingProviders = fiveMinStats
@@ -64,26 +62,34 @@ async function AlertBannerSection() {
   if (alertingProviders.length === 0) return null;
 
   return (
-    <div className="bg-red-50 border-2 border-red-300 p-4 rounded-2xl flex items-center justify-between text-red-900 shadow-sm animate-pulse">
+    <div className="bg-red-50/90 border border-red-200 p-4 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-red-950 shadow-xs">
       <div className="flex items-center gap-3">
-        <AlertTriangle className="w-6 h-6 text-red-600 flex-shrink-0" />
+        <div className="p-2 rounded-xl bg-red-100 text-red-700 shrink-0">
+          <AlertTriangle className="w-5 h-5" />
+        </div>
         <div>
-          <div className="font-bold text-sm">CRITICAL PROVIDER ALERT (§5.7)</div>
-          <div className="text-xs text-red-700">
+          <div className="font-bold text-xs font-mono tracking-wider uppercase text-red-900">
+            {t.admin.overview.alertTitle}
+          </div>
+          <div className="text-xs text-red-800 mt-0.5">
             {alertingProviders
               .map((ap) => `${ap.name}: ${ap.rate}% error rate (${ap.errors}/${ap.total} reqs in 5m)`)
               .join(' | ')}
           </div>
         </div>
       </div>
-      <a href="/admin/providers" className="text-xs font-bold text-red-700 underline hover:text-red-900">
-        View Providers &rarr;
-      </a>
+      <Link
+        href="/admin/providers"
+        className="inline-flex items-center gap-1 text-xs font-semibold text-red-900 hover:text-black underline underline-offset-4 shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-950 rounded px-1"
+      >
+        <span>{t.admin.overview.viewProviders}</span>
+        <span aria-hidden="true">&rarr;</span>
+      </Link>
     </div>
   );
 }
 
-async function CoreStatsCardsSection() {
+async function CoreStatsCardsSection({ t }: { t: any }) {
   let users: { count: number } | undefined;
   let models: { count: number } | undefined;
   let payments: { count: number; total: number } | undefined;
@@ -91,51 +97,86 @@ async function CoreStatsCardsSection() {
 
   try {
     [[users], [models], [payments], [usage]] = await Promise.all([
-    db.select({ count: sql<number>`count(*)::int` }).from(s.users),
-    db.select({ count: sql<number>`count(*)::int` }).from(s.models),
-    db
-      .select({
-        count: sql<number>`count(*)::int`,
-        total: sql<number>`coalesce(sum(${s.payments.amountCents}),0)::int`,
-      })
-      .from(s.payments)
-      .where(eq(s.payments.status, 'paid')),
-    db
-      .select({
-        requests: sql<number>`count(*)::int`,
-        credits: sql<number>`coalesce(sum(${s.usageRecords.creditsConsumed}),0)::bigint`,
-      })
-      .from(s.usageRecords),
+      db.select({ count: sql<number>`count(*)::int` }).from(s.users),
+      db.select({ count: sql<number>`count(*)::int` }).from(s.models),
+      db
+        .select({
+          count: sql<number>`count(*)::int`,
+          total: sql<number>`coalesce(sum(${s.payments.amountCents}),0)::int`,
+        })
+        .from(s.payments)
+        .where(eq(s.payments.status, 'paid')),
+      db
+        .select({
+          requests: sql<number>`count(*)::int`,
+          credits: sql<number>`coalesce(sum(${s.usageRecords.creditsConsumed}),0)::bigint`,
+        })
+        .from(s.usageRecords),
     ]);
   } catch {
     // DB timeout — render cards with zero values so page still loads
   }
 
+  const cards = [
+    {
+      title: t.admin.overview.totalUsers,
+      value: formatCredits(users?.count ?? 0),
+      detail: t.admin.overview.registeredUsers,
+      icon: Users,
+    },
+    {
+      title: t.admin.overview.activeModels,
+      value: formatCredits(models?.count ?? 0),
+      detail: t.admin.overview.configuredModels,
+      icon: Cpu,
+    },
+    {
+      title: t.admin.overview.revenuePaid,
+      value: `Rp${formatCredits(payments?.total ?? 0)}`,
+      detail: `${formatCredits(payments?.count ?? 0)} ${t.admin.overview.successfulTxs}`,
+      icon: DollarSign,
+    },
+    {
+      title: t.admin.overview.totalUsage,
+      value: `${formatCredits(usage?.requests ?? 0)} reqs`,
+      detail: `${formatCredits(Number(usage?.credits ?? 0))} ${t.admin.overview.creditsBurned}`,
+      icon: Zap,
+    },
+  ];
+
   return (
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-      <div className="card bg-white p-5 rounded-2xl border border-neutral-200 transition-all hover:shadow-sm">
-        <div className="text-sm font-semibold text-neutral-500 mb-1">Total Users</div>
-        <div className="text-3xl font-black">{formatCredits(users?.count ?? 0)}</div>
-      </div>
-      <div className="card bg-white p-5 rounded-2xl border border-neutral-200 transition-all hover:shadow-sm">
-        <div className="text-sm font-semibold text-neutral-500 mb-1">Active Models</div>
-        <div className="text-3xl font-black">{formatCredits(models?.count ?? 0)}</div>
-      </div>
-      <div className="card bg-emerald-50 p-5 rounded-2xl border border-emerald-100 transition-all hover:shadow-sm">
-        <div className="text-sm font-semibold text-emerald-700 mb-1">Revenue (Paid)</div>
-        <div className="text-2xl font-black text-emerald-900">Rp{formatCredits(payments?.total ?? 0)}</div>
-        <div className="text-xs text-emerald-600 font-medium mt-1">{formatCredits(payments?.count ?? 0)} txs</div>
-      </div>
-      <div className="card bg-blue-50 p-5 rounded-2xl border border-blue-100 transition-all hover:shadow-sm">
-        <div className="text-sm font-semibold text-blue-700 mb-1">Total Usage</div>
-        <div className="text-2xl font-black text-blue-900">{formatCredits(usage?.requests ?? 0)} reqs</div>
-        <div className="text-xs text-blue-600 font-medium mt-1">{formatCredits(Number(usage?.credits ?? 0))} cr burned</div>
-      </div>
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {cards.map((card) => {
+        const Icon = card.icon;
+        return (
+          <div
+            key={card.title}
+            className="bg-white p-5 rounded-2xl border border-neutral-200/90 shadow-xs hover:border-neutral-300 transition-all flex flex-col justify-between"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[11px] font-mono font-semibold uppercase tracking-wider text-neutral-500">
+                {card.title}
+              </span>
+              <div className="p-1.5 rounded-lg bg-neutral-50 text-neutral-600 border border-neutral-100">
+                <Icon className="w-3.5 h-3.5" />
+              </div>
+            </div>
+            <div className="mt-4">
+              <div className="text-2xl sm:text-3xl font-heading font-extrabold text-neutral-950 tracking-tight">
+                {card.value}
+              </div>
+              <div className="text-xs text-neutral-500 font-mono mt-1">
+                {card.detail}
+              </div>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
 
-async function ProviderHealth24hSection() {
+async function ProviderHealth24hSection({ t }: { t: any }) {
   let healthStats: any[] = [];
   try {
     healthStats = await db
@@ -156,55 +197,61 @@ async function ProviderHealth24hSection() {
   }
 
   return (
-    <div className="card bg-white p-5 rounded-2xl border border-neutral-200">
-      <div className="flex items-center gap-2 mb-4">
-        <Activity className="w-5 h-5 text-neutral-400" />
-        <h2 className="text-lg font-bold">Provider Health (24h)</h2>
-      </div>
-      {healthStats.length === 0 ? (
-        <div className="text-sm text-neutral-500">No requests in the last 24 hours.</div>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-neutral-100">
-                <th className="text-left font-semibold text-neutral-500 pb-2">Provider</th>
-                <th className="text-right font-semibold text-neutral-500 pb-2">Reqs</th>
-                <th className="text-right font-semibold text-neutral-500 pb-2">Error</th>
-                <th className="text-right font-semibold text-neutral-500 pb-2">Prov. Tokens</th>
-                <th className="text-right font-semibold text-neutral-500 pb-2">Morph. Cr</th>
-                <th className="text-right font-semibold text-neutral-500 pb-2">p50/p95</th>
-              </tr>
-            </thead>
-            <tbody>
-              {healthStats.map((h) => {
-                const errorRate = h.total > 0 ? (h.errors / h.total) * 100 : 0;
-                return (
-                  <tr key={h.providerName} className="border-b border-neutral-50 last:border-0">
-                    <td className="py-2.5 font-medium">{h.providerName || 'unknown'}</td>
-                    <td className="py-2.5 text-right text-neutral-600">{formatCredits(h.total)}</td>
-                    <td className="py-2.5 text-right">
-                      <span className={`font-mono ${errorRate > 10 ? 'text-red-500 font-bold' : errorRate > 0 ? 'text-orange-500' : 'text-emerald-500'}`}>
-                        {errorRate.toFixed(1)}%
-                      </span>
-                    </td>
-                    <td className="py-2.5 text-right text-neutral-600 text-xs font-mono">{formatCredits(Number(h.providerTokens ?? 0))}</td>
-                    <td className="py-2.5 text-right text-neutral-600 text-xs font-mono">{formatCredits(Number(h.morphicCredits ?? 0))}</td>
-                    <td className="py-2.5 text-right font-mono text-neutral-500 text-xs">
-                      {h.p50Latency ?? 0}ms / {h.p95Latency ?? 0}ms
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+    <div className="bg-white p-6 rounded-2xl border border-neutral-200/90 shadow-xs flex flex-col justify-between">
+      <div>
+        <div className="flex items-center gap-2 mb-4">
+          <Activity className="w-4 h-4 text-neutral-700" />
+          <h2 className="text-base font-heading font-bold text-neutral-950">
+            {t.admin.overview.providerHealthTitle}
+          </h2>
         </div>
-      )}
+        {healthStats.length === 0 ? (
+          <div className="text-xs text-neutral-500 py-6 text-center">
+            {t.admin.overview.noHealthLogs}
+          </div>
+        ) : (
+          <div className="overflow-x-auto -mx-2">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-neutral-200/80">
+                  <th className="text-left font-mono font-semibold uppercase tracking-wider text-neutral-500 pb-2.5 px-2">{t.admin.overview.thProvider}</th>
+                  <th className="text-right font-mono font-semibold uppercase tracking-wider text-neutral-500 pb-2.5 px-2">{t.admin.overview.thReqs}</th>
+                  <th className="text-right font-mono font-semibold uppercase tracking-wider text-neutral-500 pb-2.5 px-2">{t.admin.overview.thError}</th>
+                  <th className="text-right font-mono font-semibold uppercase tracking-wider text-neutral-500 pb-2.5 px-2">{t.admin.overview.thProvTok}</th>
+                  <th className="text-right font-mono font-semibold uppercase tracking-wider text-neutral-500 pb-2.5 px-2">{t.admin.overview.thCr}</th>
+                  <th className="text-right font-mono font-semibold uppercase tracking-wider text-neutral-500 pb-2.5 px-2">{t.admin.overview.thLatency}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-neutral-100">
+                {healthStats.map((h) => {
+                  const errorRate = h.total > 0 ? (h.errors / h.total) * 100 : 0;
+                  return (
+                    <tr key={h.providerName} className="hover:bg-neutral-50/50 transition-colors">
+                      <td className="py-2.5 px-2 font-semibold text-neutral-900">{h.providerName || 'unknown'}</td>
+                      <td className="py-2.5 px-2 text-right font-mono text-neutral-600">{formatCredits(h.total)}</td>
+                      <td className="py-2.5 px-2 text-right">
+                        <span className={`font-mono text-[11px] font-semibold ${errorRate > 10 ? 'text-red-600' : errorRate > 0 ? 'text-amber-700' : 'text-emerald-700'}`}>
+                          {errorRate.toFixed(1)}%
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-2 text-right text-neutral-600 font-mono text-[11px]">{formatCredits(Number(h.providerTokens ?? 0))}</td>
+                      <td className="py-2.5 px-2 text-right text-neutral-600 font-mono text-[11px]">{formatCredits(Number(h.morphicCredits ?? 0))}</td>
+                      <td className="py-2.5 px-2 text-right font-mono text-neutral-500 text-[11px]">
+                        {h.p50Latency ?? 0}ms / {h.p95Latency ?? 0}ms
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
 
-async function CircuitBreakersSection() {
+async function CircuitBreakersSection({ t }: { t: any }) {
   let providers: { name: string; status: string; circuitBreaker: any }[] = [];
   try {
     providers = await db
@@ -219,81 +266,99 @@ async function CircuitBreakersSection() {
   }
 
   return (
-    <div className="card bg-white p-5 rounded-2xl border border-neutral-200">
-      <div className="flex items-center gap-2 mb-4">
-        <ServerCrash className="w-5 h-5 text-neutral-400" />
-        <h2 className="text-lg font-bold">Circuit Breakers</h2>
-      </div>
-      {providers.length === 0 ? (
-        <div className="text-sm text-neutral-500">No providers configured.</div>
-      ) : (
-        <div className="space-y-3">
-          {providers.map((p) => {
-            const cb = p.circuitBreaker;
-            return (
-              <div key={p.name} className="flex items-center justify-between p-3 rounded-xl border border-neutral-100 bg-neutral-50/50">
-                <div>
-                  <div className="font-semibold text-neutral-900 flex items-center gap-2">
-                    {p.name}
-                    {p.status === 'disabled' && <span className="text-[10px] uppercase font-bold text-neutral-400 border border-neutral-200 px-1.5 rounded">Disabled</span>}
-                  </div>
-                  <div className="text-xs text-neutral-500 mt-0.5">
-                    Failures: {cb.failures} {cb.lastFailure ? `(Last: ${new Date(cb.lastFailure).toLocaleTimeString()})` : ''}
-                  </div>
-                </div>
-                <div>
-                  {cb.state === 'closed' ? (
-                    <div className="flex items-center gap-1 text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full text-xs font-bold border border-emerald-100">
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                      HEALTHY
-                    </div>
-                  ) : cb.state === 'half-open' ? (
-                    <div className="flex items-center gap-1 text-orange-600 bg-orange-50 px-2.5 py-1 rounded-full text-xs font-bold border border-orange-100">
-                      <Clock className="w-3.5 h-3.5" />
-                      TESTING
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-1 text-red-600 bg-red-50 px-2.5 py-1 rounded-full text-xs font-bold border border-red-100">
-                      <AlertTriangle className="w-3.5 h-3.5 animate-pulse" />
-                      OPEN (TRIPPED)
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
+    <div className="bg-white p-6 rounded-2xl border border-neutral-200/90 shadow-xs flex flex-col justify-between">
+      <div>
+        <div className="flex items-center gap-2 mb-4">
+          <ServerCrash className="w-4 h-4 text-neutral-700" />
+          <h2 className="text-base font-heading font-bold text-neutral-950">
+            {t.admin.overview.circuitBreakersTitle}
+          </h2>
         </div>
-      )}
+        {providers.length === 0 ? (
+          <div className="text-xs text-neutral-500 py-6 text-center">{t.admin.overview.noProviders}</div>
+        ) : (
+          <div className="space-y-2.5">
+            {providers.map((p) => {
+              const cb = p.circuitBreaker || {};
+              return (
+                <div key={p.name} className="flex items-center justify-between p-3 rounded-xl border border-neutral-200/70 bg-neutral-50/50">
+                  <div className="min-w-0 pr-2">
+                    <div className="font-bold text-xs text-neutral-950 flex items-center gap-2">
+                      <span className="truncate">{p.name}</span>
+                      {p.status === 'disabled' && (
+                        <span className="text-[9px] uppercase font-mono font-bold text-neutral-500 border border-neutral-300 px-1.5 py-0.5 rounded">
+                          {t.admin.status.disabled}
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-[11px] font-mono text-neutral-500 mt-0.5">
+                      {t.admin.overview.failures}: {cb.failures ?? 0} {cb.lastFailure ? `(${t.admin.overview.lastFailure}: ${new Date(cb.lastFailure).toLocaleTimeString()})` : ''}
+                    </div>
+                  </div>
+                  <div>
+                    {cb.state === 'closed' ? (
+                      <span className="inline-flex items-center gap-1.5 text-xs font-mono font-medium text-neutral-800">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                        {t.admin.status.healthy}
+                      </span>
+                    ) : cb.state === 'half-open' ? (
+                      <span className="inline-flex items-center gap-1.5 text-xs font-mono font-medium text-amber-700">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
+                        {t.admin.status.testing}
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 text-xs font-mono font-semibold text-red-600">
+                        <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />
+                        {t.admin.status.tripped}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
 
-// ── Main Page Layout (Renders shell immediately) ───────────
-
 export default async function AdminOverview() {
   await requireAdmin();
+  const { t } = await getServerTranslation();
 
   return (
-    <div className="flex flex-col gap-8 max-w-5xl">
-      <h1 className="text-2xl font-bold">Admin Overview</h1>
+    <div className="space-y-6 max-w-6xl">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pb-5 border-b border-neutral-200/80">
+        <div>
+          <h1 className="text-xl sm:text-2xl font-heading font-extrabold tracking-tight text-neutral-950">
+            {t.admin.overview.title}
+          </h1>
+          <p className="text-xs sm:text-sm text-neutral-500 mt-0.5">
+            {t.admin.overview.desc}
+          </p>
+        </div>
+      </div>
 
       <Suspense fallback={null}>
-        <AlertBannerSection />
+        <AlertBannerSection t={t} />
       </Suspense>
 
       <Suspense fallback={<StatsCardsSkeleton />}>
-        <CoreStatsCardsSection />
+        <CoreStatsCardsSection t={t} />
       </Suspense>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Suspense fallback={<SectionCardSkeleton />}>
-          <ProviderHealth24hSection />
+          <ProviderHealth24hSection t={t} />
         </Suspense>
 
         <Suspense fallback={<SectionCardSkeleton />}>
-          <CircuitBreakersSection />
+          <CircuitBreakersSection t={t} />
         </Suspense>
       </div>
     </div>
   );
 }
+

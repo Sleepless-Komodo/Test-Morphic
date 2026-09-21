@@ -183,12 +183,14 @@ export default function PricingComparisonTable({ isLoggedIn = false }: { isLogge
   const renderValue = (val: string | boolean) => {
     if (typeof val === 'boolean') {
       return val ? (
-        <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-200">
-          <Check className="w-3.5 h-3.5" />
+        <span className="inline-flex items-center justify-center w-5 h-5 text-neutral-950">
+          <Check className="w-4 h-4 stroke-[2.5]" aria-hidden="true" />
+          <span className="sr-only">{locale === 'en' ? 'Included' : 'Termasuk'}</span>
         </span>
       ) : (
-        <span className="inline-flex items-center justify-center w-5 h-5 text-neutral-300">
-          <Minus className="w-3.5 h-3.5" />
+        <span className="inline-flex items-center justify-center w-5 h-5 text-neutral-400">
+          <Minus className="w-3.5 h-3.5" aria-hidden="true" />
+          <span className="sr-only">{locale === 'en' ? 'Not included' : 'Tidak termasuk'}</span>
         </span>
       );
     }
@@ -206,7 +208,7 @@ export default function PricingComparisonTable({ isLoggedIn = false }: { isLogge
           transition={{ duration: 0.5, ease: EASE }}
           className="text-center max-w-3xl mx-auto mb-12 sm:mb-16"
         >
-          <div className="inline-flex items-center gap-2 text-xs sm:text-sm font-mono uppercase tracking-[0.2em] text-neutral-400 font-bold mb-3">
+          <div className="inline-flex items-center gap-2 text-xs sm:text-sm font-mono uppercase tracking-[0.2em] text-neutral-500 font-bold mb-3">
             <TableProperties className="w-3.5 h-3.5 text-neutral-900" />
             <span>{locale === 'en' ? 'Feature Matrix' : 'Tabel Komparasi Fitur'}</span>
           </div>

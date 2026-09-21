@@ -128,7 +128,6 @@ export default async function DashboardPage() {
       console.warn('[DashboardPage] Database offline, showing empty usage stats:', err);
     }
 
-    // Try fetching recent requests from backend API first
     try {
       const usageRes = await fetchBackendApi<{ data: any[] }>('/v1/account/usage?limit=6');
       if (usageRes.data?.data && Array.isArray(usageRes.data.data)) {

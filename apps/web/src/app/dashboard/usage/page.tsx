@@ -16,7 +16,6 @@ export default async function UsagePage() {
   let topModels: any[] = [];
   let recent: any[] = [];
 
-  // 1. Fetch initial logs via getUsageLogsAction (BE /v1/account/usage with DB fallback)
   try {
     const usageRes = await getUsageLogsAction({ limit: 50 });
     if (usageRes.data && Array.isArray(usageRes.data)) {
@@ -32,7 +31,6 @@ export default async function UsagePage() {
     console.warn('[UsagePage] Failed to fetch initial usage records:', err);
   }
 
-  // 2. Aggregate metrics from DB (and recent records if API had none)
   try {
     const [[t], [m], [tot], tm, rec] = await Promise.all([
       db

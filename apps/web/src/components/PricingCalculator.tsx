@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useTranslation } from '@/lib/i18n';
 import { useReducedMotionSafe } from '@/lib/use-reduced-motion-safe';
-import { Calculator, Sparkles, TrendingDown, ArrowRight, ShieldCheck } from 'lucide-react';
+import { Calculator, TrendingDown, ArrowRight, ShieldCheck, Coins } from 'lucide-react';
 import Link from 'next/link';
 
 const EASE = [0.16, 1, 0.3, 1] as const;
@@ -49,11 +49,11 @@ const MODELS_DATA: ModelRate[] = [
 ];
 
 const PRESETS = [
-  { label: '500K', value: 0.5 },
-  { label: '2 Juta', value: 2 },
-  { label: '10 Juta', value: 10 },
-  { label: '30 Juta', value: 30 },
-  { label: '80 Juta', value: 80 },
+  { label: '500K', labelEn: '500K', value: 0.5 },
+  { label: '2 Juta', labelEn: '2M', value: 2 },
+  { label: '10 Juta', labelEn: '10M', value: 10 },
+  { label: '30 Juta', labelEn: '30M', value: 30 },
+  { label: '80 Juta', labelEn: '80M', value: 80 },
 ];
 
 export default function PricingCalculator() {
@@ -89,7 +89,7 @@ export default function PricingCalculator() {
           transition={{ duration: 0.5, ease: EASE }}
           className="text-center max-w-3xl mx-auto mb-12 sm:mb-14"
         >
-          <div className="inline-flex items-center gap-2 text-xs sm:text-sm font-mono uppercase tracking-[0.2em] text-neutral-400 font-bold mb-3">
+          <div className="inline-flex items-center gap-2 text-xs sm:text-sm font-mono uppercase tracking-[0.2em] text-neutral-500 font-bold mb-3">
             <Calculator className="w-3.5 h-3.5 text-neutral-900" />
             <span>
               {locale === 'en' ? 'Interactive Cost Calculator' : 'Kalkulator Simulasi Penghematan'}
@@ -128,14 +128,15 @@ export default function PricingCalculator() {
                     key={model.id}
                     type="button"
                     onClick={() => setSelectedModelId(model.id)}
-                    className={`px-3.5 py-3 rounded-xl text-left border transition-all cursor-pointer ${
+                    aria-pressed={selectedModelId === model.id}
+                    className={`px-3.5 py-3 rounded-xl text-left border transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 focus-visible:ring-offset-2 ${
                       selectedModelId === model.id
                         ? 'border-neutral-950 bg-white text-neutral-950 shadow-xs font-bold'
                         : 'border-neutral-200 bg-white/60 text-neutral-600 hover:bg-white hover:text-neutral-900'
                     }`}
                   >
                     <div className="text-xs sm:text-sm font-semibold truncate">{model.name}</div>
-                    <div className="text-[10px] font-mono text-neutral-400 mt-0.5">{model.provider}</div>
+                    <div className="text-[10px] font-mono text-neutral-500 mt-0.5">{model.provider}</div>
                   </button>
                 ))}
               </div>
@@ -148,36 +149,38 @@ export default function PricingCalculator() {
                   {locale === 'en' ? '2. Monthly Token Usage' : '2. Estimasi Token / Bulan'}
                 </label>
                 <span className="font-mono text-base font-extrabold text-neutral-950 bg-white px-3 py-1 rounded-lg border border-neutral-200">
-                  {tokensMillions} Juta Token
+                  {locale === 'en' ? `${tokensMillions}M Tokens` : `${tokensMillions} Juta Token`}
                 </span>
               </div>
 
               {/* Slider Input */}
               <input
                 type="range"
+                id="monthly-token-slider"
+                aria-label={locale === 'en' ? 'Monthly token usage estimation in millions' : 'Estimasi penggunaan token bulanan dalam satuan juta'}
                 min={0.5}
                 max={100}
                 step={0.5}
                 value={tokensMillions}
                 onChange={(e) => setTokensMillions(parseFloat(e.target.value))}
-                className="w-full h-2 bg-neutral-200 rounded-lg appearance-none cursor-pointer accent-neutral-950"
+                className="w-full h-2 bg-neutral-200 rounded-lg appearance-none cursor-pointer accent-neutral-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
               />
 
               {/* Quick Presets */}
               <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                <span className="text-[11px] font-mono text-neutral-400 mr-1">Preset:</span>
+                <span className="text-[11px] font-mono text-neutral-500 mr-1">Preset:</span>
                 {PRESETS.map((preset) => (
                   <button
                     key={preset.label}
                     type="button"
                     onClick={() => setTokensMillions(preset.value)}
-                    className={`px-2.5 py-1 rounded-md text-[11px] font-mono font-bold border transition-colors cursor-pointer ${
+                    className={`px-2.5 py-1 rounded-md text-[11px] font-mono font-bold border transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 ${
                       tokensMillions === preset.value
                         ? 'bg-neutral-950 text-white border-neutral-950'
                         : 'bg-white text-neutral-600 border-neutral-200 hover:bg-neutral-100'
                     }`}
                   >
-                    {preset.label}
+                    {locale === 'en' ? preset.labelEn : preset.label}
                   </button>
                 ))}
               </div>
@@ -190,7 +193,7 @@ export default function PricingCalculator() {
             <div className="rounded-2xl border border-neutral-200 bg-white p-6 flex flex-col justify-between">
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-mono font-bold uppercase tracking-wider text-neutral-400">
+                  <span className="text-xs font-mono font-bold uppercase tracking-wider text-neutral-500">
                     {locale === 'en' ? 'Direct Official Provider' : 'Provider Resmi (Kartu Kredit USD)'}
                   </span>
                 </div>
@@ -204,17 +207,17 @@ export default function PricingCalculator() {
                 </p>
               </div>
 
-              <div className="mt-6 pt-4 border-t border-neutral-100 flex items-center gap-2 text-xs text-neutral-400 font-mono">
-                <span>✕ Wajib Kartu Kredit</span>
+              <div className="mt-6 pt-4 border-t border-neutral-100 flex items-center gap-2 text-xs text-neutral-500 font-mono">
+                <span>{locale === 'en' ? '✕ Credit Card Required' : '✕ Wajib Kartu Kredit'}</span>
                 <span>•</span>
-                <span>✕ Rate limit ketat</span>
+                <span>{locale === 'en' ? '✕ Strict Rate Limits' : '✕ Rate limit ketat'}</span>
               </div>
             </div>
 
             {/* Morphic Gateway (QRIS) */}
             <div className="rounded-2xl border-2 border-neutral-950 bg-white p-6 shadow-md flex flex-col justify-between relative overflow-hidden">
               <div className="absolute top-0 right-0 bg-neutral-950 text-white text-[10px] font-mono font-bold uppercase px-3 py-1 rounded-bl-xl flex items-center gap-1">
-                <Sparkles className="w-3 h-3 text-amber-400" />
+                <Coins className="w-3 h-3 text-amber-400" />
                 <span>{locale === 'en' ? `Save ${savingsPercent}%` : `Hemat ${savingsPercent}%`}</span>
               </div>
 
@@ -226,7 +229,7 @@ export default function PricingCalculator() {
                 </div>
                 <div className="text-3xl sm:text-4xl font-extrabold font-heading text-neutral-950">
                   {formatRupiah(morphicCost)}
-                  <span className="text-xs font-normal text-neutral-500 ml-1.5 font-body">/ bulan</span>
+                  <span className="text-xs font-normal text-neutral-500 ml-1.5 font-body">{locale === 'en' ? '/ month' : '/ bulan'}</span>
                 </div>
                 <p className="text-xs text-emerald-600 font-medium mt-2 leading-relaxed flex items-center gap-1.5">
                   <TrendingDown className="w-4 h-4 shrink-0" />
