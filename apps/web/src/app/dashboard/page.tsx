@@ -83,18 +83,30 @@ export default async function DashboardPage() {
   let modelCount = 0;
   let avgCreditsPer1m = 0;
   let minInputRate = 0;
+  let balanceUpdatedAt: string | null = null;
 
   if (session?.user?.id) {
     try {
-      const balRes = await fetchBackendApi<{ credits: number }>('/v1/account/balance');
+      const balRes = await fetchBackendApi<{ credits: number; updated_at?: string | null }>('/v1/account/balance');
       if (balRes.data?.credits != null) {
         userBalance = balRes.data.credits;
+        balanceUpdatedAt = balRes.data.updated_at ?? null;
       } else {
         userBalance = await getBalance(session.user.id);
       }
     } catch {
       try {
-        userBalance = await getBalance(session.user.id);
+        const [bal] = await db
+          .select({ credits: s.balances.credits, updatedAt: s.balances.updatedAt })
+          .from(s.balances)
+          .where(eq(s.balances.userId, session.user.id))
+          .limit(1);
+        if (bal) {
+          userBalance = bal.credits;
+          balanceUpdatedAt = bal.updatedAt ? bal.updatedAt.toISOString() : null;
+        } else {
+          userBalance = 0;
+        }
       } catch {
         userBalance = 0;
       }
@@ -200,6 +212,7 @@ export default async function DashboardPage() {
     <DeveloperGateway
       session={session}
       userBalance={userBalance}
+      balanceUpdatedAt={balanceUpdatedAt}
       initialModels={initialModels}
       recentRequests={recentRequests}
       serverModelCount={modelCount}
