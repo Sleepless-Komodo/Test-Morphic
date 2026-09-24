@@ -20,7 +20,6 @@ import {
   CheckCircle2,
   HelpCircle,
   ExternalLink,
-  Zap,
   Menu,
   X,
 } from 'lucide-react';
@@ -113,6 +112,15 @@ export default function DocsView({ session }: DocsViewProps) {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [copiedBaseUrl, setCopiedBaseUrl] = useState(false);
   const [activeSection, setActiveSection] = useState('overview');
+
+  useEffect(() => {
+    if (!mobileSidebarOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMobileSidebarOpen(false);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [mobileSidebarOpen]);
 
   useEffect(() => {
     const mainSectionIds = [
@@ -524,7 +532,7 @@ curl https://api.morphic.sh/v1/chat/completions \\
     <nav className="space-y-6 text-xs select-none">
       {navGroups.map((group) => (
         <div key={group.title} className="space-y-1.5">
-          <div className="font-mono text-[10px] font-bold uppercase tracking-wider text-neutral-400 px-3">
+          <div className="font-mono text-[10px] font-bold uppercase tracking-wider text-neutral-500 px-3">
             {group.title}
           </div>
 

@@ -87,7 +87,7 @@ export default function MarketingFaq() {
           transition={{ duration: 0.5, ease: EASE }}
           className="lg:sticky lg:top-32 lg:self-start"
         >
-          <div className="text-xs sm:text-sm font-mono uppercase tracking-[0.2em] text-neutral-400 font-bold mb-3">
+          <div className="text-xs sm:text-sm font-mono uppercase tracking-[0.2em] text-neutral-500 font-bold mb-3">
             {t.faq.badge}
           </div>
 
@@ -122,10 +122,10 @@ export default function MarketingFaq() {
                   type="button"
                   onClick={() => toggle(idx)}
                   aria-expanded={isOpen}
-                  className="w-full py-6 sm:py-7 text-left flex items-center justify-between gap-6 cursor-pointer group"
+                  className="w-full py-6 sm:py-7 text-left flex items-center justify-between gap-6 cursor-pointer group rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 focus-visible:ring-offset-2"
                 >
                   <span className="flex items-baseline gap-4 min-w-0 pr-2">
-                    <span className={`font-mono text-sm tabular-nums shrink-0 transition-colors ${isOpen ? 'text-neutral-950 font-bold' : 'text-neutral-400 group-hover:text-neutral-600'}`}>
+                    <span className={`font-mono text-sm tabular-nums shrink-0 transition-colors ${isOpen ? 'text-neutral-950 font-bold' : 'text-neutral-500 group-hover:text-neutral-700'}`}>
                       {String(idx + 1).padStart(2, '0')}
                     </span>
                     <span suppressHydrationWarning className={`font-heading text-lg sm:text-xl tracking-tight transition-colors ${

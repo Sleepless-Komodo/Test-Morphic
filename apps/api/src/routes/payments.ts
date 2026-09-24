@@ -151,9 +151,11 @@ payments.post('/create', async (c) => {
   // Step 11: Call Duitku createTransaction API
   let duitkuResult;
   try {
+    const customerVaName = ((user.name || user.email.split('@')[0] || 'Customer') as string).slice(0, 20);
     duitkuResult = await createTransaction({
       merchantOrderId,
       paymentAmount: amountIDR,
+      paymentMethod: paymentMethod ?? 'SP',
       productDetails: `Morphic Credits — ${pkg.name}`,
       email: user.email.slice(0, 50), // Trim email to max 50 chars per Duitku spec
       customerVaName: user.name.slice(0, 20), // Trim VA name to max 20 chars
@@ -179,6 +181,7 @@ payments.post('/create', async (c) => {
     paymentId: payment.id,
     merchantOrderId,
     paymentUrl: duitkuResult.paymentUrl,
+    qrString: duitkuResult.qrString,
     reference: duitkuResult.reference,
     amountIDR,
     expiresAt,

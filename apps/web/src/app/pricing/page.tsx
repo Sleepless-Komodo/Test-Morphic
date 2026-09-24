@@ -9,7 +9,7 @@ import LandingApiCta from '@/components/LandingApiCta';
 import Footer from '@/components/Footer';
 
 export const metadata = {
-  title: 'Paket & Harga Kredit — Morphic AI Gateway',
+  title: 'Paket & Harga Kredit | Morphic AI Gateway',
   description:
     'Harga transparan paket kuota AI gateway Morphic mulai Rp 15.000 tanpa langganan. Hemat biaya token hingga 70% dengan QRIS lokal instan (BCA, Mandiri, GoPay).',
 };

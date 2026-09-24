@@ -5,6 +5,7 @@ import { useTranslation } from '@/lib/i18n';
 import { formatCredits } from '@/lib/utils';
 import { Zap, CreditCard, Clock } from 'lucide-react';
 import { CheckoutModal } from './checkout-modal';
+import { fetchBackendApi } from '@/lib/api-client';
 
 interface BillingViewProps {
   balance: number;
@@ -45,7 +46,7 @@ export function BillingView({
 
         <div className="p-4 rounded-2xl bg-white border border-neutral-200/90 shadow-2xs flex items-center gap-4 shrink-0">
           <div className="w-10 h-10 rounded-xl bg-neutral-100 border border-neutral-200 flex items-center justify-center text-neutral-900">
-            <Zap className="h-5 w-5 text-emerald-600" />
+            <Wallet className="h-5 w-5 text-neutral-700" />
           </div>
           <div>
             <div suppressHydrationWarning className="text-[10px] uppercase font-mono text-neutral-400 font-bold">
@@ -95,14 +96,16 @@ export function BillingView({
                     ? `$ ${(p.priceCents / 100).toFixed(2)} USD`
                     : `Rp ${(p.priceCents ?? 0).toLocaleString('id-ID')}`}
                 </div>
-                <p className="text-xs text-neutral-600 leading-relaxed mb-4">
-                  {locale === 'en' && p.descriptionEn ? p.descriptionEn : p.description}
-                </p>
-              </div>
 
-              <div className="pt-3 border-t border-neutral-100 flex items-center justify-between gap-2">
-                <div className="text-xs font-mono text-neutral-500">
-                  +{formatCredits(p.creditAllowance)} <span suppressHydrationWarning>{locale === 'en' ? 'credits' : 'kredit'}</span>
+                <div className="pt-2.5 border-t border-neutral-100 mt-2.5">
+                  <button
+                    id={`buy-pkg-${p.id}`}
+                    onClick={() => setSelectedPkg(p)}
+                    className="w-full py-1.5 rounded-xl bg-neutral-950 hover:bg-neutral-800 text-white text-[11px] font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs active:scale-95"
+                  >
+                    <QrCode className="h-3 w-3" />
+                    <span suppressHydrationWarning>{t.dashboard.buyPackageBtn}</span>
+                  </button>
                 </div>
                 <button
                   id={`buy-pkg-${p.id}`}
@@ -120,8 +123,8 @@ export function BillingView({
                   </span>
                 </button>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
@@ -146,23 +149,55 @@ export function BillingView({
             <h2 suppressHydrationWarning className="font-heading font-bold text-base text-neutral-950">{t.dashboard.activePassesTitle}</h2>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {entitlements.map((e) => (
-              <div
-                key={e.id}
-                className="p-4 rounded-xl bg-white border border-neutral-200/90 shadow-2xs flex items-center justify-between"
-              >
-                <div>
-                  <div className="font-bold text-xs text-neutral-900">{e.packageName ?? (locale === 'en' ? 'Active Pass' : 'Pass Aktif')}</div>
-                  <div suppressHydrationWarning className="text-[11px] text-neutral-500">
-                    {t.dashboard.expiresPrefix}{' '}
-                    {e.expiresAt ? new Date(e.expiresAt).toLocaleTimeString(locale === 'en' ? 'en-US' : 'id-ID') : (locale === 'en' ? 'Today' : 'Hari Ini')}
+            {entitlements.map((e) => {
+              const allowance = e.allowance || e.remaining || 1;
+              const remaining = Math.max(0, e.remaining ?? 0);
+              const percentRemaining = Math.min(100, Math.max(0, Math.round((remaining / allowance) * 100)));
+
+              return (
+                <div
+                  key={e.id}
+                  className="p-5 rounded-2xl bg-white border border-neutral-200/90 shadow-2xs space-y-3"
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="font-bold text-sm text-neutral-950">
+                        {e.packageName ?? t.dashboard.billingActivePass}
+                      </div>
+                      <div suppressHydrationWarning className="text-[11px] text-neutral-500 font-mono mt-0.5">
+                        {t.dashboard.expiresPrefix}{' '}
+                        {e.expiresAt
+                          ? new Date(e.expiresAt).toLocaleString(locale === 'en' ? 'en-US' : 'id-ID', {
+                              dateStyle: 'medium',
+                              timeStyle: 'short',
+                            })
+                          : t.dashboard.billingToday}
+                      </div>
+                    </div>
+                    <span suppressHydrationWarning className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 shadow-2xs inline-flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                      <span>{t.dashboard.activeStatusBadge}</span>
+                    </span>
+                  </div>
+
+                  {/* Remaining Token Progress */}
+                  <div className="space-y-1.5 pt-1">
+                    <div className="flex items-center justify-between text-[11px] font-mono">
+                      <span className="text-neutral-500">{t.dashboard.activePassRemainingLabel}</span>
+                      <span className="font-bold text-neutral-900 tabular-nums">
+                        {formatCredits(remaining)} / {formatCredits(allowance)} ({percentRemaining}%)
+                      </span>
+                    </div>
+                    <div className="w-full h-2 rounded-full bg-neutral-100 overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-neutral-950 transition-all duration-300"
+                        style={{ width: `${percentRemaining}%` }}
+                      />
+                    </div>
                   </div>
                 </div>
-                <span suppressHydrationWarning className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md bg-neutral-950 text-white">
-                  {t.dashboard.activeStatusBadge}
-                </span>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
@@ -171,7 +206,7 @@ export function BillingView({
       <div className="space-y-3">
         <h2 suppressHydrationWarning className="font-heading font-bold text-base text-neutral-950">{t.dashboard.qrisHistoryTitle}</h2>
         <div className="rounded-2xl bg-white border border-neutral-200/90 shadow-2xs overflow-hidden">
-          {payments.length === 0 ? (
+          {paymentsList.length === 0 ? (
             <div suppressHydrationWarning className="p-8 text-center text-xs text-neutral-500 font-mono">
               {t.dashboard.noPaymentsHistory}
             </div>
@@ -179,12 +214,12 @@ export function BillingView({
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead>
-                  <tr suppressHydrationWarning className="border-b border-neutral-200 bg-neutral-50/70 text-[11px] font-mono uppercase text-neutral-500">
-                    <th className="px-5 py-3">{locale === 'en' ? 'Date' : 'Tanggal'}</th>
-                    <th className="px-5 py-3">{locale === 'en' ? 'Package' : 'Paket'}</th>
-                    <th className="px-5 py-3">{locale === 'en' ? 'Amount' : 'Nominal'}</th>
-                    <th className="px-5 py-3">{locale === 'en' ? 'Status' : 'Status'}</th>
-                  </tr>
+                    <tr suppressHydrationWarning className="border-b border-neutral-200 bg-neutral-50/70 text-[11px] font-mono uppercase text-neutral-500">
+                      <th className="px-5 py-3">{t.dashboard.billingPaymentDate}</th>
+                      <th className="px-5 py-3">{t.dashboard.billingPaymentPackage}</th>
+                      <th className="px-5 py-3">{t.dashboard.billingPaymentAmount}</th>
+                      <th className="px-5 py-3">{t.dashboard.billingPaymentStatus}</th>
+                    </tr>
                 </thead>
                 <tbody className="divide-y divide-neutral-100">
                   {payments.map((p) => (

@@ -60,6 +60,7 @@ export interface CreateTransactionResult {
   reference: string;
   statusCode: string;
   statusMessage: string;
+  qrString?: string;
 }
 
 /**
@@ -79,6 +80,7 @@ export async function createTransaction(
   const body: Record<string, unknown> = {
     merchantCode,
     paymentAmount: params.paymentAmount,
+    paymentMethod,
     merchantOrderId: params.merchantOrderId,
     productDetails: params.productDetails,
     email: params.email,
@@ -108,6 +110,7 @@ export async function createTransaction(
     reference?: string;
     statusCode?: string;
     statusMessage?: string;
+    qrString?: string;
     Message?: string;
   };
 
@@ -120,6 +123,7 @@ export async function createTransaction(
     reference: data.reference!,
     statusCode: data.statusCode!,
     statusMessage: data.statusMessage!,
+    qrString: data.qrString,
   };
 }
 
@@ -187,6 +191,13 @@ export interface DuitkuCallbackPayload {
   settlementDate?: string;
   issuerCode?: string;
   customerName?: string;
+}
+
+function safeCompare(a: string, b: string): boolean {
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  if (bufA.length !== bufB.length) return false;
+  return timingSafeEqual(bufA, bufB);
 }
 
 /**
