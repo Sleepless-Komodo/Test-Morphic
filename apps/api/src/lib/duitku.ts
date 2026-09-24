@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 
 // ── Config ────────────────────────────────────────────
 
@@ -14,15 +14,31 @@ function getApiKey(): string {
   return key;
 }
 
+export function assertDuitkuConfig() {
+  const env = process.env.DUITKU_ENV ?? 'sandbox';
+  const prod = process.env.NODE_ENV === 'production';
+  if (prod && env !== 'production') {
+    throw new Error('DUITKU_ENV must be set to "production" when NODE_ENV=production');
+  }
+  if (!prod && env === 'production') {
+    throw new Error('DUITKU_ENV=production is not allowed outside production environment');
+  }
+  console.log(`[duitku] environment: ${env}`);
+}
+
 function baseUrl(): string {
   const env = process.env.DUITKU_ENV ?? 'sandbox';
+  if (process.env.NODE_ENV === 'production' && env !== 'production') {
+    throw new Error('DUITKU_ENV must be set to "production" when NODE_ENV=production');
+  }
+
   return env === 'production'
     ? 'https://passport.duitku.com/webapi'
     : 'https://sandbox.duitku.com/webapi';
 }
 
-function hmacSha256(data: string, key: string): string {
-  return createHmac('sha256', key).update(data).digest('hex');
+function md5(data: string): string {
+  return createHash('md5').update(data).digest('hex');
 }
 
 // ── Create Transaction ────────────────────────────────
@@ -36,7 +52,7 @@ export interface CreateTransactionParams {
   callbackUrl: string;       // webhook URL (must be public HTTPS)
   returnUrl: string;         // redirect after payment
   expiryPeriod?: number;     // minutes, default 60
-  paymentMethod?: string;    // e.g. 'SP' (ShopeePay QRIS), leave blank for all
+  paymentMethod?: string;    // payment method code e.g. 'SP' (ShopeePay QRIS), default 'SP'
 }
 
 export interface CreateTransactionResult {
@@ -48,7 +64,7 @@ export interface CreateTransactionResult {
 
 /**
  * Create a Duitku transaction.
- * Signature: HMAC_SHA256(merchantCode + merchantOrderId + paymentAmount, apiKey)
+ * Signature: MD5(merchantCode + merchantOrderId + paymentAmount + apiKey)
  * Docs: https://docs.duitku.com/api/id/#create-invoice
  */
 export async function createTransaction(
@@ -57,8 +73,8 @@ export async function createTransaction(
   const merchantCode = getMerchantCode();
   const apiKey = getApiKey();
 
-  const stringToSign = `${merchantCode}${params.merchantOrderId}${params.paymentAmount}`;
-  const signature = hmacSha256(stringToSign, apiKey);
+  const stringToSign = `${merchantCode}${params.merchantOrderId}${params.paymentAmount}${apiKey}`;
+  const signature = md5(stringToSign);
 
   const body: Record<string, unknown> = {
     merchantCode,
@@ -71,11 +87,8 @@ export async function createTransaction(
     returnUrl: params.returnUrl,
     signature,
     expiryPeriod: params.expiryPeriod ?? 60,
+    paymentMethod: params.paymentMethod ?? 'SP',
   };
-
-  if (params.paymentMethod) {
-    body.paymentMethod = params.paymentMethod;
-  }
 
   const url = `${baseUrl()}/api/merchant/v2/inquiry`;
   const res = await fetch(url, {
@@ -122,7 +135,7 @@ export interface TransactionStatus {
 
 /**
  * Check Duitku transaction status.
- * Signature: HMAC_SHA256(merchantCode + merchantOrderId, apiKey)
+ * Signature: MD5(merchantCode + merchantOrderId + apiKey)
  * Docs: https://docs.duitku.com/api/id/#check-transaction
  */
 export async function checkTransactionStatus(
@@ -131,7 +144,8 @@ export async function checkTransactionStatus(
   const merchantCode = getMerchantCode();
   const apiKey = getApiKey();
 
-  const signature = hmacSha256(`${merchantCode}${merchantOrderId}`, apiKey);
+  const stringToSign = `${merchantCode}${merchantOrderId}${apiKey}`;
+  const signature = md5(stringToSign);
 
   const params = { merchantCode, merchantOrderId, signature };
 
@@ -149,6 +163,9 @@ export async function checkTransactionStatus(
   }
 
   const data = await res.json() as TransactionStatus & { Message?: string };
+  if (typeof data.statusCode !== 'string' || data.merchantOrderId !== merchantOrderId) {
+    throw new Error(`Duitku checkTransaction unexpected response: ${JSON.stringify(data).slice(0, 200)}`);
+  }
   return data;
 }
 
@@ -174,19 +191,18 @@ export interface DuitkuCallbackPayload {
 
 /**
  * Verify Duitku callback signature (inbound webhook).
- * Formula: HMAC_SHA256(merchantCode + amount + merchantOrderId, apiKey)
- * Note: ORDER IS DIFFERENT from create-transaction signature.
+ * Formula: MD5(merchantCode + amount + merchantOrderId + apiKey) — hex lowercase
+ * Docs: https://docs.duitku.com/api/id/#callback
  */
 export function verifyCallbackSignature(payload: DuitkuCallbackPayload): boolean {
   const apiKey = getApiKey();
-  const stringToSign = `${payload.merchantCode}${payload.amount}${payload.merchantOrderId}`;
-  const expected = hmacSha256(stringToSign, apiKey);
+  const stringToSign = `${payload.merchantCode}${payload.amount}${payload.merchantOrderId}${apiKey}`;
+  const expected = md5(stringToSign);
 
   try {
-    return timingSafeEqual(
-      Buffer.from(expected, 'hex'),
-      Buffer.from(payload.signature, 'hex'),
-    );
+    const a = Buffer.from(expected.toLowerCase());
+    const b = Buffer.from((payload.signature ?? '').toLowerCase());
+    return a.length === b.length && timingSafeEqual(a, b);
   } catch {
     return false;
   }

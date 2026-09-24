@@ -15,7 +15,12 @@ export const metadata = {
 };
 
 export default async function PricingPage() {
-  const session = await auth.api.getSession({ headers: await headers() });
+  let session = null;
+  try {
+    session = await auth.api.getSession({ headers: await headers() });
+  } catch (err) {
+    console.warn('[PricingPage] Session check failed, rendering as guest:', err);
+  }
 
   return (
     <main className="min-h-screen bg-[#fafafa] text-neutral-900 selection:bg-neutral-900 selection:text-white flex flex-col justify-between overflow-x-hidden">

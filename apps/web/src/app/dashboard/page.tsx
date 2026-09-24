@@ -1,6 +1,7 @@
 import { headers } from 'next/headers';
 import { eq, sql, desc, and } from 'drizzle-orm';
 import { auth } from '@/lib/auth';
+import { getSessionWithRetry } from '@/lib/actions';
 import { db, schema as s } from '@morphic/db';
 import { getBalance } from '@morphic/db/billing';
 import DeveloperGateway, { ModelItem } from '@/components/DeveloperGateway';
@@ -74,7 +75,7 @@ async function getModelsFromDb(): Promise<ModelItem[] | undefined> {
 }
 
 export default async function DashboardPage() {
-  const session = await auth.api.getSession({ headers: await headers() });
+  const session = await getSessionWithRetry();
   let userBalance = 0;
   let activeKeys = 0;
   let usage = { totalTokens: 0, promptTokens: 0, completionTokens: 0 };

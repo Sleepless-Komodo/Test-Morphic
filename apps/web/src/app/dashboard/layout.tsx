@@ -1,11 +1,11 @@
 import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { auth } from '@/lib/auth';
+import { getSessionWithRetry } from '@/lib/actions';
 import { getBalance } from '@morphic/db/billing';
 import { DashboardShell } from '@/components/DashboardShell';
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const session = await auth.api.getSession({ headers: await headers() });
+  const session = await getSessionWithRetry();
 
   if (!session) {
     redirect('/login');

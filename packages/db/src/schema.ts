@@ -326,10 +326,13 @@ export const payments = pgTable(
     amountCents: integer('amount_cents').notNull(),
     currency: text('currency').notNull().default('IDR'),
     credits: bigint('credits', { mode: 'number' }).notNull(),
-    status: text('status', { enum: ['pending', 'paid', 'failed', 'expired', 'refunded'] })
+    status: text('status', {
+      enum: ['pending', 'capturing', 'paid', 'pending_paypal', 'failed', 'expired', 'refunded'],
+    })
       .notNull()
       .default('pending'),
     paidAt: timestamp('paid_at', { withTimezone: true }),
+    capturedAt: timestamp('captured_at', { withTimezone: true }),
     createdAt: now(),
   },
   (t) => [index('payments_user_idx').on(t.userId)],

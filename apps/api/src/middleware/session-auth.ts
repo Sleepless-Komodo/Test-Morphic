@@ -38,7 +38,6 @@ export async function sessionAuth(c: Context, next: Next) {
     );
   }
 
-  // Handle signed vs unsigned token formats (token.signature vs token)
   const unsignedToken = rawToken.includes('.') ? rawToken.split('.')[0] : rawToken;
 
   const [session] = await db
@@ -49,6 +48,7 @@ export async function sessionAuth(c: Context, next: Next) {
       suspended: s.users.suspended,
     })
     .from(s.sessions)
+    .innerJoin(s.users, eq(s.sessions.userId, s.users.id))
     .where(
       and(
         or(eq(s.sessions.token, rawToken), eq(s.sessions.token, unsignedToken!)),

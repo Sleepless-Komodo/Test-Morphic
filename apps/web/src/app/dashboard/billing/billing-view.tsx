@@ -1,10 +1,9 @@
 'use client';
 
-import { useState, useTransition } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState } from 'react';
 import { useTranslation } from '@/lib/i18n';
 import { formatCredits } from '@/lib/utils';
-import { Zap, CreditCard, Clock, QrCode } from 'lucide-react';
+import { Zap, CreditCard, Clock } from 'lucide-react';
 import { CheckoutModal } from './checkout-modal';
 
 interface BillingViewProps {
@@ -22,10 +21,10 @@ export function BillingView({
   payments,
   ledger,
 }: BillingViewProps) {
-  const router = useRouter();
   const { t, locale } = useTranslation();
   const [balance, setBalance] = useState(initialBalance);
   const [selectedPkg, setSelectedPkg] = useState<any>(null);
+  const [resumePayment, setResumePayment] = useState<any>(null);
 
   const handleSuccess = (creditsAdded: number) => {
     setBalance((prev) => prev + creditsAdded);
@@ -92,7 +91,9 @@ export function BillingView({
                   {locale === 'en' && p.nameEn ? p.nameEn : p.name}
                 </h3>
                 <div className="text-xl font-extrabold text-neutral-950 mb-2 font-mono">
-                  Rp {(p.priceCents ?? 0).toLocaleString('id-ID')}
+                  {p.currency === 'USD'
+                    ? `$ ${(p.priceCents / 100).toFixed(2)} USD`
+                    : `Rp ${(p.priceCents ?? 0).toLocaleString('id-ID')}`}
                 </div>
                 <p className="text-xs text-neutral-600 leading-relaxed mb-4">
                   {locale === 'en' && p.descriptionEn ? p.descriptionEn : p.description}
@@ -105,11 +106,18 @@ export function BillingView({
                 </div>
                 <button
                   id={`buy-pkg-${p.id}`}
-                  onClick={() => setSelectedPkg(p)}
+                  onClick={() => {
+                    setSelectedPkg(p);
+                    setResumePayment(null);
+                  }}
                   className="px-3 py-1.5 rounded-xl bg-neutral-950 hover:bg-neutral-800 text-white text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
                 >
-                  <QrCode className="h-3.5 w-3.5" />
-                  <span suppressHydrationWarning>{t.dashboard.buyPackageBtn}</span>
+                  <CreditCard className="h-3.5 w-3.5" />
+                  <span suppressHydrationWarning>
+                    {p.currency === 'USD'
+                      ? (locale === 'en' ? 'Pay via PayPal' : 'Bayar via PayPal')
+                      : t.dashboard.buyPackageBtn}
+                  </span>
                 </button>
               </div>
             </div>
@@ -117,11 +125,15 @@ export function BillingView({
         </div>
       </div>
 
-      {/* Checkout Modal — real Duitku payment */}
+      {/* Checkout Modal — Duitku or PayPal payment */}
       {selectedPkg && (
         <CheckoutModal
           pkg={selectedPkg}
-          onClose={() => setSelectedPkg(null)}
+          existingPayment={resumePayment}
+          onClose={() => {
+            setSelectedPkg(null);
+            setResumePayment(null);
+          }}
           onSuccess={handleSuccess}
         />
       )}
@@ -181,13 +193,58 @@ export function BillingView({
                         {new Date(p.createdAt).toLocaleDateString(locale === 'en' ? 'en-US' : 'id-ID')}
                       </td>
                       <td className="px-5 py-3 font-bold text-neutral-900">{p.packageName ?? (locale === 'en' ? 'Top-up' : 'Isi Ulang')}</td>
-                      <td className="px-5 py-3 font-mono">Rp {(p.amountCents ?? 0).toLocaleString('id-ID')}</td>
+                      <td className="px-5 py-3 font-mono">
+                        {p.currency === 'USD'
+                          ? `$ ${(p.amountCents / 100).toFixed(2)} USD`
+                          : `Rp ${(p.amountCents ?? 0).toLocaleString('id-ID')}`}
+                      </td>
                       <td className="px-5 py-3">
-                        <span suppressHydrationWarning className="px-2 py-0.5 rounded-md bg-neutral-100 text-neutral-800 text-[10px] font-mono font-bold">
-                          {p.status === 'success' || p.status === 'settlement'
-                            ? (locale === 'en' ? 'Success' : 'Berhasil')
-                            : p.status}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span
+                            suppressHydrationWarning
+                            className={`px-2 py-0.5 rounded-md text-[10px] font-mono font-bold ${
+                              p.status === 'paid' || p.status === 'success' || p.status === 'settlement'
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : p.status === 'pending' || p.status === 'pending_paypal'
+                                ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                                : 'bg-neutral-100 text-neutral-800'
+                            }`}
+                          >
+                            {p.status === 'success' || p.status === 'settlement' || p.status === 'paid'
+                              ? (locale === 'en' ? 'Success' : 'Berhasil')
+                              : p.status === 'pending_paypal'
+                              ? (locale === 'en' ? 'Under Review' : 'Sedang Ditinjau')
+                              : p.status === 'pending'
+                              ? (locale === 'en' ? 'Pending' : 'Menunggu')
+                              : p.status}
+                          </span>
+
+                          {(p.status === 'pending' || p.status === 'pending_paypal') && (
+                            <button
+                              id={`continue-pay-btn-${p.id}`}
+                              onClick={() => {
+                                const pkgToOpen = initialPackages.find((pkg) => pkg.id === p.packageId) ?? {
+                                  id: p.packageId ?? p.id,
+                                  name: p.packageName ?? (locale === 'en' ? 'Top-up Package' : 'Paket Kredit'),
+                                  priceCents: p.amountCents,
+                                  currency: p.currency ?? 'IDR',
+                                  creditAllowance: p.credits,
+                                };
+                                setSelectedPkg(pkgToOpen);
+                                setResumePayment({
+                                  id: p.id,
+                                  externalId: p.externalId,
+                                  provider: p.provider,
+                                  status: p.status,
+                                });
+                              }}
+                              className="px-2.5 py-1 rounded-lg bg-neutral-950 hover:bg-neutral-800 text-white text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1 shadow-2xs"
+                            >
+                              <CreditCard className="h-3 w-3" />
+                              <span suppressHydrationWarning>{locale === 'en' ? 'Pay Now' : 'Lanjutkan Bayar'}</span>
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}

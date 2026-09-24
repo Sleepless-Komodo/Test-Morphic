@@ -103,6 +103,26 @@ async function seed() {
         priceCents: 2_500_00,
         status: 'active',
       },
+      {
+        name: 'Starter USD',
+        description: '5,000 credits',
+        creditAllowance: 5_000,
+        modelId: null,
+        durationHours: 24 * 30,
+        priceCents: 500,
+        currency: 'USD',
+        status: 'active',
+      },
+      {
+        name: 'Pro USD',
+        description: '20,000 credits',
+        creditAllowance: 20_000,
+        modelId: null,
+        durationHours: 24 * 30,
+        priceCents: 1500,
+        currency: 'USD',
+        status: 'active',
+      },
     ])
     .onConflictDoNothing({ target: s.packages.name });
 
