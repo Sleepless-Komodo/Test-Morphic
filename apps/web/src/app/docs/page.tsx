@@ -11,7 +11,12 @@ export const metadata = {
 };
 
 export default async function DocsPage() {
-  const session = await auth.api.getSession({ headers: await headers() });
+  let session = null;
+  try {
+    session = await auth.api.getSession({ headers: await headers() });
+  } catch (err) {
+    console.warn('[DocsPage] Session check failed, rendering as guest:', err);
+  }
 
   return (
     <main className="min-h-screen bg-white text-neutral-900 selection:bg-neutral-900 selection:text-white flex flex-col justify-between overflow-x-clip">

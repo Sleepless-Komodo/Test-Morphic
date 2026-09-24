@@ -24,6 +24,12 @@ export const auth = betterAuth({
       verification: schema.verifications,
     },
   }),
+  session: {
+    cookieCache: {
+      enabled: true,
+      maxAge: 5 * 60, // 5 minutes signed cookie cache
+    },
+  },
   rateLimit: {
     window: 60,
     max: 100,

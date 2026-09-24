@@ -5,6 +5,15 @@ import { sweepExpiredReservations } from '@morphic/db/billing';
 import { lt } from 'drizzle-orm';
 
 import { checkProviderHealth } from './lib/alert';
+import { reconcilePaypalPayments } from './lib/paypal-reconcile';
+import { assertDuitkuConfig } from './lib/duitku';
+
+// Validate Duitku environment config at startup
+try {
+  assertDuitkuConfig();
+} catch (err: any) {
+  console.warn(`[duitku] startup config check warning: ${err?.message}`);
+}
 
 const port = Number(process.env.API_PORT ?? 8787);
 serve({ fetch: app.fetch, port }, (info) => {
@@ -35,4 +44,14 @@ const alertInterval = setInterval(() => {
   checkProviderHealth().catch((e: unknown) => console.error('[alert] check error:', e));
 }, ALERT_CHECK_INTERVAL_MS);
 alertInterval.unref();
+
+// PayPal reconciliation: scan pending payments >30min, poll getOrder(), grant if COMPLETED
+const PAYPAL_RECONCILE_MS = Number(process.env.PAYPAL_RECONCILE_INTERVAL_MS ?? 15 * 60_000);
+const reconcileInterval = setInterval(() => {
+  reconcilePaypalPayments()
+    .then((n: number) => n > 0 && console.log(`[paypal] reconciled ${n} payments`))
+    .catch((e: unknown) => console.error('[paypal] reconcile error:', e));
+}, PAYPAL_RECONCILE_MS);
+reconcileInterval.unref();
+
 

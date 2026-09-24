@@ -14,8 +14,24 @@ function getApiKey(): string {
   return key;
 }
 
+export function assertDuitkuConfig() {
+  const env = process.env.DUITKU_ENV ?? 'sandbox';
+  const prod = process.env.NODE_ENV === 'production';
+  if (prod && env !== 'production') {
+    throw new Error('DUITKU_ENV must be set to "production" when NODE_ENV=production');
+  }
+  if (!prod && env === 'production') {
+    throw new Error('DUITKU_ENV=production is not allowed outside production environment');
+  }
+  console.log(`[duitku] environment: ${env}`);
+}
+
 function baseUrl(): string {
   const env = process.env.DUITKU_ENV ?? 'sandbox';
+  if (process.env.NODE_ENV === 'production' && env !== 'production') {
+    throw new Error('DUITKU_ENV must be set to "production" when NODE_ENV=production');
+  }
+
   return env === 'production'
     ? 'https://passport.duitku.com/webapi'
     : 'https://sandbox.duitku.com/webapi';
@@ -23,10 +39,6 @@ function baseUrl(): string {
 
 function md5(data: string): string {
   return createHash('md5').update(data).digest('hex');
-}
-
-function sha256(data: string): string {
-  return createHash('sha256').update(data).digest('hex');
 }
 
 // ── Create Transaction ────────────────────────────────
@@ -40,7 +52,7 @@ export interface CreateTransactionParams {
   callbackUrl: string;       // webhook URL (must be public HTTPS)
   returnUrl: string;         // redirect after payment
   expiryPeriod?: number;     // minutes, default 60
-  paymentMethod?: string;    // e.g. 'SP' (ShopeePay QRIS), 'NQ' (Nobu QRIS)
+  paymentMethod?: string;    // payment method code e.g. 'SP' (ShopeePay QRIS), default 'SP'
 }
 
 export interface CreateTransactionResult {
@@ -52,8 +64,8 @@ export interface CreateTransactionResult {
 }
 
 /**
- * Create a Duitku transaction via v2/inquiry endpoint.
- * Signature formula: MD5(merchantCode + merchantOrderId + paymentAmount + apiKey)
+ * Create a Duitku transaction.
+ * Signature: MD5(merchantCode + merchantOrderId + paymentAmount + apiKey)
  * Docs: https://docs.duitku.com/api/id/#create-invoice
  */
 export async function createTransaction(
@@ -62,12 +74,8 @@ export async function createTransaction(
   const merchantCode = getMerchantCode();
   const apiKey = getApiKey();
 
-  // Duitku v2/inquiry requires MD5 hashing of: merchantCode + merchantOrderId + paymentAmount + apiKey
   const stringToSign = `${merchantCode}${params.merchantOrderId}${params.paymentAmount}${apiKey}`;
   const signature = md5(stringToSign);
-
-  // In Duitku v2/inquiry, paymentMethod is mandatory. Default to 'SP' (ShopeePay QRIS) if not specified.
-  const paymentMethod = params.paymentMethod ?? 'SP';
 
   const body: Record<string, unknown> = {
     merchantCode,
@@ -81,6 +89,7 @@ export async function createTransaction(
     returnUrl: params.returnUrl,
     signature,
     expiryPeriod: params.expiryPeriod ?? 60,
+    paymentMethod: params.paymentMethod ?? 'SP',
   };
 
   const url = `${baseUrl()}/api/merchant/v2/inquiry`;
@@ -130,7 +139,7 @@ export interface TransactionStatus {
 
 /**
  * Check Duitku transaction status.
- * Signature formula: MD5(merchantCode + merchantOrderId + apiKey)
+ * Signature: MD5(merchantCode + merchantOrderId + apiKey)
  * Docs: https://docs.duitku.com/api/id/#check-transaction
  */
 export async function checkTransactionStatus(
@@ -139,8 +148,8 @@ export async function checkTransactionStatus(
   const merchantCode = getMerchantCode();
   const apiKey = getApiKey();
 
-  // Duitku transactionStatus requires MD5(merchantCode + merchantOrderId + apiKey)
-  const signature = md5(`${merchantCode}${merchantOrderId}${apiKey}`);
+  const stringToSign = `${merchantCode}${merchantOrderId}${apiKey}`;
+  const signature = md5(stringToSign);
 
   const params = { merchantCode, merchantOrderId, signature };
 
@@ -158,6 +167,9 @@ export async function checkTransactionStatus(
   }
 
   const data = await res.json() as TransactionStatus & { Message?: string };
+  if (typeof data.statusCode !== 'string' || data.merchantOrderId !== merchantOrderId) {
+    throw new Error(`Duitku checkTransaction unexpected response: ${JSON.stringify(data).slice(0, 200)}`);
+  }
   return data;
 }
 
@@ -190,15 +202,19 @@ function safeCompare(a: string, b: string): boolean {
 
 /**
  * Verify Duitku callback signature (inbound webhook).
- * Signature is MD5(merchantCode + amount + merchantOrderId + apiKey)
- * or SHA256(merchantCode + amount + merchantOrderId + apiKey).
+ * Formula: MD5(merchantCode + amount + merchantOrderId + apiKey) — hex lowercase
+ * Docs: https://docs.duitku.com/api/id/#callback
  */
 export function verifyCallbackSignature(payload: DuitkuCallbackPayload): boolean {
   const apiKey = getApiKey();
   const stringToSign = `${payload.merchantCode}${payload.amount}${payload.merchantOrderId}${apiKey}`;
-  const expectedMd5 = md5(stringToSign).toLowerCase();
-  const expectedSha256 = sha256(stringToSign).toLowerCase();
+  const expected = md5(stringToSign);
 
-  const receivedSig = (payload.signature || '').toLowerCase();
-  return safeCompare(receivedSig, expectedMd5) || safeCompare(receivedSig, expectedSha256);
+  try {
+    const a = Buffer.from(expected.toLowerCase());
+    const b = Buffer.from((payload.signature ?? '').toLowerCase());
+    return a.length === b.length && timingSafeEqual(a, b);
+  } catch {
+    return false;
+  }
 }

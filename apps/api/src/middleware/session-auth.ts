@@ -38,7 +38,6 @@ export async function sessionAuth(c: Context, next: Next) {
     );
   }
 
-  // Handle signed vs unsigned token formats (token.signature vs token)
   const unsignedToken = rawToken.includes('.') ? rawToken.split('.')[0] : rawToken;
 
   const [session] = await db
