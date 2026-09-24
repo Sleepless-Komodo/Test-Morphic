@@ -19,6 +19,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Loader2,
+  Calendar,
+  X,
 } from 'lucide-react';
 import { getUsageLogsAction } from '@/lib/actions';
 
@@ -71,13 +73,17 @@ function CopyTraceId({ id }: { id: string }) {
   );
 }
 
+type DateRangePreset = 'all' | 'today' | '7d' | '30d' | 'custom';
+
 export function UsageView({ today, month, total, topModels, recent }: UsageViewProps) {
   const { t, locale } = useTranslation();
   const isId = locale === 'id';
 
   const [items, setItems] = useState<RecentRecord[]>(recent);
   const [page, setPage] = useState(1);
-  const [dateFilter, setDateFilter] = useState<'all' | 'today' | '7d' | '30d'>('all');
+  const [dateFilter, setDateFilter] = useState<DateRangePreset>('all');
+  const [customFrom, setCustomFrom] = useState('');
+  const [customTo, setCustomTo] = useState('');
   const [isLoadingPage, setIsLoadingPage] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'success' | 'error'>('all');
@@ -85,10 +91,17 @@ export function UsageView({ today, month, total, topModels, recent }: UsageViewP
 
   const totalPages = Math.max(1, Math.ceil(totalCount / 50));
 
-  const fetchUsage = async (targetPage: number, range: 'all' | 'today' | '7d' | '30d') => {
+  const fetchUsage = async (
+    targetPage: number,
+    range: DateRangePreset,
+    rangeFrom?: string,
+    rangeTo?: string
+  ) => {
     setIsLoadingPage(true);
     try {
       let from: string | undefined;
+      let to: string | undefined;
+
       if (range === 'today') {
         const start = new Date();
         start.setHours(0, 0, 0, 0);
@@ -99,9 +112,20 @@ export function UsageView({ today, month, total, topModels, recent }: UsageViewP
       } else if (range === '30d') {
         const d = new Date(Date.now() - 30 * 86_400_000);
         from = d.toISOString();
+      } else if (range === 'custom') {
+        const f = rangeFrom !== undefined ? rangeFrom : customFrom;
+        const t = rangeTo !== undefined ? rangeTo : customTo;
+        if (f) {
+          const fromDate = new Date(`${f}T00:00:00`);
+          if (!isNaN(fromDate.getTime())) from = fromDate.toISOString();
+        }
+        if (t) {
+          const toDate = new Date(`${t}T23:59:59.999`);
+          if (!isNaN(toDate.getTime())) to = toDate.toISOString();
+        }
       }
 
-      const res = await getUsageLogsAction({ page: targetPage, limit: 50, from });
+      const res = await getUsageLogsAction({ page: targetPage, limit: 50, from, to });
       if (res?.data && Array.isArray(res.data)) {
         setItems(
           res.data.map((u: any) => ({
@@ -131,12 +155,28 @@ export function UsageView({ today, month, total, topModels, recent }: UsageViewP
 
   const handlePageChange = (newPage: number) => {
     if (newPage < 1 || newPage > totalPages || isLoadingPage) return;
-    fetchUsage(newPage, dateFilter);
+    fetchUsage(newPage, dateFilter, customFrom, customTo);
   };
 
-  const handleDateFilterChange = (range: 'all' | 'today' | '7d' | '30d') => {
+  const handleDateFilterChange = (range: DateRangePreset) => {
     setDateFilter(range);
-    fetchUsage(1, range);
+    if (range !== 'custom') {
+      fetchUsage(1, range);
+    }
+  };
+
+  const handleApplyCustomDates = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!customFrom && !customTo) return;
+    setDateFilter('custom');
+    fetchUsage(1, 'custom', customFrom, customTo);
+  };
+
+  const handleResetCustomDates = () => {
+    setCustomFrom('');
+    setCustomTo('');
+    setDateFilter('all');
+    fetchUsage(1, 'all');
   };
 
   const filteredRecent = items.filter((r) => {
@@ -304,7 +344,65 @@ export function UsageView({ today, month, total, topModels, recent }: UsageViewP
               >
                 {t.dashboard.usageFilter30Days}
               </button>
+              <button
+                type="button"
+                onClick={() => handleDateFilterChange('custom')}
+                className={`px-2.5 py-1 rounded-lg cursor-pointer transition-all duration-150 active:scale-95 flex items-center gap-1 ${
+                  dateFilter === 'custom'
+                    ? 'bg-white text-neutral-950 shadow-2xs font-bold'
+                    : 'text-neutral-500 hover:text-neutral-900'
+                }`}
+              >
+                <Calendar className="h-3 w-3" />
+                <span>{t.dashboard.usageFilterCustom}</span>
+              </button>
             </div>
+
+            {/* Custom Date Range Picker */}
+            {dateFilter === 'custom' && (
+              <form
+                onSubmit={handleApplyCustomDates}
+                className="flex items-center gap-1.5 p-1 bg-white border border-neutral-200 rounded-xl shadow-2xs"
+              >
+                <div className="flex items-center gap-1 text-[11px] text-neutral-600 pl-1.5">
+                  <span className="font-medium text-neutral-500">{t.dashboard.usageFilterFrom}:</span>
+                  <input
+                    type="date"
+                    value={customFrom}
+                    onChange={(e) => setCustomFrom(e.target.value)}
+                    aria-label={isId ? 'Dari tanggal' : 'From date'}
+                    className="px-2 py-0.5 text-xs font-mono rounded-lg border border-neutral-200 bg-neutral-50 text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
+                  />
+                </div>
+                <div className="flex items-center gap-1 text-[11px] text-neutral-600">
+                  <span className="font-medium text-neutral-500">{t.dashboard.usageFilterTo}:</span>
+                  <input
+                    type="date"
+                    value={customTo}
+                    onChange={(e) => setCustomTo(e.target.value)}
+                    aria-label={isId ? 'Sampai tanggal' : 'To date'}
+                    className="px-2 py-0.5 text-xs font-mono rounded-lg border border-neutral-200 bg-neutral-50 text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={!customFrom && !customTo}
+                  className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-neutral-950 text-white hover:bg-neutral-800 disabled:opacity-50 transition-colors cursor-pointer"
+                >
+                  {t.dashboard.usageFilterApply}
+                </button>
+                {(customFrom || customTo) && (
+                  <button
+                    type="button"
+                    onClick={handleResetCustomDates}
+                    aria-label={isId ? 'Reset filter tanggal' : 'Reset date filter'}
+                    className="p-1 text-neutral-500 hover:text-neutral-900 transition-colors cursor-pointer rounded-lg"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </form>
+            )}
 
             <div className="relative">
               <Search className="h-3.5 w-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none" />

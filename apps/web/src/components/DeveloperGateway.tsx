@@ -17,6 +17,7 @@ import { useTranslation } from '@/lib/i18n';
 import { formatCredits, formatTokenEstimate, timeAgo, API_BASE_URL } from '@/lib/utils';
 import GatewayStatusPopover from '@/components/GatewayStatusPopover';
 import QuickstartHub from '@/components/QuickstartHub';
+import { ApiKeyPingModal } from '@/components/ApiKeyPingModal';
 import { INFERENCE_MODELS, CapabilityTag, ModelItem } from '@/lib/models-data';
 export type { ModelItem } from '@/lib/models-data';
 
@@ -55,6 +56,7 @@ export interface RecentRequestItem {
 interface DeveloperGatewayProps {
   session?: unknown;
   userBalance?: number;
+  balanceUpdatedAt?: string | null;
   /**
    * Optional initial models passed from the Server Component (fetched from PostgreSQL database).
    * If not provided or empty, the component will fall back to static default models.
@@ -72,6 +74,7 @@ interface DeveloperGatewayProps {
 export default function DeveloperGateway({
   session,
   userBalance = 0,
+  balanceUpdatedAt,
   initialModels,
   recentRequests: initialRecentRequests = [],
   serverModelCount,
@@ -83,6 +86,7 @@ export default function DeveloperGateway({
   const { t, locale } = useTranslation();
   const isId = locale === 'id';
   const [baseUrlCopied, setBaseUrlCopied] = useState(false);
+  const [isPingModalOpen, setIsPingModalOpen] = useState(false);
 
   // Filter state
   const [selectedCapability, setSelectedCapability] = useState<CapabilityTag | 'All'>('All');
@@ -97,7 +101,11 @@ export default function DeveloperGateway({
   // Voucher / balance state
   const [voucherCode, setVoucherCode] = useState('');
   const [voucherSuccess, setVoucherSuccess] = useState<string | null>(null);
-  const [balance, setBalance] = useState(userBalance);
+  const [voucherBonus, setVoucherBonus] = useState(0);
+  const [voucherUpdatedAt, setVoucherUpdatedAt] = useState<string | null>(null);
+
+  const balance = userBalance + voucherBonus;
+  const balanceUpdatedAtState = voucherUpdatedAt ?? balanceUpdatedAt;
 
   // Recent requests (may be overridden by real-time data in the future)
   const [recentRequests] = useState<RecentRequestItem[]>(initialRecentRequests);
@@ -173,7 +181,8 @@ export default function DeveloperGateway({
         ? `Voucher "${voucherCode.toUpperCase()}" active! +Rp 5,000 balance added.`
         : `Kupon "${voucherCode.toUpperCase()}" aktif! +Rp 5.000 saldo ditambahkan.`;
     setVoucherSuccess(msg);
-    setBalance((p) => p + 5000);
+    setVoucherBonus((p) => p + 5000);
+    setVoucherUpdatedAt(new Date().toISOString());
     setVoucherCode('');
     setTimeout(() => setVoucherSuccess(null), 5000);
   };
@@ -219,28 +228,39 @@ export default function DeveloperGateway({
                 {t.dashboard.openAiCompatible}
               </span>
             </div>
-            <div className="flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-neutral-50 border border-neutral-200/80 mb-3">
-              <code className="font-mono font-bold text-xs sm:text-sm text-neutral-950 truncate select-all">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-3.5 rounded-2xl bg-neutral-50 border border-neutral-200/80 mb-3">
+              <code className="font-mono font-bold text-xs sm:text-sm text-neutral-950 truncate select-all flex-1">
                 {BASE_URL}
               </code>
-              <button
-                type="button"
-                onClick={copyBaseUrl}
-                className="p-2 rounded-xl bg-white border border-neutral-200 hover:bg-neutral-100 active:scale-95 text-neutral-700 hover:text-black transition-all shrink-0 shadow-xs cursor-pointer flex items-center gap-1.5 text-xs font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
-                title={t.dashboard.copyBaseUrl}
-              >
-                {baseUrlCopied ? (
-                  <>
-                    <Check className="h-3.5 w-3.5 text-emerald-600" />
-                    <span suppressHydrationWarning className="text-emerald-700 text-[11px]">{t.dashboard.copied}</span>
-                  </>
-                ) : (
-                  <>
-                    <Copy className="h-3.5 w-3.5" />
-                    <span suppressHydrationWarning className="text-[11px]">{t.dashboard.copy}</span>
-                  </>
-                )}
-              </button>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setIsPingModalOpen(true)}
+                  className="group px-2.5 py-2 rounded-xl bg-white border border-neutral-200 hover:border-neutral-950 hover:bg-neutral-950 text-neutral-700 hover:text-white transition-all shrink-0 shadow-2xs cursor-pointer flex items-center gap-1.5 text-xs font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
+                  title={locale === 'en' ? 'Test API Key Connectivity' : 'Uji Koneksi API Key'}
+                >
+                  <Activity className="h-3.5 w-3.5 text-neutral-600 group-hover:text-white transition-colors" />
+                  <span className="text-xs font-medium">{locale === 'en' ? 'Test Ping' : 'Uji Ping'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={copyBaseUrl}
+                  className="p-2 rounded-xl bg-white border border-neutral-200 hover:bg-neutral-100 active:scale-95 text-neutral-700 hover:text-black transition-all shrink-0 shadow-xs cursor-pointer flex items-center gap-1.5 text-xs font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
+                  title={t.dashboard.copyBaseUrl}
+                >
+                  {baseUrlCopied ? (
+                    <>
+                      <Check className="h-3.5 w-3.5 text-emerald-600" />
+                      <span suppressHydrationWarning className="text-emerald-700 text-[11px]">{t.dashboard.copied}</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="h-3.5 w-3.5" />
+                      <span suppressHydrationWarning className="text-[11px]">{t.dashboard.copy}</span>
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
           <p suppressHydrationWarning className="text-xs text-neutral-500 leading-relaxed">
@@ -257,9 +277,20 @@ export default function DeveloperGateway({
               </span>
             </div>
             <div suppressHydrationWarning className="text-2xl sm:text-3xl font-heading font-black text-white mb-1 font-mono tabular-nums">
-              Rp {userBalance.toLocaleString(locale === 'id' ? 'id-ID' : 'en-US')}
+              Rp {balance.toLocaleString(locale === 'id' ? 'id-ID' : 'en-US')}
             </div>
-            {userBalance > 0 && avgCreditsPer1m > 0 ? (
+            {balanceUpdatedAtState && (
+              <p className="text-[11px] text-neutral-400 font-mono mb-2">
+                {isId ? 'Terakhir diperbarui: ' : 'Last updated: '}
+                {new Date(balanceUpdatedAtState).toLocaleDateString(isId ? 'id-ID' : 'en-US', {
+                  day: 'numeric',
+                  month: 'short',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}
+              </p>
+            )}
+            {balance > 0 && avgCreditsPer1m > 0 ? (
               <div className="font-mono text-sm font-bold text-emerald-400">
                 ≈ {formatTokenEstimate(estimatedTokens)} {t.dashboard.tokenCapacityUnit}
               </div>
@@ -512,6 +543,13 @@ export default function DeveloperGateway({
 
       {/* Row 4: Quickstart Hub */}
       <QuickstartHub />
+
+      {/* Test Ping Modal */}
+      <ApiKeyPingModal
+        isOpen={isPingModalOpen}
+        onClose={() => setIsPingModalOpen(false)}
+        availableModels={activeModelList.map((m) => ({ id: m.id, name: m.name }))}
+      />
     </div>
   );
 }
