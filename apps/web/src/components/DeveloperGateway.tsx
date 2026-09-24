@@ -8,7 +8,6 @@ import {
   Copy,
   Cpu,
   KeyRound,
-  Zap,
   Activity,
   Terminal,
   CheckCircle2,
@@ -18,10 +17,11 @@ import { useTranslation } from '@/lib/i18n';
 import { formatCredits, formatTokenEstimate, timeAgo, API_BASE_URL } from '@/lib/utils';
 import GatewayStatusPopover from '@/components/GatewayStatusPopover';
 import QuickstartHub from '@/components/QuickstartHub';
+import { ApiKeyPingModal } from '@/components/ApiKeyPingModal';
 import { INFERENCE_MODELS, CapabilityTag, ModelItem } from '@/lib/models-data';
 export type { ModelItem } from '@/lib/models-data';
 
-const BASE_URL = API_BASE_URL;
+const BASE_URL = 'https://api.morphic.sh/v1';
 
 const CHEAP_DAILY_PACKAGES = [
   { id: 'starter', label: 'Starter', labelEn: 'Starter', desc: 'Rp 10.000 / bulan', descEn: 'Rp 10,000 / month', credits: 10000 },
@@ -56,6 +56,7 @@ export interface RecentRequestItem {
 interface DeveloperGatewayProps {
   session?: unknown;
   userBalance?: number;
+  balanceUpdatedAt?: string | null;
   /**
    * Optional initial models passed from the Server Component (fetched from PostgreSQL database).
    * If not provided or empty, the component will fall back to static default models.
@@ -66,20 +67,26 @@ interface DeveloperGatewayProps {
   serverModelCount?: number;
   serverAvgCreditsPer1m?: number;
   serverMinInputRate?: number;
+  activeKeys?: number;
+  serverUsage?: { totalTokens: number; promptTokens: number; completionTokens: number };
 }
 
 export default function DeveloperGateway({
   session,
   userBalance = 0,
+  balanceUpdatedAt,
   initialModels,
   recentRequests: initialRecentRequests = [],
   serverModelCount,
   serverAvgCreditsPer1m,
   serverMinInputRate,
+  activeKeys: serverActiveKeys,
+  serverUsage,
 }: DeveloperGatewayProps) {
   const { t, locale } = useTranslation();
   const isId = locale === 'id';
   const [baseUrlCopied, setBaseUrlCopied] = useState(false);
+  const [isPingModalOpen, setIsPingModalOpen] = useState(false);
 
   // Filter state
   const [selectedCapability, setSelectedCapability] = useState<CapabilityTag | 'All'>('All');
@@ -94,13 +101,17 @@ export default function DeveloperGateway({
   // Voucher / balance state
   const [voucherCode, setVoucherCode] = useState('');
   const [voucherSuccess, setVoucherSuccess] = useState<string | null>(null);
-  const [balance, setBalance] = useState(userBalance);
+  const [voucherBonus, setVoucherBonus] = useState(0);
+  const [voucherUpdatedAt, setVoucherUpdatedAt] = useState<string | null>(null);
+
+  const balance = userBalance + voucherBonus;
+  const balanceUpdatedAtState = voucherUpdatedAt ?? balanceUpdatedAt;
 
   // Recent requests (may be overridden by real-time data in the future)
   const [recentRequests] = useState<RecentRequestItem[]>(initialRecentRequests);
 
-  // Derived metrics from active model list
-  const activeKeys = keysList.length;
+  // Derived metrics from active model list / server data
+  const activeKeys = serverActiveKeys !== undefined ? serverActiveKeys : keysList.length;
 
   const getPackageDesc = (pkg: (typeof CHEAP_DAILY_PACKAGES)[number]) =>
     locale === 'en' && pkg.descEn ? pkg.descEn : pkg.desc;
@@ -128,10 +139,10 @@ export default function DeveloperGateway({
     return rates.length > 0 ? rates.reduce((a, b) => a + b, 0) / rates.length : 0;
   }, [activeModelList, serverAvgCreditsPer1m]);
 
-  // Usage summary (placeholder — replace with real fetched data)
+  // Real or server-provided usage summary
   const usage = useMemo<{ totalTokens: number; promptTokens: number; completionTokens: number }>(
-    () => ({ totalTokens: 0, promptTokens: 0, completionTokens: 0 }),
-    [],
+    () => serverUsage ?? { totalTokens: 0, promptTokens: 0, completionTokens: 0 },
+    [serverUsage],
   );
 
   const filteredModels = useMemo(
@@ -170,7 +181,8 @@ export default function DeveloperGateway({
         ? `Voucher "${voucherCode.toUpperCase()}" active! +Rp 5,000 balance added.`
         : `Kupon "${voucherCode.toUpperCase()}" aktif! +Rp 5.000 saldo ditambahkan.`;
     setVoucherSuccess(msg);
-    setBalance((p) => p + 5000);
+    setVoucherBonus((p) => p + 5000);
+    setVoucherUpdatedAt(new Date().toISOString());
     setVoucherCode('');
     setTimeout(() => setVoucherSuccess(null), 5000);
   };
@@ -216,28 +228,39 @@ export default function DeveloperGateway({
                 {t.dashboard.openAiCompatible}
               </span>
             </div>
-            <div className="flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-neutral-50 border border-neutral-200/80 mb-3">
-              <code className="font-mono font-bold text-xs sm:text-sm text-neutral-950 truncate select-all">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-3.5 rounded-2xl bg-neutral-50 border border-neutral-200/80 mb-3">
+              <code className="font-mono font-bold text-xs sm:text-sm text-neutral-950 truncate select-all flex-1">
                 {BASE_URL}
               </code>
-              <button
-                type="button"
-                onClick={copyBaseUrl}
-                className="p-2 rounded-xl bg-white border border-neutral-200 hover:bg-neutral-100 active:scale-95 text-neutral-700 hover:text-black transition-all shrink-0 shadow-xs cursor-pointer flex items-center gap-1.5 text-xs font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
-                title={t.dashboard.copyBaseUrl}
-              >
-                {baseUrlCopied ? (
-                  <>
-                    <Check className="h-3.5 w-3.5 text-emerald-600" />
-                    <span suppressHydrationWarning className="text-emerald-700 text-[11px]">{t.dashboard.copied}</span>
-                  </>
-                ) : (
-                  <>
-                    <Copy className="h-3.5 w-3.5" />
-                    <span suppressHydrationWarning className="text-[11px]">{t.dashboard.copy}</span>
-                  </>
-                )}
-              </button>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setIsPingModalOpen(true)}
+                  className="group px-2.5 py-2 rounded-xl bg-white border border-neutral-200 hover:border-neutral-950 hover:bg-neutral-950 text-neutral-700 hover:text-white transition-all shrink-0 shadow-2xs cursor-pointer flex items-center gap-1.5 text-xs font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
+                  title={locale === 'en' ? 'Test API Key Connectivity' : 'Uji Koneksi API Key'}
+                >
+                  <Activity className="h-3.5 w-3.5 text-neutral-600 group-hover:text-white transition-colors" />
+                  <span className="text-xs font-medium">{locale === 'en' ? 'Test Ping' : 'Uji Ping'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={copyBaseUrl}
+                  className="p-2 rounded-xl bg-white border border-neutral-200 hover:bg-neutral-100 active:scale-95 text-neutral-700 hover:text-black transition-all shrink-0 shadow-xs cursor-pointer flex items-center gap-1.5 text-xs font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
+                  title={t.dashboard.copyBaseUrl}
+                >
+                  {baseUrlCopied ? (
+                    <>
+                      <Check className="h-3.5 w-3.5 text-emerald-600" />
+                      <span suppressHydrationWarning className="text-emerald-700 text-[11px]">{t.dashboard.copied}</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="h-3.5 w-3.5" />
+                      <span suppressHydrationWarning className="text-[11px]">{t.dashboard.copy}</span>
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
           <p suppressHydrationWarning className="text-xs text-neutral-500 leading-relaxed">
@@ -249,15 +272,25 @@ export default function DeveloperGateway({
         <div className="md:col-span-5 p-6 rounded-3xl bg-neutral-950 text-white border border-neutral-800 shadow-md flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-2">
-              <span suppressHydrationWarning className="text-xs font-semibold text-neutral-400">
+              <span suppressHydrationWarning className="text-xs font-mono font-semibold tracking-wider uppercase text-neutral-400">
                 {t.dashboard.creditBalance}
               </span>
-              <Zap className="h-4 w-4 text-emerald-500" />
             </div>
             <div suppressHydrationWarning className="text-2xl sm:text-3xl font-heading font-black text-white mb-1 font-mono tabular-nums">
-              Rp {userBalance.toLocaleString(locale === 'id' ? 'id-ID' : 'en-US')}
+              Rp {balance.toLocaleString(locale === 'id' ? 'id-ID' : 'en-US')}
             </div>
-            {userBalance > 0 && avgCreditsPer1m > 0 ? (
+            {balanceUpdatedAtState && (
+              <p className="text-[11px] text-neutral-400 font-mono mb-2">
+                {isId ? 'Terakhir diperbarui: ' : 'Last updated: '}
+                {new Date(balanceUpdatedAtState).toLocaleDateString(isId ? 'id-ID' : 'en-US', {
+                  day: 'numeric',
+                  month: 'short',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}
+              </p>
+            )}
+            {balance > 0 && avgCreditsPer1m > 0 ? (
               <div className="font-mono text-sm font-bold text-emerald-400">
                 ≈ {formatTokenEstimate(estimatedTokens)} {t.dashboard.tokenCapacityUnit}
               </div>
@@ -296,7 +329,7 @@ export default function DeveloperGateway({
             <KeyRound className="h-4 w-4 text-neutral-400 group-hover:text-neutral-950 transition-colors shrink-0 mt-0.5" />
           </div>
           <div className="mt-4 pt-3 border-t border-neutral-100 flex items-center justify-between text-[11px] font-medium text-neutral-500 group-hover:text-neutral-950 transition-colors">
-            <span>{locale === 'en' ? 'Manage Keys' : 'Kelola API Key'}</span>
+            <span>{t.dashboard.manageKeys}</span>
             <ArrowUpRight className="h-3.5 w-3.5 text-neutral-400 group-hover:text-neutral-950 transition-colors" />
           </div>
         </Link>
@@ -329,7 +362,7 @@ export default function DeveloperGateway({
             </div>
           ) : (
             <div className="mt-4 pt-3 border-t border-neutral-100 flex items-center justify-between text-[11px] font-medium text-neutral-500 group-hover:text-neutral-950 transition-colors">
-              <span>{locale === 'en' ? 'View Usage Logs' : 'Lihat Log Pemakaian'}</span>
+              <span>{t.dashboard.viewUsageLogs}</span>
               <ArrowUpRight className="h-3.5 w-3.5 text-neutral-400 group-hover:text-neutral-950 transition-colors" />
             </div>
           )}
@@ -354,7 +387,7 @@ export default function DeveloperGateway({
             <Cpu className="h-4 w-4 text-neutral-400 group-hover:text-neutral-950 transition-colors shrink-0 mt-0.5" />
           </div>
           <div className="mt-4 pt-3 border-t border-neutral-100 flex items-center justify-between text-[11px] font-medium text-neutral-500 group-hover:text-neutral-950 transition-colors">
-            <span>{locale === 'en' ? 'Explore Catalog' : 'Jelajahi Model'}</span>
+            <span>{t.dashboard.exploreCatalog}</span>
             <ArrowUpRight className="h-3.5 w-3.5 text-neutral-400 group-hover:text-neutral-950 transition-colors" />
           </div>
         </Link>
@@ -370,13 +403,11 @@ export default function DeveloperGateway({
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
               </span>
               <h2 className="font-heading font-bold text-base text-neutral-950 tracking-tight">
-                {isId ? 'Telemetri Permintaan Terakhir' : 'Recent Request Telemetry'}
+                {t.dashboard.telemetryTitle}
               </h2>
             </div>
             <p className="text-xs text-neutral-500 mt-1">
-              {isId
-                ? 'Riwayat pemanggilan model AI dari Cursor, Cline, dan kode Anda'
-                : 'Live model invocations from your IDEs, coding agents, and SDKs'}
+              {t.dashboard.telemetryDesc}
             </p>
           </div>
 
@@ -384,7 +415,7 @@ export default function DeveloperGateway({
             href="/dashboard/usage"
             className="inline-flex items-center gap-1.5 text-xs font-semibold text-neutral-700 hover:text-neutral-950 cursor-pointer group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 rounded-lg py-1 px-2.5 hover:bg-neutral-100 transition-colors shrink-0 self-start sm:self-auto"
           >
-            <span>{isId ? 'Lihat Semua Log Aktivitas' : 'View Full Logs & Analytics'}</span>
+            <span>{t.dashboard.viewFullLogs}</span>
             <ArrowUpRight className="h-3.5 w-3.5 text-neutral-400 group-hover:text-neutral-950 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all" />
           </Link>
         </div>
@@ -396,12 +427,10 @@ export default function DeveloperGateway({
             </div>
             <div className="space-y-1">
               <h3 className="font-heading font-bold text-sm text-neutral-900">
-                {isId ? 'Belum Ada Permintaan API yang Masuk' : 'No API Requests Recorded Yet'}
+                {t.dashboard.noRequestsTitle}
               </h3>
               <p className="text-xs text-neutral-500 max-w-md mx-auto leading-relaxed">
-                {isId
-                  ? `Hubungkan Base URL ${BASE_URL} dan API Key Anda di Cursor, Cline, atau SDK untuk melihat log real-time di sini.`
-                  : `Configure Base URL ${BASE_URL} and your API Key in Cursor, Cline, or the SDK to see real-time request telemetry here.`}
+                {t.dashboard.noRequestsDesc.replace('{baseUrl}', BASE_URL)}
               </p>
             </div>
           </div>
@@ -410,13 +439,13 @@ export default function DeveloperGateway({
             <table className="w-full text-left text-xs">
               <thead>
                 <tr className="border-b border-neutral-200 bg-neutral-50/70 text-[11px] font-mono uppercase text-neutral-500">
-                  <th className="px-5 py-3.5">Status</th>
-                  <th className="px-5 py-3.5">Trace ID</th>
-                  <th className="px-5 py-3.5">Model</th>
-                  <th className="px-5 py-3.5 text-right">Tokens</th>
-                  <th className="px-5 py-3.5 text-right">Cost</th>
-                  <th className="px-5 py-3.5 text-right">Latency</th>
-                  <th className="px-5 py-3.5 text-right">Time</th>
+                  <th className="px-5 py-3.5">{t.dashboard.thUsageStatus}</th>
+                  <th className="px-5 py-3.5">{t.dashboard.thUsageTraceId}</th>
+                  <th className="px-5 py-3.5">{t.dashboard.thUsageModel}</th>
+                  <th className="px-5 py-3.5 text-right">{t.dashboard.thUsageTokens}</th>
+                  <th className="px-5 py-3.5 text-right">{t.dashboard.thCost}</th>
+                  <th className="px-5 py-3.5 text-right">{t.dashboard.thUsageLatency}</th>
+                  <th className="px-5 py-3.5 text-right">{t.dashboard.thUsageTime}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100 font-mono text-[11px]">
@@ -427,13 +456,13 @@ export default function DeveloperGateway({
                       {/* Status */}
                       <td className="px-5 py-3.5 whitespace-nowrap">
                         {isSuccess ? (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-50 text-emerald-800 border border-emerald-200/80 shadow-2xs">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 ring-2 ring-emerald-500/20" />
+                          <span className="inline-flex items-center gap-1.5 text-xs font-mono font-medium text-neutral-700">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
                             <span>200 OK</span>
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-rose-50 text-rose-800 border border-rose-200/80 shadow-2xs">
-                            <span className="w-1.5 h-1.5 rounded-full bg-rose-500 ring-2 ring-rose-500/20" />
+                          <span className="inline-flex items-center gap-1.5 text-xs font-mono font-medium text-red-600">
+                            <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />
                             <span>ERR</span>
                           </span>
                         )}
@@ -514,6 +543,13 @@ export default function DeveloperGateway({
 
       {/* Row 4: Quickstart Hub */}
       <QuickstartHub />
+
+      {/* Test Ping Modal */}
+      <ApiKeyPingModal
+        isOpen={isPingModalOpen}
+        onClose={() => setIsPingModalOpen(false)}
+        availableModels={activeModelList.map((m) => ({ id: m.id, name: m.name }))}
+      />
     </div>
   );
 }

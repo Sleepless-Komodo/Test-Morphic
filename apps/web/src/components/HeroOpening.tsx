@@ -3,7 +3,7 @@
 import { useRef } from 'react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
-import { ArrowUpRight, Sparkles, CheckCircle2 } from 'lucide-react';
+import { ArrowUpRight } from 'lucide-react';
 import { useTranslation } from '@/lib/i18n';
 import { useReducedMotionSafe } from '@/lib/use-reduced-motion-safe';
 import ParallaxBackground from '@/components/ParallaxBackground';
@@ -53,33 +53,20 @@ export default function HeroOpening({ isLoggedIn = false }: HeroOpeningProps) {
   return (
     <section
       ref={sectionRef}
-      className="hero-section relative w-full overflow-x-clip flex flex-col items-center justify-center min-h-[90vh] sm:min-h-screen pt-28 sm:pt-36 pb-20 sm:pb-28"
+      className="hero-section relative w-full overflow-x-clip flex flex-col items-center justify-center min-h-screen pt-36 sm:pt-44 md:pt-48 pb-36 sm:pb-44 md:pb-52"
     >
-      {/* Parallax visual background — blends seamlessly into #fafafa */}
       <ParallaxBackground sectionRef={sectionRef} />
 
-      {/* Foreground — Grand Centered Developer Hero with Orchestrated Stagger Entrance */}
       <motion.div
         initial={reduced ? false : 'hidden'}
         animate="visible"
         variants={containerVariants}
         className="relative z-10 max-w-5xl mx-auto w-full flex flex-col items-center justify-center text-center px-4 sm:px-6 my-auto"
       >
-        {/* 1. Badge */}
-        <motion.div
-          variants={itemVariants}
-          className="inline-flex items-center gap-2.5 px-4 py-1.5 sm:px-5 sm:py-2 rounded-full bg-white/95 border border-neutral-200/90 text-neutral-900 text-xs sm:text-sm md:text-base font-semibold mb-6 shadow-2xs"
-        >
-          <Sparkles className="h-4 w-4 sm:h-4.5 sm:w-4.5 text-neutral-950 shrink-0" />
-          <span suppressHydrationWarning>
-            {t?.hero?.badge || (locale === 'id' ? 'Satu API untuk Berbagai Model AI' : 'One API for Multiple AI Models')}
-          </span>
-        </motion.div>
-
-        {/* 2. Grand Headline (100% Original Text, Line-by-Line Stagger Reveal) */}
+        {/* Grand Headline (Flagship scale, line-by-line stagger reveal) */}
         <h1
           suppressHydrationWarning
-          className="text-4xl sm:text-5xl md:text-6xl lg:text-[4.75rem] font-extrabold tracking-tight leading-[1.08] max-w-4xl mx-auto mb-6 font-heading transform-gpu"
+          className="text-5xl sm:text-6xl md:text-7xl lg:text-[5.25rem] xl:text-[5.75rem] font-extrabold tracking-tight leading-[1.04] max-w-4xl sm:max-w-5xl mx-auto mb-8 sm:mb-10 font-heading transform-gpu"
         >
           <motion.span
             variants={itemVariants}
@@ -89,7 +76,7 @@ export default function HeroOpening({ isLoggedIn = false }: HeroOpeningProps) {
           </motion.span>
           <motion.span
             variants={itemVariants}
-            className="block text-neutral-500 font-bold mt-1.5 sm:mt-2.5"
+            className="block text-neutral-500 font-bold mt-2 sm:mt-3"
           >
             {headline2}
           </motion.span>
@@ -99,7 +86,7 @@ export default function HeroOpening({ isLoggedIn = false }: HeroOpeningProps) {
         <motion.p
           suppressHydrationWarning
           variants={itemVariants}
-          className="text-neutral-700 font-body text-base sm:text-lg md:text-xl lg:text-2xl leading-relaxed mb-8 sm:mb-10 max-w-3xl mx-auto font-medium"
+          className="text-neutral-700 font-body text-lg sm:text-xl md:text-2xl lg:text-[1.4rem] leading-relaxed mb-10 sm:mb-14 max-w-3xl sm:max-w-4xl mx-auto font-medium"
         >
           {subheadline}
         </motion.p>
@@ -107,55 +94,25 @@ export default function HeroOpening({ isLoggedIn = false }: HeroOpeningProps) {
         {/* 4. Action Buttons */}
         <motion.div
           variants={itemVariants}
-          className="flex flex-col sm:flex-row items-center justify-center gap-3.5 sm:gap-4.5 w-full sm:w-auto"
+          className="flex flex-col sm:flex-row items-center justify-center gap-4 sm:gap-5 w-full sm:w-auto"
         >
           <Link
             href={isLoggedIn ? '/dashboard/keys' : '/login'}
-            className="w-full sm:w-auto min-w-[210px] sm:min-w-[230px] justify-center rounded-full px-8 sm:px-9 py-3.5 sm:py-4 text-sm sm:text-base md:text-lg font-bold flex items-center gap-2.5 btn-hero-primary cursor-pointer text-center shadow-sm"
+            className="w-full sm:w-auto min-w-[220px] sm:min-w-[250px] justify-center rounded-full px-9 sm:px-11 py-4 sm:py-4.5 text-base sm:text-lg font-bold flex items-center gap-2.5 btn-hero-primary cursor-pointer text-center shadow-sm"
           >
             <span suppressHydrationWarning>
               {isLoggedIn ? t?.hero?.manageKeys : (t?.hero?.primaryCta || 'Get API Key')}
             </span>
-            <ArrowUpRight className="h-4.5 w-4.5 sm:h-5 sm:w-5 shrink-0 btn-hero-icon" />
+            <ArrowUpRight className="h-5 w-5 sm:h-5.5 sm:w-5.5 shrink-0 btn-hero-icon" />
           </Link>
           <Link
             href="/models"
-            className="w-full sm:w-auto min-w-[190px] sm:min-w-[210px] justify-center rounded-full px-8 sm:px-9 py-3.5 sm:py-4 text-sm sm:text-base md:text-lg font-bold flex items-center gap-2.5 btn-hero-secondary cursor-pointer text-center shadow-2xs"
+            className="w-full sm:w-auto min-w-[200px] sm:min-w-[230px] justify-center rounded-full px-9 sm:px-11 py-4 sm:py-4.5 text-base sm:text-lg font-bold flex items-center gap-2.5 btn-hero-secondary cursor-pointer text-center shadow-2xs"
           >
             <span suppressHydrationWarning>
               {t?.hero?.secondaryCta || 'Explore Models'}
             </span>
           </Link>
-        </motion.div>
-
-        {/* 5. Developer Trust Points & Tools Support */}
-        <motion.div
-          variants={itemVariants}
-          className="mt-10 sm:mt-12 pt-6 sm:pt-7 border-t border-neutral-200/90 w-full max-w-3xl flex flex-col items-center gap-3.5"
-        >
-          <div className="flex flex-wrap items-center justify-center gap-x-6 sm:gap-x-8 gap-y-2.5 text-xs sm:text-sm md:text-base text-neutral-800 font-semibold">
-            <span className="inline-flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 sm:w-4.5 sm:h-4.5 text-emerald-600 shrink-0" />
-              <span suppressHydrationWarning>{locale === 'id' ? 'Setup 2 menit di IDE' : '2-minute IDE Setup'}</span>
-            </span>
-            <span className="inline-flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 sm:w-4.5 sm:h-4.5 text-emerald-600 shrink-0" />
-              <span suppressHydrationWarning>{locale === 'id' ? 'QRIS Otomatis Instan' : 'Instant QRIS Top-up'}</span>
-            </span>
-            <span className="inline-flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 sm:w-4.5 sm:h-4.5 text-emerald-600 shrink-0" />
-              <span suppressHydrationWarning>{locale === 'id' ? 'Tanpa Kartu Kredit Valas' : 'No Credit Card Required'}</span>
-            </span>
-          </div>
-
-          <div className="flex flex-wrap items-center justify-center gap-2 text-xs sm:text-sm text-neutral-500 font-mono">
-            <span suppressHydrationWarning className="uppercase tracking-wider font-semibold text-neutral-400">
-              {locale === 'id' ? 'Mendukung:' : 'Compatible with:'}
-            </span>
-            <span className="text-neutral-800 font-medium">
-              Cursor · Cline · Windsurf · Claude Code · SDK OpenAI
-            </span>
-          </div>
         </motion.div>
       </motion.div>
     </section>

@@ -161,59 +161,14 @@ h6 {
   cursor: not-allowed;
 }
 
-/* ===== Landing Hero — Parallax Visual & Router Topology ===== */
 
-/* Animated tracer pulses flowing along topology wires (hub → node) */
-.topology-tracer {
-  stroke-dashoffset: 7.5;
-  animation: topology-tracer-flow 2.4s linear infinite;
-}
-
-@keyframes topology-tracer-flow {
-  to {
-    stroke-dashoffset: 0;
-  }
-}
-
-/* Radar pulse rings around the MORPHIC hub badge */
-.topology-radar {
-  animation: topology-radar-expand 3.2s cubic-bezier(0.16, 1, 0.3, 1) infinite;
-}
-
-.topology-radar-delayed {
-  animation-delay: 1.6s;
-}
-
-@keyframes topology-radar-expand {
-  0% {
-    transform: scale(0.6);
-    opacity: 0.8;
-  }
-
-  100% {
-    transform: scale(2.1);
-    opacity: 0;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .topology-tracer {
-    animation: none;
-  }
-
-  .topology-radar {
-    animation: none;
-    opacity: 0;
-  }
-}
-
-/* ===== Hero Entrance Staggered Animations (Linear / Vercel Micro Blur-Fade Up) ===== */
 @keyframes hero-stagger-fade-up {
   0% {
     opacity: 0;
     transform: translate3d(0, 16px, 0);
     filter: blur(6px);
   }
+
   100% {
     opacity: 1;
     transform: translate3d(0, 0, 0);
@@ -257,6 +212,7 @@ h6 {
 }
 
 @media (prefers-reduced-motion: reduce) {
+
   .hero-anim-badge,
   .hero-anim-h1,
   .hero-anim-h1-main,
@@ -271,7 +227,6 @@ h6 {
   }
 }
 
-/* ===== Hero CTA buttons (Crisp, High-Contrast & Anti-Blur) ===== */
 .btn-hero-primary {
   background: #09090b;
   color: #ffffff;
@@ -366,7 +321,6 @@ h6 {
   }
 }
 
-/* ===== Landing "How It Works" — Connected Setup Flow ===== */
 
 .steps-font {
   font-family: 'Manrope', 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
@@ -503,60 +457,6 @@ table.data td {
   border-bottom: 1px solid var(--border);
 }
 
-@keyframes packetFlow {
-  from {
-    stroke-dashoffset: 20;
-  }
-  to {
-    stroke-dashoffset: 0;
-  }
-}
-
-.topology-packet {
-  animation: packetFlow 2.4s linear infinite;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .topology-packet {
-    animation: none;
-  }
-}
-
-@keyframes heroTextShimmer {
-  0% {
-    background-position: 120% 0;
-  }
-  100% {
-    background-position: -120% 0;
-  }
-}
-
-.hero-shimmer-text {
-  background: linear-gradient(
-    110deg,
-    #09090b 0%,
-    #09090b 35%,
-    #52525b 50%,
-    #09090b 65%,
-    #09090b 100%
-  );
-  background-size: 220% 100%;
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  animation: heroTextShimmer 6s cubic-bezier(0.16, 1, 0.3, 1) infinite;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .hero-shimmer-text {
-    background: none;
-    -webkit-background-clip: initial;
-    -webkit-text-fill-color: initial;
-    color: #09090b;
-    animation: none;
-  }
-}
-
-/* ── Admin & Standard Dashboard Utility Classes ───────────────── */
 @layer components {
   .card {
     background-color: #ffffff;
@@ -588,6 +488,7 @@ table.data td {
   table.data thead th:first-child {
     border-top-left-radius: 0.5rem;
   }
+
   table.data thead th:last-child {
     border-top-right-radius: 0.5rem;
   }
@@ -621,6 +522,7 @@ table.data td {
     color: #ffffff;
     border: 1px solid #09090b;
   }
+
   .btn-primary:hover {
     background-color: #27272a;
     border-color: #27272a;
@@ -631,6 +533,7 @@ table.data td {
     color: #52525b;
     border: 1px solid rgba(228, 228, 231, 0.9);
   }
+
   .btn-ghost:hover {
     background-color: #f4f4f5;
     color: #09090b;
@@ -641,6 +544,7 @@ table.data td {
     color: #dc2626;
     border: 1px solid #fecaca;
   }
+
   .btn-danger:hover {
     background-color: #dc2626;
     color: #ffffff;
@@ -657,6 +561,7 @@ table.data td {
     outline: none;
     transition: border-color 150ms ease, box-shadow 150ms ease;
   }
+
   .input:focus {
     border-color: #09090b;
     box-shadow: 0 0 0 1px #09090b;
@@ -681,5 +586,3 @@ table.data td {
     border-color: #a7f3d0;
   }
 }
-
-

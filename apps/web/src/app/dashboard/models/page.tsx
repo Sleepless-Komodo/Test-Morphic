@@ -97,6 +97,8 @@ export default async function ModelsPage() {
         inputCreditsPer1m: s.models.inputCreditsPer1m,
         outputCreditsPer1m: s.models.outputCreditsPer1m,
         providerName: s.providers.name,
+        circuitBreakerState: s.providers.circuitBreakerState,
+        fallbackProviderId: s.models.fallbackProviderId,
       })
       .from(s.models)
       .innerJoin(s.providers, eq(s.models.providerId, s.providers.id))

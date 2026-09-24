@@ -33,8 +33,15 @@ app.onError((err, c) => {
     return err.getResponse();
   }
 
+  const isDev = process.env.NODE_ENV !== 'production';
   return c.json(
-    { error: { message: 'Internal Server Error', type: 'internal_error', code: 'internal_error' } },
+    {
+      error: {
+        message: isDev ? err.message : 'Internal Server Error',
+        type: 'internal_error',
+        code: 'internal_error',
+      },
+    },
     500,
   );
 });

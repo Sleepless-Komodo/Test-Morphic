@@ -41,7 +41,7 @@ export default function Footer() {
       onMouseMove={handleMouseMove}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
-      className="relative z-10 pt-16 pb-0 px-4 sm:px-8 lg:px-12 bg-black text-neutral-300 border-t border-neutral-900 overflow-hidden select-none transition-colors duration-300"
+      className="relative z-10 pt-16 pb-0 px-4 sm:px-8 lg:px-12 bg-black text-neutral-300 border-t border-neutral-900 overflow-hidden transition-colors duration-300"
     >
       {/* Interactive Cursor Spotlight Glow across the entire dark background */}
       <div
@@ -166,23 +166,23 @@ export default function Footer() {
                 <stop offset="100%" stopColor="#a1a1aa" />
               </linearGradient>
 
-              <filter id="laserBloom" x="-20%" y="-20%" width="140%" height="140%">
-                <feGaussianBlur stdDeviation="4" result="glow" />
-                <feComposite in="SourceGraphic" in2="glow" operator="over" />
+              <filter id="spotlightGlow" x="-10%" y="-10%" width="120%" height="120%">
+                <feGaussianBlur stdDeviation="1.5" result="softGlow" />
+                <feComposite in="SourceGraphic" in2="softGlow" operator="over" />
               </filter>
             </defs>
 
-            {/* Glowing Highlight directly under the cursor */}
+            {/* Crisp illuminated highlight directly under cursor spotlight */}
             <text
               x="50%"
               y="175"
               textAnchor="middle"
               fill="none"
               stroke="url(#cursorGlowStroke)"
-              strokeWidth="2.4"
+              strokeWidth="2.2"
               strokeLinejoin="round"
-              filter="url(#laserBloom)"
-              className="font-heading font-black drop-shadow-[0_0_24px_rgba(255,255,255,0.7)]"
+              filter="url(#spotlightGlow)"
+              className="font-heading font-black drop-shadow-[0_0_10px_rgba(255,255,255,0.35)]"
               fontSize="225"
               style={{ letterSpacing: '-0.02em' }}
             >

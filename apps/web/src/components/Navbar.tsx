@@ -7,7 +7,7 @@ import { usePathname } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { useTranslation } from '@/lib/i18n';
 import { useReducedMotionSafe } from '@/lib/use-reduced-motion-safe';
-import { ArrowUpRight, Menu, X, LayoutDashboard, LogIn, Globe, Search } from 'lucide-react';
+import { ArrowUpRight, Menu, X, LayoutDashboard, LogIn, Globe } from 'lucide-react';
 import CommandPalette from './CommandPalette';
 
 interface NavbarProps {
@@ -41,7 +41,6 @@ export default function Navbar({ session }: NavbarProps) {
 
   const isHome = pathname === '/';
 
-  // Toggle Command Palette with Ctrl+K / Cmd+K
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
@@ -53,7 +52,6 @@ export default function Navbar({ session }: NavbarProps) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // Scroll spy to highlight only the active in-view section on landing page
   React.useEffect(() => {
     if (!isHome) return;
 
@@ -65,7 +63,6 @@ export default function Navbar({ session }: NavbarProps) {
         const el = document.getElementById(id);
         if (el) {
           const rect = el.getBoundingClientRect();
-          // Active when the section intersects the upper viewport threshold
           if (rect.top <= 240 && rect.bottom >= 120) {
             currentSection = `#${id}`;
           }
@@ -108,19 +105,16 @@ export default function Navbar({ session }: NavbarProps) {
       className="fixed top-4 sm:top-5 inset-x-0 mx-auto z-50 w-[95%] max-w-6xl"
     >
       <div className="relative bg-white/95 backdrop-blur-xl text-neutral-900 border border-neutral-200/90 rounded-full px-5 sm:px-7 py-3.5 shadow-[0_6px_28px_rgba(0,0,0,0.06)] flex items-center justify-between transition-all duration-200">
-        {/* Left: Brand Logo */}
-        <Link href="/" className="flex items-center gap-3 group shrink-0">
+        {/* Left: Brand Logo (Morphic Clean Black Logo Lockup) */}
+        <Link href="/" className="flex items-center group shrink-0">
           <Image
-            src="/morphic-symbol.jpg"
+            src="/morphic-brand-clean.png"
             alt="Morphic logo"
-            width={36}
-            height={36}
+            width={135}
+            height={32}
             priority
-            className="w-9 h-9 sm:w-10 sm:h-10 rounded-full object-cover ring-1 ring-neutral-200 shadow-xs transition-transform group-hover:scale-105 transform-gpu"
+            className="h-7 sm:h-8 w-auto object-contain transition-transform group-hover:scale-105 transform-gpu"
           />
-          <span className="font-heading font-extrabold text-xl sm:text-2xl tracking-tight text-neutral-950">
-            Morphic
-          </span>
         </Link>
 
         {/* Center: Clean Concise Links with generous breathing room */}
@@ -146,17 +140,6 @@ export default function Navbar({ session }: NavbarProps) {
 
         {/* Right: Action Buttons & Far-Right Language Switcher */}
         <div className="hidden md:flex items-center gap-2 lg:gap-3 shrink-0">
-          {/* Quick Search Button — Clean & Developer-Standard (No AI slop symbols) */}
-          <button
-            type="button"
-            onClick={() => setCommandPaletteOpen(true)}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-neutral-100/90 hover:bg-neutral-200/80 border border-neutral-200/90 text-neutral-500 hover:text-neutral-950 text-xs font-medium transition-all cursor-pointer select-none"
-            title="Search models & docs (Ctrl + K)"
-          >
-            <Search className="w-3.5 h-3.5 text-neutral-400" />
-            <span className="hidden xl:inline text-neutral-500 text-xs font-medium">Search...</span>
-            <span className="text-[10px] font-mono font-semibold text-neutral-400">Ctrl K</span>
-          </button>
           {session ? (
             <Link
               href="/dashboard"
@@ -190,7 +173,8 @@ export default function Navbar({ session }: NavbarProps) {
           {/* Language Switcher Pill - Stationed on the far right edge */}
           <button
             onClick={toggleLanguage}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-neutral-200 hover:border-neutral-300 text-xs sm:text-sm font-mono font-bold text-neutral-800 hover:text-neutral-950 bg-neutral-50 hover:bg-neutral-100 transition-all cursor-pointer select-none"
+            aria-label="Switch Language (ID / EN)"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-neutral-200 hover:border-neutral-300 text-xs sm:text-sm font-mono font-bold text-neutral-800 hover:text-neutral-950 bg-neutral-50 hover:bg-neutral-100 transition-all cursor-pointer select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
             title="Switch Language (ID / EN)"
           >
             <Globe className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
@@ -201,23 +185,16 @@ export default function Navbar({ session }: NavbarProps) {
         {/* Mobile menu toggle & Language toggle (below md: 768px) */}
         <div className="md:hidden flex items-center gap-2">
           <button
-            type="button"
-            onClick={() => setCommandPaletteOpen(true)}
-            className="p-2 text-neutral-600 hover:text-neutral-950 rounded-full border border-neutral-200 bg-neutral-100"
-            aria-label="Search"
-          >
-            <Search className="h-4 w-4" />
-          </button>
-          <button
             onClick={toggleLanguage}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-neutral-200 text-xs font-mono font-bold uppercase text-neutral-800 bg-neutral-100"
+            aria-label="Switch Language (ID / EN)"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-neutral-200 text-xs font-mono font-bold uppercase text-neutral-800 bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
           >
             <Globe className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
             <span suppressHydrationWarning>{locale}</span>
           </button>
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="p-2 text-neutral-800 hover:text-neutral-950 rounded-lg"
+            className="p-2 text-neutral-800 hover:text-neutral-950 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
             aria-label="Toggle Navigation Menu"
           >
             {mobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}

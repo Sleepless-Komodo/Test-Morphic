@@ -1,7 +1,18 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { ExternalLink, Clock, CheckCircle2, XCircle, Loader2, RefreshCw } from 'lucide-react';
+import {
+  ExternalLink,
+  Clock,
+  CheckCircle2,
+  XCircle,
+  Loader2,
+  RefreshCw,
+  QrCode,
+  Building2,
+  Wallet,
+  X,
+} from 'lucide-react';
 import { useTranslation } from '@/lib/i18n';
 import { formatCredits } from '@/lib/utils';
 import { PayPalButton } from '@/components/PayPalButton';
@@ -184,7 +195,6 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
         window.open(data.paymentUrl, '_blank', 'noopener,noreferrer');
       }
 
-      // Start polling for completion
       startPolling(data.paymentId);
     } catch (err: any) {
       if (newWindow) newWindow.close();
@@ -208,6 +218,11 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
   };
 
   const pkgName = locale === 'en' && pkg.nameEn ? pkg.nameEn : pkg.name;
+  const selectedChannel = PAYMENT_CHANNELS.find((c) => c.code === selectedMethod) ?? PAYMENT_CHANNELS[0];
+
+  const filteredChannels = categoryFilter === 'all'
+    ? PAYMENT_CHANNELS
+    : PAYMENT_CHANNELS.filter((c) => c.category === categoryFilter);
 
   const formatCountdown = (secs: number) => {
     const m = Math.floor(secs / 60);
@@ -222,7 +237,7 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
       <div
-        className="bg-white rounded-3xl border border-neutral-200 max-w-sm w-full shadow-2xl overflow-hidden"
+        className="bg-white rounded-2xl border border-neutral-200 max-w-md w-full max-h-[90vh] shadow-2xl overflow-hidden flex flex-col"
         role="dialog"
         aria-modal="true"
         aria-label={`Checkout: ${pkgName}`}
@@ -235,10 +250,10 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
           <button
             id="checkout-modal-close"
             onClick={onClose}
-            aria-label="Close"
-            className="text-neutral-400 hover:text-neutral-700 transition-colors text-lg cursor-pointer"
+            aria-label={locale === 'en' ? 'Close modal' : 'Tutup modal'}
+            className="text-neutral-500 hover:text-neutral-900 transition-colors cursor-pointer p-1 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
           >
-            ✕
+            <X className="h-4 w-4" />
           </button>
         </div>
 
@@ -291,19 +306,23 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
 
           {!isUSD && status === 'waiting' && (
             <div className="space-y-3">
-              <div className="p-4 rounded-2xl bg-blue-50 border border-blue-100 text-center space-y-2">
-                <div className="flex items-center justify-center gap-2 text-blue-700 text-sm font-semibold">
-                  <Loader2 className="h-4 w-4 animate-spin" />
+              <div className="p-4 rounded-2xl bg-neutral-50 border border-neutral-200 text-center space-y-2.5">
+                <div className="flex items-center justify-center gap-2 text-neutral-900 text-sm font-semibold">
+                  <Loader2 className="h-4 w-4 animate-spin text-neutral-800" />
                   <span>{locale === 'en' ? 'Waiting for payment…' : 'Menunggu pembayaran…'}</span>
                 </div>
-                <p className="text-xs text-blue-600">
+                <div className="text-xs text-neutral-700 font-medium">
+                  {locale === 'en' ? 'Method: ' : 'Metode: '}
+                  <span className="font-bold text-neutral-950">{selectedChannel.name}</span>
+                </div>
+                <p className="text-xs text-neutral-600 leading-relaxed">
                   {locale === 'en'
                     ? 'Complete payment in the Duitku tab. This page will update automatically.'
                     : 'Selesaikan pembayaran di tab Duitku. Halaman ini akan otomatis terupdate.'}
                 </p>
                 {secondsLeft !== null && secondsLeft > 0 && (
-                  <div className="flex items-center justify-center gap-1 text-xs text-blue-500 font-mono">
-                    <Clock className="h-3 w-3" />
+                  <div className="flex items-center justify-center gap-1 text-xs text-neutral-500 font-mono font-bold">
+                    <Clock className="h-3.5 w-3.5 text-neutral-500" />
                     <span>{formatCountdown(secondsLeft)}</span>
                   </div>
                 )}
@@ -313,7 +332,7 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
                   href={paymentUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center justify-center gap-1.5 text-xs text-neutral-500 hover:text-neutral-700 transition-colors"
+                  className="flex items-center justify-center gap-1.5 text-xs text-neutral-600 hover:text-neutral-900 transition-colors py-1 font-medium"
                 >
                   <ExternalLink className="h-3 w-3" />
                   {locale === 'en' ? 'Reopen payment page' : 'Buka ulang halaman pembayaran'}
@@ -337,26 +356,28 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
           )}
 
           {status === 'paid' && (
-            <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-100 text-center space-y-1">
+            <div className="p-5 rounded-2xl bg-emerald-50 border border-emerald-100 text-center space-y-1.5">
               <CheckCircle2 className="h-8 w-8 text-emerald-500 mx-auto" />
-              <div className="font-bold text-emerald-800 text-sm">
+              <div className="font-bold text-emerald-900 text-sm">
                 {locale === 'en' ? 'Payment successful!' : 'Pembayaran berhasil!'}
               </div>
-              <div className="text-xs text-emerald-600">
+              <div className="text-xs text-emerald-700">
                 +{formatCredits(pkg.creditAllowance)} {locale === 'en' ? 'credits added' : 'kredit ditambahkan'}
               </div>
             </div>
           )}
 
+          {/* Failed State */}
           {status === 'failed' && (
-            <div className="p-4 rounded-2xl bg-red-50 border border-red-100 text-center space-y-1">
-              <XCircle className="h-8 w-8 text-red-400 mx-auto" />
-              <div className="font-bold text-red-800 text-sm">
+            <div className="p-5 rounded-xl bg-red-50 border border-red-100 text-center space-y-1.5">
+              <XCircle className="h-8 w-8 text-red-500 mx-auto" />
+              <div className="font-bold text-red-900 text-sm">
                 {locale === 'en' ? 'Payment failed or expired.' : 'Pembayaran gagal atau kedaluwarsa.'}
               </div>
             </div>
           )}
 
+          {/* Error State */}
           {status === 'error' && (
             <div className="p-3 rounded-xl bg-red-50 border border-red-100 text-xs text-red-700 text-center space-y-2">
               <div>{errorMsg ?? (locale === 'en' ? 'An error occurred.' : 'Terjadi kesalahan.')}</div>
@@ -396,10 +417,10 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
                   pollAttemptsRef.current = Math.max(0, pollAttemptsRef.current - 5);
                 }
               }}
-              className="w-full py-2.5 rounded-2xl border border-neutral-200 hover:border-neutral-300 text-neutral-700 text-xs font-medium transition-all cursor-pointer flex items-center justify-center gap-2"
+              className="w-full py-2.5 rounded-xl border border-neutral-200 hover:border-neutral-300 text-neutral-700 text-xs font-medium transition-all cursor-pointer flex items-center justify-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
             >
               <RefreshCw className="h-3.5 w-3.5" />
-              {locale === 'en' ? 'I have paid — check again' : 'Sudah bayar — cek sekarang'}
+              {locale === 'en' ? 'I have paid, check again' : 'Sudah bayar, cek sekarang'}
             </button>
           )}
 
@@ -407,7 +428,7 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
             <button
               id="checkout-close-btn"
               onClick={onClose}
-              className="w-full py-3 rounded-2xl bg-neutral-950 hover:bg-neutral-800 text-white text-sm font-bold transition-all cursor-pointer"
+              className="w-full py-3 rounded-xl bg-neutral-950 hover:bg-neutral-800 text-white text-sm font-bold transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
             >
               {locale === 'en' ? 'Close' : 'Tutup'}
             </button>
@@ -417,7 +438,7 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
             <button
               id="checkout-cancel-btn"
               onClick={onClose}
-              className="w-full py-2 text-xs text-neutral-400 hover:text-neutral-600 transition-colors cursor-pointer"
+              className="w-full py-2 text-xs text-neutral-400 hover:text-neutral-600 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
             >
               {locale === 'en' ? 'Cancel' : 'Batal'}
             </button>

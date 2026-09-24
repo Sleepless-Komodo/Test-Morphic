@@ -43,7 +43,6 @@ export async function fetchBackendApi<T = any>(
 
   const headers = new Headers(options.headers ?? {});
 
-  // Set Content-Type for non-GET requests that don't already specify one
   if (!headers.has('Content-Type') && options.method && options.method !== 'GET') {
     headers.set('Content-Type', 'application/json');
   }

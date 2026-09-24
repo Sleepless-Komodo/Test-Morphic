@@ -5,6 +5,7 @@ import { getSessionWithRetry } from '@/lib/actions';
 import { db, schema as s } from '@morphic/db';
 import { getBalance } from '@morphic/db/billing';
 import DeveloperGateway, { ModelItem } from '@/components/DeveloperGateway';
+import { fetchBackendApi } from '@/lib/api-client';
 
 /**
  * Fetches active AI models and their provider info directly from PostgreSQL.
@@ -83,12 +84,33 @@ export default async function DashboardPage() {
   let modelCount = 0;
   let avgCreditsPer1m = 0;
   let minInputRate = 0;
+  let balanceUpdatedAt: string | null = null;
 
   if (session?.user?.id) {
     try {
-      userBalance = await getBalance(session.user.id);
+      const balRes = await fetchBackendApi<{ credits: number; updated_at?: string | null }>('/v1/account/balance');
+      if (balRes.data?.credits != null) {
+        userBalance = balRes.data.credits;
+        balanceUpdatedAt = balRes.data.updated_at ?? null;
+      } else {
+        userBalance = await getBalance(session.user.id);
+      }
     } catch {
-      userBalance = 0;
+      try {
+        const [bal] = await db
+          .select({ credits: s.balances.credits, updatedAt: s.balances.updatedAt })
+          .from(s.balances)
+          .where(eq(s.balances.userId, session.user.id))
+          .limit(1);
+        if (bal) {
+          userBalance = bal.credits;
+          balanceUpdatedAt = bal.updatedAt ? bal.updatedAt.toISOString() : null;
+        } else {
+          userBalance = 0;
+        }
+      } catch {
+        userBalance = 0;
+      }
     }
 
     try {
@@ -120,28 +142,52 @@ export default async function DashboardPage() {
     }
 
     try {
-      recentRequests = await db
-        .select({
-          id: s.usageRecords.id,
-          requestId: s.usageRecords.requestId,
-          model: s.models.displayName,
-          publicModelId: s.models.publicModelId,
-          promptTokens: s.usageRecords.promptTokens,
-          completionTokens: s.usageRecords.completionTokens,
-          totalTokens: s.usageRecords.totalTokens,
-          credits: s.usageRecords.creditsConsumed,
-          status: s.usageRecords.status,
-          streamed: s.usageRecords.streamed,
-          latencyMs: s.usageRecords.latencyMs,
-          createdAt: s.usageRecords.createdAt,
-        })
-        .from(s.usageRecords)
-        .leftJoin(s.models, eq(s.usageRecords.modelId, s.models.id))
-        .where(eq(s.usageRecords.userId, session.user.id))
-        .orderBy(desc(s.usageRecords.createdAt))
-        .limit(6);
+      const usageRes = await fetchBackendApi<{ data: any[] }>('/v1/account/usage?limit=6');
+      if (usageRes.data?.data && Array.isArray(usageRes.data.data)) {
+        recentRequests = usageRes.data.data.map((u: any) => ({
+          id: u.id,
+          requestId: u.request_id,
+          model: u.model,
+          publicModelId: u.model,
+          promptTokens: u.prompt_tokens,
+          completionTokens: u.completion_tokens,
+          totalTokens: u.total_tokens,
+          credits: u.credits_consumed,
+          status: u.status,
+          streamed: u.streamed,
+          latencyMs: u.latency_ms,
+          createdAt: new Date(u.created_at),
+        }));
+      }
     } catch (err) {
-      console.warn('[DashboardPage] Database offline, showing empty recent requests:', err);
+      console.warn('[DashboardPage] Backend API usage fetch failed, trying DB:', err);
+    }
+
+    if (recentRequests.length === 0) {
+      try {
+        recentRequests = await db
+          .select({
+            id: s.usageRecords.id,
+            requestId: s.usageRecords.requestId,
+            model: s.models.displayName,
+            publicModelId: s.models.publicModelId,
+            promptTokens: s.usageRecords.promptTokens,
+            completionTokens: s.usageRecords.completionTokens,
+            totalTokens: s.usageRecords.totalTokens,
+            credits: s.usageRecords.creditsConsumed,
+            status: s.usageRecords.status,
+            streamed: s.usageRecords.streamed,
+            latencyMs: s.usageRecords.latencyMs,
+            createdAt: s.usageRecords.createdAt,
+          })
+          .from(s.usageRecords)
+          .leftJoin(s.models, eq(s.usageRecords.modelId, s.models.id))
+          .where(eq(s.usageRecords.userId, session.user.id))
+          .orderBy(desc(s.usageRecords.createdAt))
+          .limit(6);
+      } catch (err) {
+        console.warn('[DashboardPage] Database offline, showing empty recent requests:', err);
+      }
     }
   }
 
@@ -167,11 +213,14 @@ export default async function DashboardPage() {
     <DeveloperGateway
       session={session}
       userBalance={userBalance}
+      balanceUpdatedAt={balanceUpdatedAt}
       initialModels={initialModels}
       recentRequests={recentRequests}
       serverModelCount={modelCount}
       serverAvgCreditsPer1m={avgCreditsPer1m}
       serverMinInputRate={minInputRate}
+      activeKeys={activeKeys}
+      serverUsage={usage}
     />
   );
 }

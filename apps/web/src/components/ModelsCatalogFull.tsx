@@ -4,10 +4,10 @@ import React, { useState, useMemo } from 'react';
 import { ALL_MODELS, ModelItem } from '@/lib/models-data';
 import ModelCard from './ModelCard';
 import { useTranslation } from '@/lib/i18n';
-import { Search, SlidersHorizontal, Sparkles } from 'lucide-react';
+import { Search, SlidersHorizontal, Bot } from 'lucide-react';
 
 export default function ModelsCatalogFull({ isLoggedIn = false }: { isLoggedIn?: boolean }) {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
 
@@ -40,7 +40,7 @@ export default function ModelsCatalogFull({ isLoggedIn = false }: { isLoggedIn?:
       {/* Header Section */}
       <div className="text-center max-w-3xl mx-auto mb-12">
         <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-neutral-100 border border-neutral-200 text-neutral-800 text-xs font-semibold mb-4 shadow-sm">
-          <Sparkles className="h-3.5 w-3.5 text-neutral-950" />
+          <Bot className="h-3.5 w-3.5 text-neutral-950" />
           <span>{t.models.badge}</span>
         </div>
 
@@ -63,6 +63,7 @@ export default function ModelsCatalogFull({ isLoggedIn = false }: { isLoggedIn?:
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder={t.models.searchPlaceholder}
+            aria-label={t.models.searchPlaceholder}
             className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-neutral-300 bg-white text-xs sm:text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-950 focus:border-transparent transition-all shadow-sm"
           />
         </div>
@@ -95,7 +96,7 @@ export default function ModelsCatalogFull({ isLoggedIn = false }: { isLoggedIn?:
             onClick={() => setSearchQuery('')}
             className="text-neutral-900 underline hover:text-black cursor-pointer"
           >
-            Clear search
+            {locale === 'id' ? 'Hapus pencarian' : 'Clear search'}
           </button>
         )}
       </div>
@@ -116,9 +117,9 @@ export default function ModelsCatalogFull({ isLoggedIn = false }: { isLoggedIn?:
                 setSearchQuery('');
                 setSelectedCategory('All');
               }}
-              className="px-4 py-2 rounded-xl bg-neutral-950 text-white text-xs font-semibold hover:bg-neutral-800 transition-colors"
+              className="px-4 py-2 rounded-xl bg-neutral-950 text-white text-xs font-semibold hover:bg-neutral-800 transition-colors cursor-pointer"
             >
-              Reset Filters
+              {locale === 'id' ? 'Reset Filter' : 'Reset Filters'}
             </button>
           </div>
         )}
