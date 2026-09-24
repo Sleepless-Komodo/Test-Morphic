@@ -14,97 +14,14 @@ import {
   X,
 } from 'lucide-react';
 import { useTranslation } from '@/lib/i18n';
-import { formatCredits, cn } from '@/lib/utils';
+import { formatCredits } from '@/lib/utils';
+import { PayPalButton } from '@/components/PayPalButton';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8787';
 const POLL_INTERVAL_MS = 3000;
 const MAX_POLL_ATTEMPTS = 60; // 3 min max polling
 
-type PaymentStatus = 'idle' | 'creating' | 'waiting' | 'paid' | 'failed' | 'error';
-type PaymentCategory = 'all' | 'qris' | 'va' | 'ewallet';
-
-export interface PaymentChannel {
-  code: string;
-  name: string;
-  category: 'qris' | 'va' | 'ewallet';
-  badge?: string;
-  description: string;
-  descriptionEn: string;
-}
-
-export const PAYMENT_CHANNELS: PaymentChannel[] = [
-  {
-    code: 'SP',
-    name: 'QRIS (ShopeePay / Universal)',
-    category: 'qris',
-    badge: 'Rekomendasi',
-    description: 'GoPay, OVO, DANA, BCA, Mandiri & Semua Aplikasi Bank',
-    descriptionEn: 'GoPay, OVO, DANA, BCA, Mandiri & All Banking Apps',
-  },
-  {
-    code: 'NQ',
-    name: 'QRIS (Nobu Bank)',
-    category: 'qris',
-    description: 'Alternatif QRIS instan bebas biaya admin',
-    descriptionEn: 'Instant QRIS alternative zero admin fee',
-  },
-  {
-    code: 'BC',
-    name: 'BCA Virtual Account',
-    category: 'va',
-    description: 'Transfer via BCA Mobile, myBCA, KlikBCA, atau ATM',
-    descriptionEn: 'Transfer via BCA Mobile, myBCA, KlikBCA, or ATM',
-  },
-  {
-    code: 'M2',
-    name: 'Mandiri Virtual Account',
-    category: 'va',
-    description: 'Transfer via Livin by Mandiri atau ATM',
-    descriptionEn: 'Transfer via Livin by Mandiri or ATM',
-  },
-  {
-    code: 'BN',
-    name: 'BNI Virtual Account',
-    category: 'va',
-    description: 'Transfer via BNI Mobile Banking atau ATM',
-    descriptionEn: 'Transfer via BNI Mobile Banking or ATM',
-  },
-  {
-    code: 'BR',
-    name: 'BRI Virtual Account (BRIVA)',
-    category: 'va',
-    description: 'Transfer via BRImo atau ATM BRI',
-    descriptionEn: 'Transfer via BRImo or ATM BRI',
-  },
-  {
-    code: 'BT',
-    name: 'Permata Virtual Account',
-    category: 'va',
-    description: 'Transfer via PermataMobile X atau ATM',
-    descriptionEn: 'Transfer via PermataMobile X or ATM',
-  },
-  {
-    code: 'OV',
-    name: 'OVO',
-    category: 'ewallet',
-    description: 'Pembayaran langsung via aplikasi OVO',
-    descriptionEn: 'Direct payment via OVO app',
-  },
-  {
-    code: 'DA',
-    name: 'DANA',
-    category: 'ewallet',
-    description: 'Pembayaran instan akun DANA',
-    descriptionEn: 'Instant payment with DANA account',
-  },
-  {
-    code: 'SA',
-    name: 'ShopeePay App',
-    category: 'ewallet',
-    description: 'Buka langsung aplikasi ShopeePay',
-    descriptionEn: 'Direct opening in ShopeePay app',
-  },
-];
+type PaymentStatus = 'idle' | 'creating' | 'waiting' | 'pending_paypal' | 'paid' | 'failed' | 'error';
 
 interface CheckoutModalProps {
   pkg: {
@@ -114,19 +31,24 @@ interface CheckoutModalProps {
     description?: string;
     descriptionEn?: string;
     priceCents: number;
+    currency?: string;
     creditAllowance: number;
     durationHours?: number;
   };
+  existingPayment?: {
+    id: string;
+    externalId?: string;
+    provider: string;
+    status: string;
+  } | null;
   onClose: () => void;
   onSuccess: (creditsAdded: number) => void;
 }
 
-export function CheckoutModal({ pkg, onClose, onSuccess }: CheckoutModalProps) {
+export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: CheckoutModalProps) {
   const { t, locale } = useTranslation();
   const [status, setStatus] = useState<PaymentStatus>('idle');
-  const [selectedMethod, setSelectedMethod] = useState<string>('SP');
-  const [categoryFilter, setCategoryFilter] = useState<PaymentCategory>('all');
-  const [paymentId, setPaymentId] = useState<string | null>(null);
+  const [paymentId, setPaymentId] = useState<string | null>(existingPayment?.id ?? null);
   const [paymentUrl, setPaymentUrl] = useState<string | null>(null);
   const [expiresAt, setExpiresAt] = useState<Date | null>(null);
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
@@ -134,6 +56,8 @@ export function CheckoutModal({ pkg, onClose, onSuccess }: CheckoutModalProps) {
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollAttemptsRef = useRef(0);
   const mountedRef = useRef(true);
+
+  const isUSD = pkg.currency === 'USD';
 
   useEffect(() => {
     mountedRef.current = true;
@@ -143,19 +67,7 @@ export function CheckoutModal({ pkg, onClose, onSuccess }: CheckoutModalProps) {
     };
   }, []);
 
-  // Countdown timer
-  useEffect(() => {
-    if (!expiresAt) return;
-    const tick = () => {
-      const secs = Math.max(0, Math.round((expiresAt.getTime() - Date.now()) / 1000));
-      if (mountedRef.current) setSecondsLeft(secs);
-    };
-    tick();
-    const id = setInterval(tick, 1000);
-    return () => clearInterval(id);
-  }, [expiresAt]);
-
-  // Polling loop
+  // Polling loop for Duitku
   const startPolling = useCallback((pid: string) => {
     const poll = async () => {
       if (!mountedRef.current) return;
@@ -196,7 +108,55 @@ export function CheckoutModal({ pkg, onClose, onSuccess }: CheckoutModalProps) {
     pollRef.current = setTimeout(poll, POLL_INTERVAL_MS);
   }, [pkg.creditAllowance, onSuccess]);
 
-  const handleCreatePayment = async () => {
+  // Resume existing pending payment
+  useEffect(() => {
+    if (existingPayment) {
+      setPaymentId(existingPayment.id);
+      if (existingPayment.provider === 'paypal') {
+        fetch(`${API_URL}/v1/payments/paypal/verify/${existingPayment.id}`, {
+          credentials: 'include',
+        })
+          .then((res) => res.json())
+          .then((data) => {
+            if (!mountedRef.current) return;
+            if (data.status === 'paid') {
+              setStatus('paid');
+              onSuccess(pkg.creditAllowance);
+            } else if (data.status === 'pending_paypal') {
+              setStatus('pending_paypal');
+            } else if (data.status === 'failed' || data.status === 'expired') {
+              setStatus('failed');
+            }
+          })
+          .catch(() => {});
+      } else {
+        // Verify current status from API first before resuming
+        fetch(`${API_URL}/v1/payments/${existingPayment.id}`, {
+          credentials: 'include',
+        })
+          .then((res) => res.json())
+          .then((data) => {
+            if (!mountedRef.current) return;
+            if (data.status === 'paid') {
+              setStatus('paid');
+              onSuccess(pkg.creditAllowance);
+            } else if (data.status === 'failed' || data.status === 'expired') {
+              setStatus('failed');
+            } else {
+              setStatus('idle');
+            }
+          })
+          .catch(() => {
+            if (mountedRef.current) setStatus('idle');
+          });
+      }
+    }
+  }, [existingPayment, onSuccess, pkg.creditAllowance]);
+
+  const handleCreateDuitkuPayment = async () => {
+    // Open new window synchronously on user gesture to avoid popup blocker
+    const newWindow = typeof window !== 'undefined' ? window.open('about:blank', '_blank') : null;
+
     setStatus('creating');
     setErrorMsg(null);
 
@@ -207,7 +167,6 @@ export function CheckoutModal({ pkg, onClose, onSuccess }: CheckoutModalProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           packageId: pkg.id,
-          paymentMethod: selectedMethod,
         }),
       });
 
@@ -219,6 +178,7 @@ export function CheckoutModal({ pkg, onClose, onSuccess }: CheckoutModalProps) {
       };
 
       if (!res.ok || !data.paymentUrl || !data.paymentId) {
+        if (newWindow) newWindow.close();
         throw new Error(data.error?.message ?? 'Gagal membuat transaksi');
       }
 
@@ -228,25 +188,34 @@ export function CheckoutModal({ pkg, onClose, onSuccess }: CheckoutModalProps) {
       setStatus('waiting');
       pollAttemptsRef.current = 0;
 
-      // Open Duitku payment page in new tab
-      window.open(data.paymentUrl, '_blank', 'noopener,noreferrer');
+      // Navigate pre-opened window to payment URL or fallback
+      if (newWindow && !newWindow.closed) {
+        newWindow.location.href = data.paymentUrl;
+      } else {
+        window.open(data.paymentUrl, '_blank', 'noopener,noreferrer');
+      }
 
       startPolling(data.paymentId);
     } catch (err: any) {
+      if (newWindow) newWindow.close();
       setStatus('error');
       setErrorMsg(err?.message ?? 'Terjadi kesalahan, coba lagi.');
     }
   };
 
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && status !== 'creating') {
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose, status]);
+  const handlePayPalSuccess = (credits: number) => {
+    setStatus('paid');
+    onSuccess(credits);
+  };
+
+  const handlePayPalPending = () => {
+    setStatus('pending_paypal');
+  };
+
+  const handlePayPalError = (msg: string) => {
+    setStatus('error');
+    setErrorMsg(msg);
+  };
 
   const pkgName = locale === 'en' && pkg.nameEn ? pkg.nameEn : pkg.name;
   const selectedChannel = PAYMENT_CHANNELS.find((c) => c.code === selectedMethod) ?? PAYMENT_CHANNELS[0];
@@ -261,15 +230,12 @@ export function CheckoutModal({ pkg, onClose, onSuccess }: CheckoutModalProps) {
     return `${m}:${s.toString().padStart(2, '0')}`;
   };
 
+  const formattedPrice = isUSD
+    ? `$ ${(pkg.priceCents / 100).toFixed(2)} USD`
+    : `Rp ${(pkg.priceCents).toLocaleString('id-ID')}`;
+
   return (
-    <div
-      onClick={(e) => {
-        if (e.target === e.currentTarget && status !== 'creating') {
-          onClose();
-        }
-      }}
-      className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4 animate-in fade-in"
-    >
+    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
       <div
         className="bg-white rounded-2xl border border-neutral-200 max-w-md w-full max-h-[90vh] shadow-2xl overflow-hidden flex flex-col"
         role="dialog"
@@ -277,10 +243,10 @@ export function CheckoutModal({ pkg, onClose, onSuccess }: CheckoutModalProps) {
         aria-label={`Checkout: ${pkgName}`}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-100 shrink-0">
-          <h3 className="text-sm font-semibold text-neutral-900 font-heading">
-            {locale === 'en' ? 'Checkout via Duitku' : 'Checkout via Duitku'}
-          </h3>
+        <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-100">
+          <span className="text-xs font-mono font-bold text-neutral-500 uppercase tracking-widest">
+            {isUSD ? 'Checkout via PayPal' : 'Checkout via Duitku'}
+          </span>
           <button
             id="checkout-modal-close"
             onClick={onClose}
@@ -291,145 +257,54 @@ export function CheckoutModal({ pkg, onClose, onSuccess }: CheckoutModalProps) {
           </button>
         </div>
 
-        {/* Scrollable Body */}
-        <div className="px-6 py-5 space-y-4 overflow-y-auto flex-1">
-          {/* Package Info Card */}
-          <div className="p-4 rounded-xl bg-neutral-50 border border-neutral-200/80">
-            <div className="flex items-start justify-between gap-2">
-              <div>
-                <div className="text-base font-bold text-neutral-950 font-heading leading-tight">{pkgName}</div>
-                <div className="text-xs text-neutral-500 mt-1 font-mono">
-                  +{formatCredits(pkg.creditAllowance)} credits
-                  {pkg.durationHours ? ` · ${pkg.durationHours >= 24 ? `${pkg.durationHours / 24} hari` : `${pkg.durationHours} jam`}` : ''}
-                </div>
-              </div>
-              <div className="text-xl font-black text-neutral-950 font-mono shrink-0">
-                Rp {pkg.priceCents.toLocaleString('id-ID')}
-              </div>
+        {/* Body */}
+        <div className="px-6 py-5 space-y-5">
+          {/* Package info */}
+          <div className="text-center">
+            <div className="text-lg font-extrabold text-neutral-950 font-heading">{pkgName}</div>
+            <div className="text-3xl font-black text-neutral-950 mt-1 font-mono">
+              {formattedPrice}
+            </div>
+            <div className="text-xs text-neutral-500 mt-1 font-mono">
+              +{formatCredits(pkg.creditAllowance)} credits
+              {pkg.durationHours ? ` · ${pkg.durationHours >= 24 ? `${pkg.durationHours / 24} hari` : `${pkg.durationHours} jam`}` : ''}
             </div>
           </div>
 
-          {/* Payment Method Selector (Only visible during idle state) */}
-          {status === 'idle' && (
-            <div className="space-y-2.5">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-neutral-800">
-                  {t.dashboard.selectPaymentMethod}
-                </span>
-                <span className="text-[11px] text-neutral-500 font-medium">
-                  {selectedChannel.name.split(' ')[0]}
-                </span>
-              </div>
-
-              {/* Category Filter Pills */}
-              <div className="flex items-center gap-1 p-1 bg-neutral-100 rounded-xl">
-                {[
-                  { id: 'all', label: t.dashboard.allPaymentMethods },
-                  { id: 'qris', label: t.dashboard.qrisCategory },
-                  { id: 'va', label: t.dashboard.vaCategory },
-                  { id: 'ewallet', label: t.dashboard.ewalletCategory },
-                ].map((tab) => (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    onClick={() => setCategoryFilter(tab.id as PaymentCategory)}
-                    className={cn(
-                      'flex-1 py-1 px-1.5 text-[11px] font-medium rounded-lg transition-all cursor-pointer text-center truncate focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950',
-                      categoryFilter === tab.id
-                        ? 'bg-white text-neutral-950 shadow-2xs font-semibold'
-                        : 'text-neutral-500 hover:text-neutral-900'
-                    )}
-                  >
-                    {tab.label}
-                  </button>
-                ))}
-              </div>
-
-              {/* Channel list */}
-              <div
-                className="space-y-1.5 max-h-56 overflow-y-auto pr-1"
-                role="radiogroup"
-                aria-label={t.dashboard.selectPaymentMethod}
-              >
-                {filteredChannels.map((channel) => {
-                  const isSelected = selectedMethod === channel.code;
-                  return (
-                    <label
-                      key={channel.code}
-                      htmlFor={`channel-${channel.code}`}
-                      className={cn(
-                        'flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer text-left select-none focus-within:ring-2 focus-within:ring-neutral-950',
-                        isSelected
-                          ? 'border-neutral-950 bg-neutral-50/90 ring-1 ring-neutral-950 shadow-2xs'
-                          : 'border-neutral-200 hover:border-neutral-300 hover:bg-neutral-50/40 bg-white'
-                      )}
-                    >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div
-                          className={cn(
-                            'p-2 rounded-lg shrink-0 transition-colors',
-                            isSelected ? 'bg-neutral-950 text-white' : 'bg-neutral-100 text-neutral-700'
-                          )}
-                        >
-                          {channel.category === 'qris' ? (
-                            <QrCode className="h-4 w-4" />
-                          ) : channel.category === 'va' ? (
-                            <Building2 className="h-4 w-4" />
-                          ) : (
-                            <Wallet className="h-4 w-4" />
-                          )}
-                        </div>
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-bold text-neutral-950 truncate">
-                              {channel.name}
-                            </span>
-                            {channel.badge && (
-                              <span className="text-[11px] font-medium text-neutral-700 bg-neutral-100 px-2 py-0.5 rounded-md shrink-0">
-                                {channel.badge}
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-[11px] text-neutral-500 truncate mt-0.5">
-                            {locale === 'en' ? channel.descriptionEn : channel.description}
-                          </p>
-                        </div>
-                      </div>
-                      <div
-                        className={cn(
-                          'w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ml-2 transition-colors',
-                          isSelected ? 'border-neutral-950 bg-neutral-950' : 'border-neutral-300 bg-white'
-                        )}
-                        aria-hidden="true"
-                      >
-                        {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
-                      </div>
-                      <input
-                        type="radio"
-                        id={`channel-${channel.code}`}
-                        name="paymentMethod"
-                        value={channel.code}
-                        checked={isSelected}
-                        onChange={() => setSelectedMethod(channel.code)}
-                        className="sr-only"
-                      />
-                    </label>
-                  );
-                })}
-              </div>
+          {/* PayPal Flow */}
+          {isUSD && status !== 'paid' && status !== 'pending_paypal' && status !== 'failed' && (
+            <div className="space-y-3">
+              <PayPalButton
+                packageId={pkg.id}
+                paymentId={existingPayment?.id}
+                onSuccess={handlePayPalSuccess}
+                onError={handlePayPalError}
+                onPendingPayPal={handlePayPalPending}
+              />
             </div>
           )}
 
-          {/* Creating State */}
-          {status === 'creating' && (
-            <div className="flex flex-col items-center justify-center gap-2 py-8 text-sm text-neutral-600">
-              <Loader2 className="h-5 w-5 animate-spin text-neutral-900" />
+          {/* Duitku Flow */}
+          {!isUSD && status === 'idle' && (
+            <div className="text-center text-sm text-neutral-500 leading-relaxed">
+              {existingPayment
+                ? (locale === 'en'
+                    ? 'Click below to resume your pending payment via Duitku'
+                    : 'Klik di bawah untuk melanjutkan pembayaran yang tertunda via Duitku')
+                : (locale === 'en'
+                    ? 'Click below to open the Duitku payment page (QRIS, VA, e-wallet, etc.)'
+                    : 'Klik di bawah untuk membuka halaman pembayaran Duitku (QRIS, VA, e-wallet, dll.)')}
+            </div>
+          )}
+
+          {!isUSD && status === 'creating' && (
+            <div className="flex items-center justify-center gap-2 py-2 text-sm text-neutral-600">
+              <Loader2 className="h-4 w-4 animate-spin" />
               <span>{locale === 'en' ? 'Creating transaction…' : 'Membuat transaksi…'}</span>
             </div>
           )}
 
-          {/* Waiting State */}
-          {status === 'waiting' && (
+          {!isUSD && status === 'waiting' && (
             <div className="space-y-3">
               <div className="p-4 rounded-2xl bg-neutral-50 border border-neutral-200 text-center space-y-2.5">
                 <div className="flex items-center justify-center gap-2 text-neutral-900 text-sm font-semibold">
@@ -466,7 +341,20 @@ export function CheckoutModal({ pkg, onClose, onSuccess }: CheckoutModalProps) {
             </div>
           )}
 
-          {/* Paid State */}
+          {status === 'pending_paypal' && (
+            <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-center space-y-1">
+              <Clock className="h-8 w-8 text-amber-500 mx-auto" />
+              <div className="font-bold text-amber-900 text-sm">
+                {locale === 'en' ? 'Payment under review' : 'Pembayaran sedang ditinjau'}
+              </div>
+              <div className="text-xs text-amber-700">
+                {locale === 'en'
+                  ? 'PayPal is reviewing this transaction. Credits will be added automatically once approved.'
+                  : 'PayPal sedang meninjau transaksi ini. Kredit akan otomatis ditambahkan setelah disetujui.'}
+              </div>
+            </div>
+          )}
+
           {status === 'paid' && (
             <div className="p-5 rounded-2xl bg-emerald-50 border border-emerald-100 text-center space-y-1.5">
               <CheckCircle2 className="h-8 w-8 text-emerald-500 mx-auto" />
@@ -491,27 +379,37 @@ export function CheckoutModal({ pkg, onClose, onSuccess }: CheckoutModalProps) {
 
           {/* Error State */}
           {status === 'error' && (
-            <div className="p-3 rounded-xl bg-red-50 border border-red-100 text-xs text-red-700 text-center">
-              {errorMsg ?? (locale === 'en' ? 'An error occurred.' : 'Terjadi kesalahan.')}
+            <div className="p-3 rounded-xl bg-red-50 border border-red-100 text-xs text-red-700 text-center space-y-2">
+              <div>{errorMsg ?? (locale === 'en' ? 'An error occurred.' : 'Terjadi kesalahan.')}</div>
+              <button
+                type="button"
+                onClick={() => {
+                  setStatus('idle');
+                  setErrorMsg(null);
+                }}
+                className="text-[11px] font-bold text-red-800 underline hover:text-red-950 cursor-pointer block mx-auto"
+              >
+                {locale === 'en' ? 'Try again' : 'Coba lagi'}
+              </button>
             </div>
           )}
         </div>
 
-        {/* Footer Actions */}
-        <div className="px-6 pb-6 pt-2 border-t border-neutral-100 shrink-0 space-y-2">
-          {(status === 'idle' || status === 'error') && (
+        {/* Footer actions */}
+        <div className="px-6 pb-6 space-y-2">
+          {!isUSD && (status === 'idle' || status === 'error') && (
             <button
               id="checkout-pay-btn"
-              onClick={handleCreatePayment}
-              className="w-full py-3 px-4 rounded-xl bg-neutral-950 hover:bg-neutral-800 active:scale-[0.99] text-white text-xs sm:text-sm font-bold transition-all cursor-pointer flex items-center justify-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
+              onClick={handleCreateDuitkuPayment}
+              className="w-full py-3 rounded-2xl bg-neutral-950 hover:bg-neutral-800 text-white text-sm font-bold transition-all cursor-pointer flex items-center justify-center gap-2"
             >
-              <span>{t.dashboard.payWithSelectedMethod}</span>
-              <span className="text-neutral-400 font-normal">•</span>
-              <span className="font-mono tabular-nums">Rp {pkg.priceCents.toLocaleString('id-ID')}</span>
+              {existingPayment
+                ? (locale === 'en' ? 'Continue Payment with Duitku' : 'Lanjutkan Bayar dengan Duitku')
+                : (locale === 'en' ? 'Pay with Duitku' : 'Bayar dengan Duitku')}
             </button>
           )}
 
-          {status === 'waiting' && (
+          {!isUSD && status === 'waiting' && (
             <button
               id="checkout-check-btn"
               onClick={() => {
@@ -526,7 +424,7 @@ export function CheckoutModal({ pkg, onClose, onSuccess }: CheckoutModalProps) {
             </button>
           )}
 
-          {(status === 'paid' || status === 'failed') && (
+          {(status === 'paid' || status === 'failed' || status === 'pending_paypal') && (
             <button
               id="checkout-close-btn"
               onClick={onClose}
@@ -536,7 +434,7 @@ export function CheckoutModal({ pkg, onClose, onSuccess }: CheckoutModalProps) {
             </button>
           )}
 
-          {status !== 'idle' && status !== 'paid' && status !== 'failed' && (
+          {status !== 'idle' && status !== 'paid' && status !== 'failed' && status !== 'pending_paypal' && (
             <button
               id="checkout-cancel-btn"
               onClick={onClose}

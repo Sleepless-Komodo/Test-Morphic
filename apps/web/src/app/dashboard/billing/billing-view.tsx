@@ -1,10 +1,9 @@
 'use client';
 
-import { useState, useTransition } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState } from 'react';
 import { useTranslation } from '@/lib/i18n';
 import { formatCredits } from '@/lib/utils';
-import { Wallet, CreditCard, Clock, QrCode, RefreshCw } from 'lucide-react';
+import { Zap, CreditCard, Clock } from 'lucide-react';
 import { CheckoutModal } from './checkout-modal';
 import { fetchBackendApi } from '@/lib/api-client';
 
@@ -23,34 +22,10 @@ export function BillingView({
   payments,
   ledger,
 }: BillingViewProps) {
-  const router = useRouter();
   const { t, locale } = useTranslation();
   const [balance, setBalance] = useState(initialBalance);
   const [selectedPkg, setSelectedPkg] = useState<any>(null);
-  const [paymentsList, setPaymentsList] = useState(payments);
-  const [checkingPaymentId, setCheckingPaymentId] = useState<string | null>(null);
-
-  const handleCheckPaymentStatus = async (paymentId: string) => {
-    setCheckingPaymentId(paymentId);
-    try {
-      const res = await fetchBackendApi<{ status: string; credits?: number }>(`/v1/payments/${paymentId}`);
-      if (res.data?.status) {
-        setPaymentsList((prev) =>
-          prev.map((p) => (p.id === paymentId ? { ...p, status: res.data!.status } : p))
-        );
-        if (res.data.status === 'paid' || res.data.status === 'success' || res.data.status === 'settlement') {
-          if (res.data.credits) {
-            setBalance((prev) => prev + res.data!.credits!);
-          }
-          router.refresh();
-        }
-      }
-    } catch (err) {
-      console.warn('[handleCheckPaymentStatus] Error checking payment:', err);
-    } finally {
-      setCheckingPaymentId(null);
-    }
-  };
+  const [resumePayment, setResumePayment] = useState<any>(null);
 
   const handleSuccess = (creditsAdded: number) => {
     setBalance((prev) => prev + creditsAdded);
@@ -98,36 +73,28 @@ export function BillingView({
           </span>
         </div>
 
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,235px))] gap-3.5">
-          {initialPackages.map((p) => {
-            const pkgName = locale === 'en' && p.nameEn ? p.nameEn : p.name;
-            const pkgDesc = locale === 'en' && p.descriptionEn ? p.descriptionEn : p.description;
-
-            return (
-              <div
-                key={p.id}
-                className="p-3.5 rounded-2xl bg-white border border-neutral-200/90 shadow-2xs hover:border-neutral-950 hover:shadow-xs transition-all flex flex-col justify-between group min-h-[190px]"
-              >
-                <div>
-                  <div className="flex items-center justify-between gap-1 mb-2.5">
-                    <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md bg-neutral-100 text-neutral-700 border border-neutral-200/80">
-                      {p.durationHours ? `${p.durationHours}h Pass` : t.dashboard.billingPassLabel}
-                    </span>
-                    <span className="text-[11px] font-mono font-extrabold text-emerald-600">
-                      +{formatCredits(p.creditAllowance)}
-                    </span>
-                  </div>
-                  <h3 className="font-heading font-bold text-xs text-neutral-950 line-clamp-1 mb-0.5" title={pkgName}>
-                    {pkgName}
-                  </h3>
-                  <div className="text-base font-extrabold text-neutral-950 font-mono tracking-tight tabular-nums">
-                    Rp {(p.priceCents ?? 0).toLocaleString('id-ID')}
-                  </div>
-                  {pkgDesc && (
-                    <p className="text-[10px] text-neutral-500 leading-snug line-clamp-2 mt-1.5 min-h-[26px]" title={pkgDesc}>
-                      {pkgDesc}
-                    </p>
-                  )}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {initialPackages.map((p) => (
+            <div
+              key={p.id}
+              className="p-5 rounded-2xl bg-white border border-neutral-200/90 shadow-2xs flex flex-col justify-between hover:border-neutral-300 hover:shadow-xs transition-all"
+            >
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-neutral-600 bg-neutral-100 px-2 py-0.5 rounded-md border border-neutral-200">
+                    {p.durationHours === 24 ? t.dashboard.duration24h : t.dashboard.flexibleDuration}
+                  </span>
+                  <span className="text-xs text-neutral-400 font-mono">
+                    {p.durationHours ? `${p.durationHours}h` : 'Flex'}
+                  </span>
+                </div>
+                <h3 className="font-heading font-bold text-base text-neutral-950 mb-1">
+                  {locale === 'en' && p.nameEn ? p.nameEn : p.name}
+                </h3>
+                <div className="text-xl font-extrabold text-neutral-950 mb-2 font-mono">
+                  {p.currency === 'USD'
+                    ? `$ ${(p.priceCents / 100).toFixed(2)} USD`
+                    : `Rp ${(p.priceCents ?? 0).toLocaleString('id-ID')}`}
                 </div>
 
                 <div className="pt-2.5 border-t border-neutral-100 mt-2.5">
@@ -140,17 +107,36 @@ export function BillingView({
                     <span suppressHydrationWarning>{t.dashboard.buyPackageBtn}</span>
                   </button>
                 </div>
+                <button
+                  id={`buy-pkg-${p.id}`}
+                  onClick={() => {
+                    setSelectedPkg(p);
+                    setResumePayment(null);
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-neutral-950 hover:bg-neutral-800 text-white text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
+                >
+                  <CreditCard className="h-3.5 w-3.5" />
+                  <span suppressHydrationWarning>
+                    {p.currency === 'USD'
+                      ? (locale === 'en' ? 'Pay via PayPal' : 'Bayar via PayPal')
+                      : t.dashboard.buyPackageBtn}
+                  </span>
+                </button>
               </div>
             );
           })}
         </div>
       </div>
 
-      {/* Checkout Modal — real Duitku payment */}
+      {/* Checkout Modal — Duitku or PayPal payment */}
       {selectedPkg && (
         <CheckoutModal
           pkg={selectedPkg}
-          onClose={() => setSelectedPkg(null)}
+          existingPayment={resumePayment}
+          onClose={() => {
+            setSelectedPkg(null);
+            setResumePayment(null);
+          }}
           onSuccess={handleSuccess}
         />
       )}
@@ -236,52 +222,67 @@ export function BillingView({
                     </tr>
                 </thead>
                 <tbody className="divide-y divide-neutral-100">
-                  {paymentsList.map((p) => {
-                    const isSuccess = p.status === 'success' || p.status === 'settlement' || p.status === 'paid';
-                    const isPending = p.status === 'pending';
+                  {payments.map((p) => (
+                    <tr key={p.id}>
+                      <td className="px-5 py-3 text-neutral-500">
+                        {new Date(p.createdAt).toLocaleDateString(locale === 'en' ? 'en-US' : 'id-ID')}
+                      </td>
+                      <td className="px-5 py-3 font-bold text-neutral-900">{p.packageName ?? (locale === 'en' ? 'Top-up' : 'Isi Ulang')}</td>
+                      <td className="px-5 py-3 font-mono">
+                        {p.currency === 'USD'
+                          ? `$ ${(p.amountCents / 100).toFixed(2)} USD`
+                          : `Rp ${(p.amountCents ?? 0).toLocaleString('id-ID')}`}
+                      </td>
+                      <td className="px-5 py-3">
+                        <div className="flex items-center gap-2">
+                          <span
+                            suppressHydrationWarning
+                            className={`px-2 py-0.5 rounded-md text-[10px] font-mono font-bold ${
+                              p.status === 'paid' || p.status === 'success' || p.status === 'settlement'
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : p.status === 'pending' || p.status === 'pending_paypal'
+                                ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                                : 'bg-neutral-100 text-neutral-800'
+                            }`}
+                          >
+                            {p.status === 'success' || p.status === 'settlement' || p.status === 'paid'
+                              ? (locale === 'en' ? 'Success' : 'Berhasil')
+                              : p.status === 'pending_paypal'
+                              ? (locale === 'en' ? 'Under Review' : 'Sedang Ditinjau')
+                              : p.status === 'pending'
+                              ? (locale === 'en' ? 'Pending' : 'Menunggu')
+                              : p.status}
+                          </span>
 
-                    return (
-                      <tr key={p.id}>
-                        <td className="px-5 py-3 text-neutral-500">
-                          {new Date(p.createdAt).toLocaleDateString(locale === 'en' ? 'en-US' : 'id-ID')}
-                        </td>
-                        <td className="px-5 py-3 font-bold text-neutral-900">{p.packageName ?? t.dashboard.billingTopup}</td>
-                        <td className="px-5 py-3 font-mono">Rp {(p.amountCents ?? 0).toLocaleString('id-ID')}</td>
-                        <td className="px-5 py-3">
-                          <div className="flex items-center gap-2">
-                            <span className="inline-flex items-center gap-1.5 text-xs font-mono font-medium text-neutral-700">
-                              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                                isSuccess
-                                  ? 'bg-emerald-500'
-                                  : isPending
-                                  ? 'bg-amber-500'
-                                  : 'bg-neutral-400'
-                              }`} />
-                              <span suppressHydrationWarning>
-                                {isSuccess
-                                  ? t.dashboard.billingStatusSuccess
-                                  : isPending
-                                  ? t.dashboard.billingStatusPending
-                                  : p.status}
-                              </span>
-                            </span>
-                            {isPending && (
-                              <button
-                                type="button"
-                                onClick={() => handleCheckPaymentStatus(p.id)}
-                                disabled={checkingPaymentId === p.id}
-                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border border-neutral-200 bg-white hover:bg-neutral-100 text-[10px] font-semibold text-neutral-700 transition cursor-pointer active:scale-95 disabled:opacity-50 shadow-2xs"
-                                title={t.dashboard.billingCheckStatus}
-                              >
-                                <RefreshCw className={`h-2.5 w-2.5 ${checkingPaymentId === p.id ? 'animate-spin text-neutral-500' : ''}`} />
-                                <span>{checkingPaymentId === p.id ? t.dashboard.billingChecking : t.dashboard.billingCheckStatus}</span>
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
+                          {(p.status === 'pending' || p.status === 'pending_paypal') && (
+                            <button
+                              id={`continue-pay-btn-${p.id}`}
+                              onClick={() => {
+                                const pkgToOpen = initialPackages.find((pkg) => pkg.id === p.packageId) ?? {
+                                  id: p.packageId ?? p.id,
+                                  name: p.packageName ?? (locale === 'en' ? 'Top-up Package' : 'Paket Kredit'),
+                                  priceCents: p.amountCents,
+                                  currency: p.currency ?? 'IDR',
+                                  creditAllowance: p.credits,
+                                };
+                                setSelectedPkg(pkgToOpen);
+                                setResumePayment({
+                                  id: p.id,
+                                  externalId: p.externalId,
+                                  provider: p.provider,
+                                  status: p.status,
+                                });
+                              }}
+                              className="px-2.5 py-1 rounded-lg bg-neutral-950 hover:bg-neutral-800 text-white text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1 shadow-2xs"
+                            >
+                              <CreditCard className="h-3 w-3" />
+                              <span suppressHydrationWarning>{locale === 'en' ? 'Pay Now' : 'Lanjutkan Bayar'}</span>
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
