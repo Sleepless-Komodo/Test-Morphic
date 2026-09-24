@@ -8,14 +8,43 @@ import { generateApiKey, maskedKey } from '@morphic/shared/keys';
 import { grantCredits, grantEntitlement } from '@morphic/db/billing';
 import { auth } from '@/lib/auth';
 
+import { cache } from 'react';
+
+export const getSessionWithRetry = cache(async () => {
+  const reqHeaders = await headers();
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      return await auth.api.getSession({ headers: reqHeaders });
+    } catch (err: any) {
+      const msg = err?.message ?? '';
+      const isTransient =
+        msg.includes('fetch failed') ||
+        msg.includes('connecting to database') ||
+        msg.includes('Failed to get session') ||
+        err?.name === 'TypeError';
+
+      if (isTransient && attempt < 3) {
+        await new Promise((resolve) => setTimeout(resolve, attempt * 150));
+        continue;
+      }
+      if (attempt === 3) {
+        console.warn('[getSessionWithRetry] DB connection transient drop, returning null session');
+        return null;
+      }
+      throw err;
+    }
+  }
+  return null;
+});
+
 async function requireUser() {
-  const session = await auth.api.getSession({ headers: await headers() });
+  const session = await getSessionWithRetry();
   if (!session) redirect('/login');
   return session.user;
 }
 
 async function requireAdmin() {
-  const session = await auth.api.getSession({ headers: await headers() });
+  const session = await getSessionWithRetry();
   if (!session) redirect('/login');
   const [u] = await db.select().from(s.users).where(eq(s.users.id, session.user.id)).limit(1);
   if (!u || u.role !== 'admin') redirect('/dashboard');

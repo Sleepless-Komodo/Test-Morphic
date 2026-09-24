@@ -40,11 +40,11 @@ app.onError((err, c) => {
 });
 
 app.get('/health', (c) => c.json({ ok: true }));
-app.route('/v1', v1);
 app.route('/webhooks', webhooks);
 app.route('/v1/keys', keys);
 app.route('/v1/account', account);
 app.route('/v1/payments', payments);
 app.route('/v1/redeem', redeem);
+app.route('/v1', v1);
 
 export { app };
