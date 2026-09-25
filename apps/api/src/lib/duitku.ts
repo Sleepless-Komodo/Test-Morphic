@@ -80,7 +80,6 @@ export async function createTransaction(
   const body: Record<string, unknown> = {
     merchantCode,
     paymentAmount: params.paymentAmount,
-    paymentMethod,
     merchantOrderId: params.merchantOrderId,
     productDetails: params.productDetails,
     email: params.email,
