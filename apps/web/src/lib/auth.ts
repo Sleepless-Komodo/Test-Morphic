@@ -2,6 +2,7 @@ import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { db } from '@morphic/db';
 import * as schema from '@morphic/db/schema';
+import { captcha } from 'better-auth/plugins';
 
 import { apiKeyAuth } from './auth-api-key';
 
@@ -12,6 +13,16 @@ if (process.env.NODE_ENV === 'production') {
       '[FATAL SECURITY] BETTER_AUTH_SECRET must be set to a secure 32+ character random string in production. Generate one using: openssl rand -base64 32',
     );
   }
+}
+
+const authPlugins = [apiKeyAuth()];
+if (process.env.RECAPTCHA_SECRET_KEY) {
+  authPlugins.push(
+    captcha({
+      provider: 'google-recaptcha',
+      secretKey: process.env.RECAPTCHA_SECRET_KEY,
+    }),
+  );
 }
 
 export const auth = betterAuth({
@@ -32,7 +43,7 @@ export const auth = betterAuth({
   },
   rateLimit: {
     window: 60,
-    max: 100,
+    max: 20, // Tighten rate limit to mitigate brute-force
   },
   emailAndPassword: {
     enabled: true,
@@ -54,7 +65,7 @@ export const auth = betterAuth({
   advanced: {
     database: { generateId: false },
   },
-  plugins: [apiKeyAuth()],
+  plugins: authPlugins,
 });
 
 export type Session = typeof auth.$Infer.Session;
