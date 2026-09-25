@@ -158,11 +158,10 @@ payments.post('/create', async (c) => {
       paymentMethod: paymentMethod ?? 'SP',
       productDetails: `Morphic Credits — ${pkg.name}`,
       email: user.email.slice(0, 50), // Trim email to max 50 chars per Duitku spec
-      customerVaName: user.name.slice(0, 20), // Trim VA name to max 20 chars
+      customerVaName,
       callbackUrl: `${apiUrl}/webhooks/duitku`,
       returnUrl: `${appUrl}/dashboard/billing?ref=${payment.id}`,
       expiryPeriod: 60,
-      paymentMethod: paymentMethod ?? 'SP',
     });
   } catch (err: any) {
     console.error('[payments/create] Duitku createTransaction error:', err?.message);
@@ -438,7 +437,7 @@ payments.post('/paypal/capture', async (c) => {
       console.log(`[payments/paypal/capture] order ${orderId} already captured on PayPal side, fetching order details`);
       try {
         paypalOrder = await paypal.getOrder(orderId);
-      } catch (getOrderErr: any) {
+      } catch {
         return c.json(
           { error: { message: 'failed to fetch order details after capture collision', type: 'server_error' } },
           502,

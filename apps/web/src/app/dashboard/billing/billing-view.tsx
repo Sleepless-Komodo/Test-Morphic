@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useTranslation } from '@/lib/i18n';
 import { formatCredits } from '@/lib/utils';
-import { Zap, CreditCard, Clock } from 'lucide-react';
+import { Zap, CreditCard, Clock, Wallet, QrCode } from 'lucide-react';
 import { CheckoutModal } from './checkout-modal';
 import { fetchBackendApi } from '@/lib/api-client';
 
@@ -100,31 +100,27 @@ export function BillingView({
                 <div className="pt-2.5 border-t border-neutral-100 mt-2.5">
                   <button
                     id={`buy-pkg-${p.id}`}
-                    onClick={() => setSelectedPkg(p)}
-                    className="w-full py-1.5 rounded-xl bg-neutral-950 hover:bg-neutral-800 text-white text-[11px] font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs active:scale-95"
+                    onClick={() => {
+                      setSelectedPkg(p);
+                      setResumePayment(null);
+                    }}
+                    className="w-full py-2 rounded-xl bg-neutral-950 hover:bg-neutral-800 text-white text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
                   >
-                    <QrCode className="h-3 w-3" />
-                    <span suppressHydrationWarning>{t.dashboard.buyPackageBtn}</span>
+                    {p.currency === 'USD' ? (
+                      <CreditCard className="h-3.5 w-3.5" />
+                    ) : (
+                      <QrCode className="h-3.5 w-3.5" />
+                    )}
+                    <span suppressHydrationWarning>
+                      {p.currency === 'USD'
+                        ? (locale === 'en' ? 'Pay via PayPal' : 'Bayar via PayPal')
+                        : t.dashboard.buyPackageBtn}
+                    </span>
                   </button>
                 </div>
-                <button
-                  id={`buy-pkg-${p.id}`}
-                  onClick={() => {
-                    setSelectedPkg(p);
-                    setResumePayment(null);
-                  }}
-                  className="px-3 py-1.5 rounded-xl bg-neutral-950 hover:bg-neutral-800 text-white text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
-                >
-                  <CreditCard className="h-3.5 w-3.5" />
-                  <span suppressHydrationWarning>
-                    {p.currency === 'USD'
-                      ? (locale === 'en' ? 'Pay via PayPal' : 'Bayar via PayPal')
-                      : t.dashboard.buyPackageBtn}
-                  </span>
-                </button>
               </div>
-            );
-          })}
+            </div>
+          ))}
         </div>
       </div>
 
@@ -206,7 +202,7 @@ export function BillingView({
       <div className="space-y-3">
         <h2 suppressHydrationWarning className="font-heading font-bold text-base text-neutral-950">{t.dashboard.qrisHistoryTitle}</h2>
         <div className="rounded-2xl bg-white border border-neutral-200/90 shadow-2xs overflow-hidden">
-          {paymentsList.length === 0 ? (
+          {payments.length === 0 ? (
             <div suppressHydrationWarning className="p-8 text-center text-xs text-neutral-500 font-mono">
               {t.dashboard.noPaymentsHistory}
             </div>
