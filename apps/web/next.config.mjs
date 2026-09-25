@@ -21,6 +21,19 @@ const nextConfig = {
       { protocol: 'https', hostname: 'avatars.githubusercontent.com' },
     ],
   },
+  async rewrites() {
+    const targetUrl = (
+      process.env.INTERNAL_API_URL ||
+      process.env.NEXT_PUBLIC_API_URL ||
+      'http://localhost:8787'
+    ).replace(/\/+$/, '');
+    return [
+      {
+        source: '/api/backend/:path*',
+        destination: `${targetUrl}/:path*`,
+      },
+    ];
+  },
   headers: async () => [
     {
       source: '/:path*',
