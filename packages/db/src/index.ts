@@ -1,11 +1,27 @@
+import dns from 'node:dns';
+import http from 'node:http';
+import https from 'node:https';
 import { drizzle, type NeonHttpDatabase } from 'drizzle-orm/neon-http';
 import { drizzle as drizzleServerless, type NeonDatabase } from 'drizzle-orm/neon-serverless';
 import { neon, neonConfig, Pool } from '@neondatabase/serverless';
 import ws from 'ws';
 import * as schema from './schema.ts';
 
+try {
+  dns.setDefaultResultOrder('ipv4first');
+} catch {
+  // Ignore in environments without node:dns
+}
+
+class IPv4WebSocket extends ws {
+  constructor(address: any, protocols?: any, options?: any) {
+    const opts = typeof options === 'object' && options !== null ? { ...options, family: 4 } : { family: 4 };
+    super(address, protocols, opts);
+  }
+}
+
 if (typeof globalThis !== 'undefined') {
-  neonConfig.webSocketConstructor = neonConfig.webSocketConstructor || ws;
+  neonConfig.webSocketConstructor = IPv4WebSocket;
 }
 
 // ---------------------------------------------------------------------------
@@ -17,33 +33,96 @@ function getConnectionString(): string {
   return process.env.DATABASE_URL ?? 'postgresql://unset:unset@localhost:5432/unset';
 }
 
+function nativeIPv4Fetch(urlInput: string | URL | Request, init?: RequestInit): Promise<Response> {
+  return new Promise((resolve, reject) => {
+    try {
+      const urlStr = typeof urlInput === 'string' ? urlInput : urlInput instanceof URL ? urlInput.toString() : urlInput.url;
+      const u = new URL(urlStr);
+      const transport = u.protocol === 'https:' ? https : http;
+
+      const headers: Record<string, string> = {};
+      if (init?.headers) {
+        if (init.headers instanceof Headers) {
+          init.headers.forEach((value, key) => {
+            headers[key] = value;
+          });
+        } else if (Array.isArray(init.headers)) {
+          init.headers.forEach(([key, value]) => {
+            headers[key] = value;
+          });
+        } else {
+          Object.assign(headers, init.headers);
+        }
+      }
+
+      const bodyStr = typeof init?.body === 'string' ? init.body : init?.body ? String(init.body) : undefined;
+      if (bodyStr && !headers['Content-Length'] && !headers['content-length']) {
+        headers['Content-Length'] = String(Buffer.byteLength(bodyStr));
+      }
+
+      const req = transport.request(
+        u,
+        {
+          method: init?.method || 'GET',
+          headers,
+          family: 4, // 100% FORCE IPv4 Socket at OS level
+          timeout: 15000,
+        },
+        (res) => {
+          const chunks: Buffer[] = [];
+          res.on('data', (c) => chunks.push(c));
+          res.on('end', () => {
+            const bodyBuffer = Buffer.concat(chunks);
+            const responseHeaders = new Headers();
+            for (const [key, val] of Object.entries(res.headers)) {
+              if (Array.isArray(val)) {
+                val.forEach((v) => responseHeaders.append(key, v));
+              } else if (val) {
+                responseHeaders.set(key, val);
+              }
+            }
+            resolve(
+              new Response(bodyBuffer, {
+                status: res.statusCode || 200,
+                statusText: res.statusMessage || '',
+                headers: responseHeaders,
+              }),
+            );
+          });
+        },
+      );
+
+      req.on('error', reject);
+      req.on('timeout', () => {
+        req.destroy(new Error('Connection timeout'));
+      });
+
+      if (bodyStr) {
+        req.write(bodyStr);
+      }
+      req.end();
+    } catch (err) {
+      reject(err);
+    }
+  });
+}
+
 /**
  * Resilient fetch wrapper for Neon HTTP queries.
- * Automatically retries transient network drops (e.g. `TypeError: fetch failed`, socket timeouts,
- * connection resets) up to 3 times with backoff before throwing.
+ * Automatically retries transient network drops up to 4 times with backoff before throwing.
+ * Uses native node:https with family: 4 to force IPv4 OS sockets directly.
  */
-async function resilientFetch(url: string | URL | Request, init?: RequestInit): Promise<Response> {
-  const maxRetries = 3;
+async function resilientFetch(urlInput: string | URL | Request, init?: RequestInit): Promise<Response> {
+  const maxRetries = 4;
   let lastError: any;
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      return await fetch(url, init);
+      return await nativeIPv4Fetch(urlInput, init);
     } catch (err: any) {
       lastError = err;
-      const msg = err?.message ?? '';
-      const code = err?.cause?.code ?? '';
-      const isTransient =
-        msg.includes('fetch failed') ||
-        msg.includes('connecting to database') ||
-        err?.name === 'TypeError' ||
-        code === 'ECONNRESET' ||
-        code === 'ETIMEDOUT' ||
-        code === 'UND_ERR_CONNECT_TIMEOUT' ||
-        code === 'UND_ERR_SOCKET';
-
-      if (isTransient && attempt < maxRetries) {
-        await new Promise((resolve) => setTimeout(resolve, attempt * 100));
+      if (attempt < maxRetries) {
+        await new Promise((resolve) => setTimeout(resolve, attempt * 200 * Math.pow(1.5, attempt - 1)));
         continue;
       }
       throw err;
