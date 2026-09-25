@@ -17,7 +17,7 @@ import { useTranslation } from '@/lib/i18n';
 import { formatCredits } from '@/lib/utils';
 import { PayPalButton } from '@/components/PayPalButton';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8787';
+const API_URL = '/api/backend';
 const POLL_INTERVAL_MS = 3000;
 const MAX_POLL_ATTEMPTS = 60; // 3 min max polling
 
