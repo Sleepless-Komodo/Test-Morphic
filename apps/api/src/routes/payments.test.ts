@@ -4,9 +4,8 @@ import { createHash } from 'node:crypto';
 import { app } from '../app';
 import { db, schema as s } from '@morphic/db';
 import { markPaymentIfOpen, getBalance } from '@morphic/db/billing';
-import { eq } from 'drizzle-orm';
 import { verifyCallbackSignature, createTransaction, checkTransactionStatus, assertDuitkuConfig } from '../lib/duitku';
-import * as paypal from '../lib/paypal';
+import { eq } from 'drizzle-orm';
 
 function md5(data: string): string {
   return createHash('md5').update(data).digest('hex');
