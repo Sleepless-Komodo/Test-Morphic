@@ -31,15 +31,18 @@ export async function fetchBackendApi<T = any>(
 ): Promise<ApiResponse<T>> {
   const isServer = typeof window === 'undefined';
 
-  // Prefer INTERNAL_API_URL on the server (avoids public internet round-trip)
-  const baseUrl = (
-    (isServer ? process.env.INTERNAL_API_URL : undefined) ||
-    process.env.NEXT_PUBLIC_API_URL ||
-    'http://localhost:8787'
-  ).replace(/\/+$/, '');
+  // On server: prefer INTERNAL_API_URL or NEXT_PUBLIC_API_URL directly.
+  // On browser client: route via Next.js proxy (/api/backend) so browser sends auth cookies same-origin.
+  const baseUrl = isServer
+    ? (
+        process.env.INTERNAL_API_URL ||
+        process.env.NEXT_PUBLIC_API_URL ||
+        'http://localhost:8787'
+      ).replace(/\/+$/, '')
+    : '/api/backend';
 
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
-  const url = `${baseUrl}${normalizedPath}`;
+  const url = isServer ? `${baseUrl}${normalizedPath}` : `/api/backend${normalizedPath}`;
 
   const headers = new Headers(options.headers ?? {});
 
