@@ -50,8 +50,8 @@ export async function fetchBackendApi<T = any>(
     headers.set('Content-Type', 'application/json');
   }
 
-  // Forward the session cookie when running inside a Server Component or Server Action
-  // so the Hono session-auth middleware can authenticate the request.
+  // Forward the session cookie and attach Authorization Bearer token when running inside a Server Component or Server Action
+  // so the Hono session-auth middleware can authenticate the request reliably.
   if (isServer) {
     try {
       const { headers: getNextHeaders } = await import('next/headers');
@@ -60,8 +60,16 @@ export async function fetchBackendApi<T = any>(
       if (cookie && !headers.has('cookie')) {
         headers.set('cookie', cookie);
       }
+
+      if (!headers.has('authorization')) {
+        const { auth } = await import('@/lib/auth');
+        const session = await auth.api.getSession({ headers: reqHeaders });
+        if (session?.session?.token) {
+          headers.set('authorization', `Bearer ${session.session.token}`);
+        }
+      }
     } catch {
-      // next/headers is unavailable in some edge contexts — safe to skip
+      // next/headers or session resolution is unavailable in some edge contexts — safe to skip
     }
   }
 

@@ -53,6 +53,11 @@ export const auth = betterAuth({
   baseURL: process.env.BETTER_AUTH_URL,
   advanced: {
     database: { generateId: false },
+    defaultCookieAttributes: {
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+      httpOnly: true,
+    },
   },
   plugins: [apiKeyAuth()],
 });
