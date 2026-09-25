@@ -24,7 +24,9 @@ export async function sessionAuth(c: Context, next: Next) {
     // Cookie fallbacks (Better Auth session cookies - secure or standard)
     const cookies = c.req.header('cookie');
     if (cookies) {
-      const match = cookies.match(/(?:__Secure-)?(?:better-auth\.session_token|session_token)=([^;]+)/);
+      const match = cookies.match(
+        /(?:__Secure-)?(?:better-auth\.session_token|better-auth_session_token|better_auth_session_token|session_token)=([^;]+)/,
+      );
       if (match) {
         rawToken = decodeURIComponent(match[1]).trim();
       }
@@ -32,13 +34,20 @@ export async function sessionAuth(c: Context, next: Next) {
   }
 
   if (!rawToken) {
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn('[session-auth] 401 missing token — headers:', c.req.header('cookie') ? 'cookie present' : 'no cookie');
+    }
     return c.json(
       { error: { message: 'unauthorized: session token required', type: 'auth_error', code: 'missing_session_token' } },
       401,
     );
   }
 
-  const unsignedToken = rawToken.includes('.') ? rawToken.split('.')[0] : rawToken;
+  // Clean signed cookie prefix/suffix (e.g. s:token.signature -> token)
+  let cleanToken = rawToken;
+  if (cleanToken.startsWith('s:')) cleanToken = cleanToken.slice(2);
+  if (cleanToken.startsWith('s%3A')) cleanToken = cleanToken.slice(4);
+  const unsignedToken = cleanToken.includes('.') ? cleanToken.split('.')[0] : cleanToken;
 
   const [session] = await db
     .select({
@@ -51,13 +60,20 @@ export async function sessionAuth(c: Context, next: Next) {
     .innerJoin(s.users, eq(s.sessions.userId, s.users.id))
     .where(
       and(
-        or(eq(s.sessions.token, rawToken), eq(s.sessions.token, unsignedToken!)),
-        gt(s.sessions.expiresAt, new Date())
-      )
+        or(
+          eq(s.sessions.token, rawToken),
+          eq(s.sessions.token, cleanToken),
+          eq(s.sessions.token, unsignedToken!),
+        ),
+        gt(s.sessions.expiresAt, new Date()),
+      ),
     )
     .limit(1);
 
   if (!session) {
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn('[session-auth] 401 invalid token in DB:', unsignedToken.slice(0, 10) + '...');
+    }
     return c.json(
       { error: { message: 'invalid or expired session token', type: 'auth_error', code: 'invalid_session_token' } },
       401,
