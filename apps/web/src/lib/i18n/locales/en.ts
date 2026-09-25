@@ -238,6 +238,8 @@ export const en = {
       emailPageTitleSignUp: 'Create a New Account',
       emailPageDesc: 'Use your email address and password to access your Morphic account.',
       emailPageDescSignUp: 'Create an account to start using the Morphic AI gateway endpoint.',
+      captchaRequired: 'Please complete the reCAPTCHA verification first.',
+      captchaFailed: 'reCAPTCHA verification failed or expired. Please check the box again.',
     },
     faq: {
       badge: 'Frequently Asked Questions',

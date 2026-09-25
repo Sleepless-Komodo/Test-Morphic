@@ -7,6 +7,7 @@ import { db, schema as s } from '@morphic/db';
 import { generateApiKey, maskedKey } from '@morphic/shared/keys';
 import { grantCredits, grantEntitlement } from '@morphic/db/billing';
 import { auth } from '@/lib/auth';
+import { fetchBackendApi } from '@/lib/api-client';
 
 import { cache } from 'react';
 
@@ -639,6 +640,39 @@ export async function testApiKeyPingAction(params: {
         ? 'Koneksi ke Gateway API timeout (melebihi 15 detik).'
         : `Gagal menghubungi Gateway API (${err?.message || 'Network error'})`,
       code: isTimeout ? 'timeout' : 'network_error',
+    };
+  }
+}
+
+export async function provisionPostPaymentKey(params?: { packageName?: string }) {
+  const user = await requireUser();
+  const name = params?.packageName ? `Pass: ${params.packageName}` : 'Quickstart Key';
+
+  const { raw, hash, prefix } = generateApiKey();
+
+  try {
+    const [inserted] = await db
+      .insert(s.apiKeys)
+      .values({
+        userId: user.id,
+        name,
+        keyHash: hash,
+        keyPrefix: prefix,
+        expiresAt: null,
+      })
+      .returning({ id: s.apiKeys.id, prefix: s.apiKeys.keyPrefix });
+
+    return {
+      ok: true,
+      rawKey: raw,
+      prefix: inserted?.prefix ?? prefix,
+      name,
+    };
+  } catch (err: any) {
+    console.error('[provisionPostPaymentKey] Failed to insert key:', err);
+    return {
+      ok: false,
+      error: err?.message || 'Failed to create API key',
     };
   }
 }

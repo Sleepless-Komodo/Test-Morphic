@@ -10,6 +10,7 @@ interface ApiKeyPingModalProps {
   onClose: () => void;
   initialApiKey?: string;
   availableModels?: Array<{ id: string; name: string }>;
+  zIndex?: string;
 }
 
 export function ApiKeyPingModal({
@@ -21,6 +22,7 @@ export function ApiKeyPingModal({
     { id: 'qwen-max', name: 'Qwen Max' },
     { id: 'kimi-coding', name: 'Kimi Coding' },
   ],
+  zIndex,
 }: ApiKeyPingModalProps) {
   const { locale } = useTranslation();
   const isId = locale === 'id';
@@ -113,7 +115,7 @@ export function ApiKeyPingModal({
           handleClose();
         }
       }}
-      className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4 animate-in fade-in duration-150"
+      className={`fixed inset-0 ${zIndex || 'z-50'} bg-black/50 flex items-center justify-center p-4 animate-in fade-in duration-150`}
     >
       <div
         className="bg-white rounded-2xl border border-neutral-200 w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
