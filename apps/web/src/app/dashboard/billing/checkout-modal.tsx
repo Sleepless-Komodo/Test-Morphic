@@ -218,11 +218,6 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
   };
 
   const pkgName = locale === 'en' && pkg.nameEn ? pkg.nameEn : pkg.name;
-  const selectedChannel = PAYMENT_CHANNELS.find((c) => c.code === selectedMethod) ?? PAYMENT_CHANNELS[0];
-
-  const filteredChannels = categoryFilter === 'all'
-    ? PAYMENT_CHANNELS
-    : PAYMENT_CHANNELS.filter((c) => c.category === categoryFilter);
 
   const formatCountdown = (secs: number) => {
     const m = Math.floor(secs / 60);
@@ -313,7 +308,7 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
                 </div>
                 <div className="text-xs text-neutral-700 font-medium">
                   {locale === 'en' ? 'Method: ' : 'Metode: '}
-                  <span className="font-bold text-neutral-950">{selectedChannel.name}</span>
+                  <span className="font-bold text-neutral-950">Duitku (QRIS / VA / E-Wallet)</span>
                 </div>
                 <p className="text-xs text-neutral-600 leading-relaxed">
                   {locale === 'en'
