@@ -7,6 +7,7 @@ import { db, schema as s } from '@morphic/db';
 import { generateApiKey, maskedKey } from '@morphic/shared/keys';
 import { grantCredits, grantEntitlement } from '@morphic/db/billing';
 import { auth } from '@/lib/auth';
+import { fetchBackendApi } from './api-client';
 
 import { cache } from 'react';
 
