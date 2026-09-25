@@ -162,7 +162,6 @@ payments.post('/create', async (c) => {
       callbackUrl: `${apiUrl}/webhooks/duitku`,
       returnUrl: `${appUrl}/dashboard/billing?ref=${payment.id}`,
       expiryPeriod: 60,
-      paymentMethod: paymentMethod ?? 'SP',
     });
   } catch (err: any) {
     console.error('[payments/create] Duitku createTransaction error:', err?.message);
