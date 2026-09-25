@@ -128,216 +128,214 @@ export function BillingView({
         </div>
       </div>
 
-      {/* Checkout Modal — Duitku or PayPal payment */}
-      {selectedPkg && (
-        <CheckoutModal
-          pkg={selectedPkg}
-          existingPayment={resumePayment}
-          onClose={() => {
-            setSelectedPkg(null);
-            setResumePayment(null);
-          }}
-          onSuccess={handleSuccess}
-        />
-      )}
+        {/* Checkout Modal — Duitku or PayPal payment */}
+        {selectedPkg && (
+          <CheckoutModal
+            pkg={selectedPkg}
+            existingPayment={resumePayment}
+            onClose={() => {
+              setSelectedPkg(null);
+              setResumePayment(null);
+            }}
+            onSuccess={handleSuccess}
+          />
+        )}
 
-      {/* Active Passes / Entitlements */}
-      {entitlements.length > 0 && (
-        <div className="space-y-3">
-          <div className="flex items-center gap-2">
-            <Clock className="h-4 w-4 text-neutral-950" />
-            <h2 suppressHydrationWarning className="font-heading font-bold text-base text-neutral-950">{t.dashboard.activePassesTitle}</h2>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {entitlements.map((e) => {
-              const allowance = e.allowance || e.remaining || 1;
-              const remaining = Math.max(0, e.remaining ?? 0);
-              const percentRemaining = Math.min(100, Math.max(0, Math.round((remaining / allowance) * 100)));
+        {/* Active Passes / Entitlements */}
+        {entitlements.length > 0 && (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <Clock className="h-4 w-4 text-neutral-950" />
+              <h2 suppressHydrationWarning className="font-heading font-bold text-base text-neutral-950">{t.dashboard.activePassesTitle}</h2>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {entitlements.map((e) => {
+                const allowance = e.allowance || e.remaining || 1;
+                const remaining = Math.max(0, e.remaining ?? 0);
+                const percentRemaining = Math.min(100, Math.max(0, Math.round((remaining / allowance) * 100)));
 
-              return (
-                <div
-                  key={e.id}
-                  className="p-5 rounded-2xl bg-white border border-neutral-200/90 shadow-2xs space-y-3"
-                >
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="font-bold text-sm text-neutral-950">
-                        {e.packageName ?? t.dashboard.billingActivePass}
-                      </div>
-                      <div suppressHydrationWarning className="text-[11px] text-neutral-500 font-mono mt-0.5">
-                        {t.dashboard.expiresPrefix}{' '}
-                        {e.expiresAt
-                          ? new Date(e.expiresAt).toLocaleString(locale === 'en' ? 'en-US' : 'id-ID', {
+                return (
+                  <div
+                    key={e.id}
+                    className="p-5 rounded-2xl bg-white border border-neutral-200/90 shadow-2xs space-y-3"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="font-bold text-sm text-neutral-950">
+                          {e.packageName ?? t.dashboard.billingActivePass}
+                        </div>
+                        <div suppressHydrationWarning className="text-[11px] text-neutral-500 font-mono mt-0.5">
+                          {t.dashboard.expiresPrefix}{' '}
+                          {e.expiresAt
+                            ? new Date(e.expiresAt).toLocaleString(locale === 'en' ? 'en-US' : 'id-ID', {
                               dateStyle: 'medium',
                               timeStyle: 'short',
                             })
-                          : t.dashboard.billingToday}
+                            : t.dashboard.billingToday}
+                        </div>
                       </div>
-                    </div>
-                    <span suppressHydrationWarning className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 shadow-2xs inline-flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                      <span>{t.dashboard.activeStatusBadge}</span>
-                    </span>
-                  </div>
-
-                  {/* Remaining Token Progress */}
-                  <div className="space-y-1.5 pt-1">
-                    <div className="flex items-center justify-between text-[11px] font-mono">
-                      <span className="text-neutral-500">{t.dashboard.activePassRemainingLabel}</span>
-                      <span className="font-bold text-neutral-900 tabular-nums">
-                        {formatCredits(remaining)} / {formatCredits(allowance)} ({percentRemaining}%)
+                      <span suppressHydrationWarning className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 shadow-2xs inline-flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                        <span>{t.dashboard.activeStatusBadge}</span>
                       </span>
                     </div>
-                    <div className="w-full h-2 rounded-full bg-neutral-100 overflow-hidden">
-                      <div
-                        className="h-full rounded-full bg-neutral-950 transition-all duration-300"
-                        style={{ width: `${percentRemaining}%` }}
-                      />
+
+                    {/* Remaining Token Progress */}
+                    <div className="space-y-1.5 pt-1">
+                      <div className="flex items-center justify-between text-[11px] font-mono">
+                        <span className="text-neutral-500">{t.dashboard.activePassRemainingLabel}</span>
+                        <span className="font-bold text-neutral-900 tabular-nums">
+                          {formatCredits(remaining)} / {formatCredits(allowance)} ({percentRemaining}%)
+                        </span>
+                      </div>
+                      <div className="w-full h-2 rounded-full bg-neutral-100 overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-neutral-950 transition-all duration-300"
+                          style={{ width: `${percentRemaining}%` }}
+                        />
+                      </div>
                     </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Payment History */}
-      <div className="space-y-3">
-        <h2 suppressHydrationWarning className="font-heading font-bold text-base text-neutral-950">{t.dashboard.qrisHistoryTitle}</h2>
-        <div className="rounded-2xl bg-white border border-neutral-200/90 shadow-2xs overflow-hidden">
-          {paymentsList.length === 0 ? (
-            <div suppressHydrationWarning className="p-8 text-center text-xs text-neutral-500 font-mono">
-              {t.dashboard.noPaymentsHistory}
+                );
+              })}
             </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead>
+          </div>
+        )}
+
+        {/* Payment History */}
+        <div className="space-y-3">
+          <h2 suppressHydrationWarning className="font-heading font-bold text-base text-neutral-950">{t.dashboard.qrisHistoryTitle}</h2>
+          <div className="rounded-2xl bg-white border border-neutral-200/90 shadow-2xs overflow-hidden">
+            {paymentsList.length === 0 ? (
+              <div suppressHydrationWarning className="p-8 text-center text-xs text-neutral-500 font-mono">
+                {t.dashboard.noPaymentsHistory}
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead>
                     <tr suppressHydrationWarning className="border-b border-neutral-200 bg-neutral-50/70 text-[11px] font-mono uppercase text-neutral-500">
                       <th className="px-5 py-3">{t.dashboard.billingPaymentDate}</th>
                       <th className="px-5 py-3">{t.dashboard.billingPaymentPackage}</th>
                       <th className="px-5 py-3">{t.dashboard.billingPaymentAmount}</th>
                       <th className="px-5 py-3">{t.dashboard.billingPaymentStatus}</th>
                     </tr>
-                </thead>
-                <tbody className="divide-y divide-neutral-100">
-                  {payments.map((p) => (
-                    <tr key={p.id}>
-                      <td className="px-5 py-3 text-neutral-500">
-                        {new Date(p.createdAt).toLocaleDateString(locale === 'en' ? 'en-US' : 'id-ID')}
-                      </td>
-                      <td className="px-5 py-3 font-bold text-neutral-900">{p.packageName ?? (locale === 'en' ? 'Top-up' : 'Isi Ulang')}</td>
-                      <td className="px-5 py-3 font-mono">
-                        {p.currency === 'USD'
-                          ? `$ ${(p.amountCents / 100).toFixed(2)} USD`
-                          : `Rp ${(p.amountCents ?? 0).toLocaleString('id-ID')}`}
-                      </td>
-                      <td className="px-5 py-3">
-                        <div className="flex items-center gap-2">
-                          <span
-                            suppressHydrationWarning
-                            className={`px-2 py-0.5 rounded-md text-[10px] font-mono font-bold ${
-                              p.status === 'paid' || p.status === 'success' || p.status === 'settlement'
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : p.status === 'pending' || p.status === 'pending_paypal'
-                                ? 'bg-amber-100 text-amber-800 border border-amber-200'
-                                : 'bg-neutral-100 text-neutral-800'
-                            }`}
-                          >
-                            {p.status === 'success' || p.status === 'settlement' || p.status === 'paid'
-                              ? (locale === 'en' ? 'Success' : 'Berhasil')
-                              : p.status === 'pending_paypal'
-                              ? (locale === 'en' ? 'Under Review' : 'Sedang Ditinjau')
-                              : p.status === 'pending'
-                              ? (locale === 'en' ? 'Pending' : 'Menunggu')
-                              : p.status}
-                          </span>
-
-                          {(p.status === 'pending' || p.status === 'pending_paypal') && (
-                            <button
-                              id={`continue-pay-btn-${p.id}`}
-                              onClick={() => {
-                                const pkgToOpen = initialPackages.find((pkg) => pkg.id === p.packageId) ?? {
-                                  id: p.packageId ?? p.id,
-                                  name: p.packageName ?? (locale === 'en' ? 'Top-up Package' : 'Paket Kredit'),
-                                  priceCents: p.amountCents,
-                                  currency: p.currency ?? 'IDR',
-                                  creditAllowance: p.credits,
-                                };
-                                setSelectedPkg(pkgToOpen);
-                                setResumePayment({
-                                  id: p.id,
-                                  externalId: p.externalId,
-                                  provider: p.provider,
-                                  status: p.status,
-                                });
-                              }}
-                              className="px-2.5 py-1 rounded-lg bg-neutral-950 hover:bg-neutral-800 text-white text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1 shadow-2xs"
+                  </thead>
+                  <tbody className="divide-y divide-neutral-100">
+                    {payments.map((p) => (
+                      <tr key={p.id}>
+                        <td className="px-5 py-3 text-neutral-500">
+                          {new Date(p.createdAt).toLocaleDateString(locale === 'en' ? 'en-US' : 'id-ID')}
+                        </td>
+                        <td className="px-5 py-3 font-bold text-neutral-900">{p.packageName ?? (locale === 'en' ? 'Top-up' : 'Isi Ulang')}</td>
+                        <td className="px-5 py-3 font-mono">
+                          {p.currency === 'USD'
+                            ? `$ ${(p.amountCents / 100).toFixed(2)} USD`
+                            : `Rp ${(p.amountCents ?? 0).toLocaleString('id-ID')}`}
+                        </td>
+                        <td className="px-5 py-3">
+                          <div className="flex items-center gap-2">
+                            <span
+                              suppressHydrationWarning
+                              className={`px-2 py-0.5 rounded-md text-[10px] font-mono font-bold ${p.status === 'paid' || p.status === 'success' || p.status === 'settlement'
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : p.status === 'pending' || p.status === 'pending_paypal'
+                                    ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                                    : 'bg-neutral-100 text-neutral-800'
+                                }`}
                             >
-                              <CreditCard className="h-3 w-3" />
-                              <span suppressHydrationWarning>{locale === 'en' ? 'Pay Now' : 'Lanjutkan Bayar'}</span>
-                            </button>
+                              {p.status === 'success' || p.status === 'settlement' || p.status === 'paid'
+                                ? (locale === 'en' ? 'Success' : 'Berhasil')
+                                : p.status === 'pending_paypal'
+                                  ? (locale === 'en' ? 'Under Review' : 'Sedang Ditinjau')
+                                  : p.status === 'pending'
+                                    ? (locale === 'en' ? 'Pending' : 'Menunggu')
+                                    : p.status}
+                            </span>
+
+                            {(p.status === 'pending' || p.status === 'pending_paypal') && (
+                              <button
+                                id={`continue-pay-btn-${p.id}`}
+                                onClick={() => {
+                                  const pkgToOpen = initialPackages.find((pkg) => pkg.id === p.packageId) ?? {
+                                    id: p.packageId ?? p.id,
+                                    name: p.packageName ?? (locale === 'en' ? 'Top-up Package' : 'Paket Kredit'),
+                                    priceCents: p.amountCents,
+                                    currency: p.currency ?? 'IDR',
+                                    creditAllowance: p.credits,
+                                  };
+                                  setSelectedPkg(pkgToOpen);
+                                  setResumePayment({
+                                    id: p.id,
+                                    externalId: p.externalId,
+                                    provider: p.provider,
+                                    status: p.status,
+                                  });
+                                }}
+                                className="px-2.5 py-1 rounded-lg bg-neutral-950 hover:bg-neutral-800 text-white text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1 shadow-2xs"
+                              >
+                                <CreditCard className="h-3 w-3" />
+                                <span suppressHydrationWarning>{locale === 'en' ? 'Pay Now' : 'Lanjutkan Bayar'}</span>
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+        {/* Credit Ledger History */}
+        <div className="space-y-3">
+          <h2 suppressHydrationWarning className="font-heading font-bold text-base text-neutral-950">
+            {t.dashboard.ledgerHistoryTitle}
+          </h2>
+          <div className="rounded-2xl bg-white border border-neutral-200/90 shadow-2xs overflow-hidden">
+            {ledger.length === 0 ? (
+              <div suppressHydrationWarning className="p-8 text-center text-xs text-neutral-500 font-mono">
+                {t.dashboard.noLedgerHistory}
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr suppressHydrationWarning className="border-b border-neutral-200 bg-neutral-50/70 text-[11px] font-mono uppercase text-neutral-500">
+                      <th className="px-5 py-3">{t.dashboard.thLedgerType}</th>
+                      <th className="px-5 py-3">{t.dashboard.thLedgerAmount}</th>
+                      <th className="px-5 py-3">{t.dashboard.thLedgerRef}</th>
+                      <th className="px-5 py-3">{t.dashboard.thLedgerDate}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-neutral-100">
+                    {ledger.map((entry) => (
+                      <tr key={entry.id}>
+                        <td className="px-5 py-3 font-mono font-bold text-neutral-800">
+                          {entry.entry_type}
+                        </td>
+                        <td className={`px-5 py-3 font-mono font-bold ${entry.amount >= 0 ? 'text-emerald-600' : 'text-rose-600'
+                          }`}>
+                          {entry.amount >= 0 ? '+' : ''}{entry.amount.toLocaleString()}
+                        </td>
+                        <td className="px-5 py-3 text-neutral-500 max-w-[200px] truncate">
+                          {entry.reference ?? '—'}
+                        </td>
+                        <td className="px-5 py-3 text-neutral-400 font-mono whitespace-nowrap">
+                          {new Date(entry.created_at).toLocaleString(
+                            locale === 'en' ? 'en-US' : 'id-ID',
+                            { dateStyle: 'short', timeStyle: 'short' }
                           )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </div>
       </div>
-      {/* Credit Ledger History */}
-      <div className="space-y-3">
-        <h2 suppressHydrationWarning className="font-heading font-bold text-base text-neutral-950">
-          {t.dashboard.ledgerHistoryTitle}
-        </h2>
-        <div className="rounded-2xl bg-white border border-neutral-200/90 shadow-2xs overflow-hidden">
-          {ledger.length === 0 ? (
-            <div suppressHydrationWarning className="p-8 text-center text-xs text-neutral-500 font-mono">
-              {t.dashboard.noLedgerHistory}
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead>
-                  <tr suppressHydrationWarning className="border-b border-neutral-200 bg-neutral-50/70 text-[11px] font-mono uppercase text-neutral-500">
-                    <th className="px-5 py-3">{t.dashboard.thLedgerType}</th>
-                    <th className="px-5 py-3">{t.dashboard.thLedgerAmount}</th>
-                    <th className="px-5 py-3">{t.dashboard.thLedgerRef}</th>
-                    <th className="px-5 py-3">{t.dashboard.thLedgerDate}</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-neutral-100">
-                  {ledger.map((entry) => (
-                    <tr key={entry.id}>
-                      <td className="px-5 py-3 font-mono font-bold text-neutral-800">
-                        {entry.entry_type}
-                      </td>
-                      <td className={`px-5 py-3 font-mono font-bold ${
-                        entry.amount >= 0 ? 'text-emerald-600' : 'text-rose-600'
-                      }`}>
-                        {entry.amount >= 0 ? '+' : ''}{entry.amount.toLocaleString()}
-                      </td>
-                      <td className="px-5 py-3 text-neutral-500 max-w-[200px] truncate">
-                        {entry.reference ?? '—'}
-                      </td>
-                      <td className="px-5 py-3 text-neutral-400 font-mono whitespace-nowrap">
-                        {new Date(entry.created_at).toLocaleString(
-                          locale === 'en' ? 'en-US' : 'id-ID',
-                          { dateStyle: 'short', timeStyle: 'short' }
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
   );
 }

@@ -128,7 +128,7 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
               setStatus('failed');
             }
           })
-          .catch(() => {});
+          .catch(() => { });
       } else {
         // Verify current status from API first before resuming
         fetch(`${API_URL}/v1/payments/${existingPayment.id}`, {
@@ -284,11 +284,11 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
             <div className="text-center text-sm text-neutral-500 leading-relaxed">
               {existingPayment
                 ? (locale === 'en'
-                    ? 'Click below to resume your pending payment via Duitku'
-                    : 'Klik di bawah untuk melanjutkan pembayaran yang tertunda via Duitku')
+                  ? 'Click below to resume your pending payment via Duitku'
+                  : 'Klik di bawah untuk melanjutkan pembayaran yang tertunda via Duitku')
                 : (locale === 'en'
-                    ? 'Click below to open the Duitku payment page (QRIS, VA, e-wallet, etc.)'
-                    : 'Klik di bawah untuk membuka halaman pembayaran Duitku (QRIS, VA, e-wallet, dll.)')}
+                  ? 'Click below to open the Duitku payment page (QRIS, VA, e-wallet, etc.)'
+                  : 'Klik di bawah untuk membuka halaman pembayaran Duitku (QRIS, VA, e-wallet, dll.)')}
             </div>
           )}
 
