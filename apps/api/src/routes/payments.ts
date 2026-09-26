@@ -97,21 +97,19 @@ payments.post('/create', async (c) => {
     );
   }
 
-  // Step 6: Enforce currency check (Duitku strictly requires IDR currency)
-  if (pkg.currency !== 'IDR') {
-    return c.json(
-      { error: { message: 'package currency is not IDR', type: 'invalid_request_error', code: 'invalid_currency' } },
-      400,
-    );
-  }
-
-  // Step 7: Validate priceCents is set and positive
+  // Step 6: Validate priceCents is set and positive
   if (!pkg.priceCents || pkg.priceCents <= 0) {
     return c.json(
       { error: { message: 'package has no price set', type: 'invalid_request_error', code: 'package_no_price' } },
       400,
     );
   }
+
+  // Step 7: Determine IDR amount (auto-convert if USD package at 1 USD = 16,000 IDR)
+  const amountIDR =
+    pkg.currency === 'IDR' || !pkg.currency
+      ? pkg.priceCents
+      : Math.round((pkg.priceCents / 100) * 16000);
 
   // Step 8: Fetch user info for Duitku email and customer VA name confirmation
   const [user] = await db
@@ -129,7 +127,6 @@ payments.post('/create', async (c) => {
 
   // Step 9: Generate unique merchantOrderId (morphic-${UUID}) under Duitku's 50-character limit
   const merchantOrderId = `morphic-${randomUUID()}`;
-  const amountIDR = pkg.priceCents; // priceCents stores IDR integer amount
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
   const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8787';
@@ -144,7 +141,7 @@ payments.post('/create', async (c) => {
       packageId: pkg.id,
       amountCents: amountIDR,
       currency: 'IDR',
-      credits: pkg.creditAllowance,
+      credits: pkg.creditAllowance ?? 0,
       status: 'pending',
     })
     .returning();
@@ -306,13 +303,7 @@ payments.post('/paypal/create-order', async (c) => {
     );
   }
 
-  if (pkg.currency !== 'USD') {
-    return c.json(
-      { error: { message: 'package currency is not USD', type: 'invalid_request_error', code: 'invalid_currency' } },
-      400,
-    );
-  }
-
+  // Step 3: Validate priceCents is set and positive
   if (!pkg.priceCents || pkg.priceCents <= 0) {
     return c.json(
       { error: { message: 'package has no price set', type: 'invalid_request_error', code: 'package_no_price' } },
@@ -320,7 +311,13 @@ payments.post('/paypal/create-order', async (c) => {
     );
   }
 
-  // Step 4: Generate idempotency key & insert new pending payment row
+  // Step 4: Determine USD cents amount (auto-convert if IDR package at 1 USD = 16,000 IDR)
+  const usdAmountCents =
+    pkg.currency === 'USD'
+      ? pkg.priceCents
+      : Math.max(100, Math.round((pkg.priceCents / 16000) * 100));
+
+  // Step 5: Generate idempotency key & insert new pending payment row
   const idempotencyKey = randomUUID();
 
   const [payment] = await db
@@ -330,15 +327,15 @@ payments.post('/paypal/create-order', async (c) => {
       provider: 'paypal',
       externalId: `temp:${idempotencyKey}`,
       packageId: pkg.id,
-      amountCents: pkg.priceCents,
+      amountCents: usdAmountCents,
       currency: 'USD',
-      credits: pkg.creditAllowance,
+      credits: pkg.creditAllowance ?? 0,
       status: 'pending',
     })
     .returning();
 
   // Step 5: Call PayPal createOrder API
-  const amountStr = (pkg.priceCents / 100).toFixed(2);
+  const amountStr = (usdAmountCents / 100).toFixed(2);
 
   let paypalResult;
   try {
