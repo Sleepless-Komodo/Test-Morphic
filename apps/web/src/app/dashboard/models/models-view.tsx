@@ -4,6 +4,7 @@ import { useState, useMemo } from 'react';
 import { useTranslation } from '@/lib/i18n';
 import { formatCredits } from '@/lib/utils';
 import { Search, Terminal, Copy, Check, Cpu } from 'lucide-react';
+import { ModelProviderLogo } from '@/components/ProviderLogos';
 
 export function ModelsView({ initialModels }: { initialModels: any[] }) {
   const { t, locale } = useTranslation();
@@ -99,17 +100,28 @@ export function ModelsView({ initialModels }: { initialModels: any[] }) {
           return (
             <div
               key={m.publicModelId}
-              className="p-3.5 rounded-2xl bg-white border border-neutral-200/90 shadow-2xs flex flex-col justify-between hover:border-neutral-900/30 hover:shadow-xs transition-all group min-w-0 min-h-[205px] max-h-[220px]"
+              className="p-3.5 rounded-2xl bg-white border border-neutral-200/90 shadow-2xs flex flex-col justify-between hover:border-neutral-900/30 hover:shadow-xs transition-all group min-w-0 min-h-[215px]"
             >
               <div>
-                {/* Provider + Status */}
-                <div className="flex items-center justify-between gap-1.5 mb-1.5">
-                  <span className="text-[10px] text-neutral-500 font-mono uppercase tracking-wider font-semibold truncate">
-                    {m.providerName ?? (locale === 'en' ? 'Official' : 'Resmi')}
-                  </span>
+                {/* Header with Provider Logo, Name & Circuit Breaker Status */}
+                <div className="flex items-start justify-between gap-2 mb-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className="w-8 h-8 rounded-xl bg-neutral-100/80 border border-neutral-200/80 flex items-center justify-center shrink-0">
+                      <ModelProviderLogo provider={m.publicModelId || m.providerName} className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <span className="text-[10px] text-neutral-500 font-mono uppercase tracking-wider font-semibold truncate block leading-none mb-1">
+                        {m.providerName ?? (locale === 'en' ? 'Official' : 'Resmi')}
+                      </span>
+                      <h3 className="font-heading font-bold text-xs sm:text-[13px] text-neutral-950 truncate leading-tight" title={m.displayName}>
+                        {m.displayName}
+                      </h3>
+                    </div>
+                  </div>
+
                   {m.circuitBreakerState?.state === 'open' ? (
                     <span
-                      className="inline-flex items-center gap-1.5 text-[10px] font-mono font-medium text-amber-700 shrink-0"
+                      className="inline-flex items-center gap-1.5 text-[10px] font-mono font-medium text-amber-700 shrink-0 pt-0.5"
                       title={locale === 'en' ? 'Upstream degraded, automatically routed via fallback provider' : 'Upstream terganggu, otomatis dialihkan via rute cadangan'}
                     >
                       <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
@@ -117,24 +129,19 @@ export function ModelsView({ initialModels }: { initialModels: any[] }) {
                     </span>
                   ) : m.circuitBreakerState?.state === 'half-open' ? (
                     <span
-                      className="inline-flex items-center gap-1.5 text-[10px] font-mono font-medium text-neutral-600 shrink-0"
+                      className="inline-flex items-center gap-1.5 text-[10px] font-mono font-medium text-neutral-600 shrink-0 pt-0.5"
                       title={locale === 'en' ? 'Upstream recovering, testing trial queries' : 'Upstream dalam pemulihan'}
                     >
                       <span className="w-1.5 h-1.5 rounded-full bg-neutral-400 shrink-0" />
                       <span>{locale === 'en' ? 'Testing' : 'Pemulihan'}</span>
                     </span>
                   ) : (
-                    <span className="inline-flex items-center gap-1.5 text-[10px] font-mono font-medium text-neutral-700 shrink-0">
+                    <span className="inline-flex items-center gap-1.5 text-[10px] font-mono font-medium text-neutral-700 shrink-0 pt-0.5">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
                       <span>{t.dashboard.modelStatusReady}</span>
                     </span>
                   )}
                 </div>
-
-                {/* Model Title */}
-                <h3 className="font-heading font-bold text-xs sm:text-[13px] text-neutral-950 truncate" title={m.displayName}>
-                  {m.displayName}
-                </h3>
 
                 {/* Model ID Pill with 1-click copy */}
                 <div
