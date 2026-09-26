@@ -21,7 +21,17 @@
         "DUITKU_MERCHANT_CODE",
         "DUITKU_API_KEY",
         "DUITKU_ENV",
-        "NEXT_PUBLIC_APP_URL"
+        "NEXT_PUBLIC_APP_URL",
+        "NEXT_PUBLIC_API_URL",
+        "UPSTREAM_TIMEOUT_MS",
+        "RECAPTCHA_SECRET_KEY",
+        "NEXT_PUBLIC_RECAPTCHA_SITE_KEY",
+        "PAYPAL_CLIENT_ID",
+        "PAYPAL_CLIENT_SECRET",
+        "PAYPAL_ENVIRONMENT",
+        "NEXT_PUBLIC_PAYPAL_CLIENT_ID",
+        "GITHUB_CLIENT_ID",
+        "GITHUB_CLIENT_SECRET"
       ]
     },
     "dev": {
