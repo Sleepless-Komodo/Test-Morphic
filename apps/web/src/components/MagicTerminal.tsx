@@ -5,7 +5,6 @@ import { motion } from 'framer-motion';
 import { Copy, Check, Terminal as TerminalIcon } from 'lucide-react';
 import { useTranslation } from '@/lib/i18n';
 import { useReducedMotionSafe } from '@/lib/use-reduced-motion-safe';
-import { API_BASE_URL } from '@/lib/utils';
 
 type TabKey = 'cursor' | 'cline' | 'python' | 'curl';
 
@@ -35,13 +34,13 @@ const TERMINAL_SNIPPETS: Record<
     file: 'cursor.settings.json',
     command: 'cursor settings apply --provider openai',
     outputLines: [
-      `✔ Base URL: ${API_BASE_URL}`,
+      '✔ Base URL: https://api.morphic.sh/v1',
       '✔ API Key:  mp-xxxxxxxxxxxxxxxxxxxx',
       '✔ Models: deepseek-v4-coder, claude-3.5-sonnet-proxy, qwen-2.5-max, kimi-k1.5-coding',
       '✔ Status: OpenAI-compatible ready for composer',
     ],
     rawSnippet: `// Cursor Settings > Models > OpenAI API:
-Base URL: ${API_BASE_URL}
+Base URL: https://api.morphic.sh/v1
 API Key:  mp-xxxxxxxxxxxxxxxxxxxx
 
 // Models supported:
@@ -56,14 +55,14 @@ API Key:  mp-xxxxxxxxxxxxxxxxxxxx
     command: 'cline settings apply cline_mcp_settings.json',
     outputLines: [
       '✔ apiProvider: openai',
-      `✔ openAiBaseUrl: ${API_BASE_URL}`,
+      '✔ openAiBaseUrl: https://api.morphic.sh/v1',
       '✔ openAiApiKey: mp-xxxxxxxxxxxxxxxxxxxx',
       '✔ openAiModelId: deepseek-v4-coder',
       '✔ Provider ready — start chatting in VSCode',
     ],
     rawSnippet: `{
   "apiProvider": "openai",
-  "openAiBaseUrl": "${API_BASE_URL}",
+  "openAiBaseUrl": "https://api.morphic.sh/v1",
   "openAiApiKey": "mp-xxxxxxxxxxxxxxxxxxxx",
   "openAiModelId": "deepseek-v4-coder"
 }`,
@@ -81,7 +80,7 @@ API Key:  mp-xxxxxxxxxxxxxxxxxxxx
     rawSnippet: `from openai import OpenAI
 
 client = OpenAI(
-    base_url="${API_BASE_URL}",
+    base_url="https://api.morphic.sh/v1",
     api_key="mp-xxxxxxxxxxxxxxxxxxxx",
 )
 
@@ -94,7 +93,7 @@ print(response.choices[0].message.content)`,
   curl: {
     label: 'cURL',
     file: 'request.sh',
-    command: `curl ${API_BASE_URL}/chat/completions \\
+    command: `curl https://api.morphic.sh/v1/chat/completions \\
   -H "Authorization: Bearer mp-xxxxxxxx" \\
   -H "Content-Type: application/json" \\
   -d '{"model": "deepseek-v4", "messages": [{"role": "user", "content": "Hello"}]}'`,
@@ -104,7 +103,7 @@ print(response.choices[0].message.content)`,
       'x-morphic-latency: 142ms',
       '{"id":"chatcmpl-9x","choices":[{"message":{"role":"assistant","content":"Hello! How can I help you?"}}]}',
     ],
-    rawSnippet: `curl ${API_BASE_URL}/chat/completions \\
+    rawSnippet: `curl https://api.morphic.sh/v1/chat/completions \\
   -H "Authorization: Bearer mp-xxxxxxxx" \\
   -H "Content-Type: application/json" \\
   -d '{"model": "deepseek-v4", "messages": [{"role": "user", "content": "Hello"}]}'`,
