@@ -45,7 +45,7 @@ export default async function AdminCodes() {
               id="code-prefix"
               name="prefix"
               aria-label={t.admin.codes.prefixLabel}
-              className="w-full px-3 py-2 text-xs rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 placeholder:text-neutral-400 font-mono uppercase focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
+              className="w-full px-3 py-2 text-xs rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 placeholder:text-neutral-500 font-mono uppercase focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
               placeholder="MORPHIC-HACK"
               required
             />
@@ -121,7 +121,7 @@ export default async function AdminCodes() {
               id="code-duration"
               name="durationHours"
               aria-label={t.admin.codes.durationHoursLabel}
-              className="w-full px-3 py-2 text-xs rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 font-mono placeholder:text-neutral-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
+              className="w-full px-3 py-2 text-xs rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 font-mono placeholder:text-neutral-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
               type="number"
               placeholder="e.g. 24"
             />
@@ -135,7 +135,7 @@ export default async function AdminCodes() {
               id="code-max-redemptions"
               name="maxRedemptions"
               aria-label={t.admin.codes.maxRedemptionsLabel}
-              className="w-full px-3 py-2 text-xs rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 font-mono placeholder:text-neutral-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
+              className="w-full px-3 py-2 text-xs rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 font-mono placeholder:text-neutral-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
               type="number"
               placeholder="e.g. 100"
             />

@@ -121,7 +121,7 @@ export default async function AdminProviders() {
               id="provider-name"
               name="name"
               aria-label="Provider Name"
-              className="w-full px-3 py-2 text-xs rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 placeholder:text-neutral-400 font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
+              className="w-full px-3 py-2 text-xs rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 placeholder:text-neutral-500 font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
               placeholder="name (e.g. moonshot)"
               required
             />
@@ -132,7 +132,7 @@ export default async function AdminProviders() {
               id="provider-base-url"
               name="baseUrl"
               aria-label="Base URL"
-              className="w-full px-3 py-2 text-xs rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 placeholder:text-neutral-400 font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
+              className="w-full px-3 py-2 text-xs rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 placeholder:text-neutral-500 font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
               placeholder="https://api.provider.com/v1"
               required
             />
@@ -144,7 +144,7 @@ export default async function AdminProviders() {
               name="credential"
               aria-label="API Credential"
               type="password"
-              className="w-full px-3 py-2 text-xs rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 placeholder:text-neutral-400 font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
+              className="w-full px-3 py-2 text-xs rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 placeholder:text-neutral-500 font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
               placeholder="API credential"
             />
           </div>

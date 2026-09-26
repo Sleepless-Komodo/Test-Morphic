@@ -21,7 +21,7 @@ export function SignOutButton({ className, children }: SignOutButtonProps) {
       aria-label={t.dashboard.signOut}
       className={
         className ??
-        'p-2 rounded-xl text-neutral-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer shrink-0'
+        'p-2 rounded-xl text-neutral-500 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer shrink-0'
       }
       onClick={() =>
         signOut({

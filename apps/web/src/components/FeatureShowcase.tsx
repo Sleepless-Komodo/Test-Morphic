@@ -94,7 +94,7 @@ function StreamTokensVisual() {
       <div className="w-full max-w-[270px] rounded-2xl bg-white border border-neutral-200/90 p-3.5 shadow-2xs font-mono text-[11px] space-y-2">
         <div className="flex items-center justify-between border-b border-neutral-100 pb-2 text-[10px] text-neutral-500">
           <span className="flex items-center gap-1.5 font-semibold text-neutral-800">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
             SSE Stream
           </span>
           <span className="text-neutral-400">TTFT &lt; 15ms</span>
@@ -198,7 +198,7 @@ function FailoverMeshVisual({ locale }: { locale: string }) {
           </div>
         ))}
         <div className="rounded-2xl bg-neutral-50/90 border border-neutral-200/80 p-2 sm:p-2.5 shadow-2xs flex flex-col items-center justify-center gap-1">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
           <span className="font-mono text-[8px] font-bold uppercase text-neutral-500 tracking-wider text-center">
             {locale === 'id' ? 'RUTE AKTIF' : 'ACTIVE ROUTE'}
           </span>

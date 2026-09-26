@@ -58,7 +58,7 @@ API Key:  mp-xxxxxxxxxxxxxxxxxxxx
       '✔ openAiBaseUrl: https://api.morphic.sh/v1',
       '✔ openAiApiKey: mp-xxxxxxxxxxxxxxxxxxxx',
       '✔ openAiModelId: deepseek-v4-coder',
-      '✔ Provider ready — start chatting in VSCode',
+      '✔ Provider ready. Start chatting in VSCode',
     ],
     rawSnippet: `{
   "apiProvider": "openai",
@@ -193,7 +193,7 @@ export default function MagicTerminal({
           transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
           className="flex flex-col items-start"
         >
-          <div className="text-xs sm:text-sm font-mono uppercase tracking-[0.2em] text-neutral-400 font-bold mb-3">
+          <div className="text-xs sm:text-sm font-mono uppercase tracking-[0.2em] text-neutral-500 font-bold mb-3">
             {t.terminal.badge}
           </div>
 

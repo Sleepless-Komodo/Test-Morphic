@@ -1,11 +1,13 @@
 import { Hono } from 'hono';
 import { db, schema as s } from '@morphic/db';
-import { eq, and, desc, gte, lte, count } from 'drizzle-orm';
+import { eq, and, desc, gte, lte, gt, count } from 'drizzle-orm';
 import { sessionAuth } from '../middleware/session-auth';
+import { sessionRateLimit } from '../middleware/session-ratelimit';
 
 const account = new Hono();
 
 account.use('*', sessionAuth);
+account.use('*', sessionRateLimit('account', 120));
 
 account.get('/balance', async (c) => {
   const { userId } = c.get('userSession');
@@ -132,6 +134,84 @@ account.get('/transactions', async (c) => {
       created_at: t.createdAt.toISOString(),
     })),
     total,
+    page,
+    limit,
+  });
+});
+
+// ── GET /v1/account/entitlements ──────────────────────
+// Active, unexpired model entitlements for the authenticated user.
+account.get('/entitlements', async (c) => {
+  const { userId } = c.get('userSession');
+  const rows = await db
+    .select({
+      id: s.entitlements.id,
+      allowance: s.entitlements.allowance,
+      remaining: s.entitlements.remaining,
+      expiresAt: s.entitlements.expiresAt,
+      packageName: s.packages.name,
+      displayName: s.models.displayName,
+    })
+    .from(s.entitlements)
+    .leftJoin(s.packages, eq(s.entitlements.packageId, s.packages.id))
+    .leftJoin(s.models, eq(s.entitlements.modelId, s.models.id))
+    .where(
+      and(
+        eq(s.entitlements.userId, userId),
+        eq(s.entitlements.status, 'active'),
+        gt(s.entitlements.expiresAt, new Date()),
+      ),
+    )
+    .orderBy(desc(s.entitlements.expiresAt));
+
+  return c.json({
+    data: rows.map((e) => ({
+      id: e.id,
+      allowance: e.allowance,
+      remaining: e.remaining,
+      expires_at: e.expiresAt?.toISOString() ?? null,
+      package_name: e.packageName,
+      display_name: e.displayName,
+    })),
+  });
+});
+
+// ── GET /v1/account/payments ──────────────────────────
+// Payment history for the authenticated user (never cross-user).
+account.get('/payments', async (c) => {
+  const { userId } = c.get('userSession');
+  const page = Math.max(1, Number(c.req.query('page') ?? 1));
+  const limit = Math.min(100, Math.max(1, Number(c.req.query('limit') ?? 20)));
+  const offset = (page - 1) * limit;
+
+  const rows = await db
+    .select({
+      id: s.payments.id,
+      provider: s.payments.provider,
+      amountCents: s.payments.amountCents,
+      currency: s.payments.currency,
+      credits: s.payments.credits,
+      status: s.payments.status,
+      paidAt: s.payments.paidAt,
+      createdAt: s.payments.createdAt,
+    })
+    .from(s.payments)
+    .where(eq(s.payments.userId, userId))
+    .orderBy(desc(s.payments.createdAt))
+    .limit(limit)
+    .offset(offset);
+
+  return c.json({
+    data: rows.map((p) => ({
+      id: p.id,
+      provider: p.provider,
+      amount_cents: p.amountCents,
+      currency: p.currency,
+      credits: p.credits,
+      status: p.status,
+      paid_at: p.paidAt?.toISOString() ?? null,
+      created_at: p.createdAt.toISOString(),
+    })),
     page,
     limit,
   });

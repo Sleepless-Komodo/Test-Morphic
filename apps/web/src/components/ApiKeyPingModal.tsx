@@ -161,7 +161,7 @@ export function ApiKeyPingModal({
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
                 placeholder="mp-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-                className="w-full px-3 py-2 text-xs font-mono rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 placeholder:text-neutral-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 focus:bg-white transition-colors"
+                className="w-full px-3 py-2 text-xs font-mono rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 placeholder:text-neutral-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 focus:bg-white transition-colors"
                 required
               />
             </div>
@@ -202,7 +202,7 @@ export function ApiKeyPingModal({
                 onChange={(e) => setPrompt(e.target.value)}
                 rows={2}
                 placeholder={isId ? 'Masukkan pesan uji coba...' : 'Enter test prompt...'}
-                className="w-full px-3 py-2 text-xs rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 placeholder:text-neutral-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 focus:bg-white transition-colors resize-none"
+                className="w-full px-3 py-2 text-xs rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 placeholder:text-neutral-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 focus:bg-white transition-colors resize-none"
               />
             </div>
 

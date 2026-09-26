@@ -261,7 +261,7 @@ export const en = {
       statusTitle: 'Gateway Status',
       statusAllOperational: 'All Systems Operational',
       statusDegradedTitle: 'Some Services Degraded',
-      statusUptime: '99.9% uptime over the last 90 days',
+      statusUptime: 'Live status, checked from your browser',
       statusPing: 'Latency',
       statusServiceOperational: 'Operational',
       statusPingNote: 'Latency measured from your browser to the gateway.',

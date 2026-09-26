@@ -530,7 +530,7 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
                 </div>
 
                 {isProvisioningToken && (
-                  <div className="flex items-center gap-2 py-3 px-3 rounded-xl bg-neutral-950 border border-neutral-800 text-xs text-neutral-400">
+                  <div className="flex items-center gap-2 py-3 px-3 rounded-xl bg-neutral-950 border border-neutral-800 text-xs text-neutral-500">
                     <Loader2 className="h-3.5 w-3.5 animate-spin text-neutral-300" />
                     <span>{locale === 'en' ? 'Generating your API token…' : 'Membuat token API Anda…'}</span>
                   </div>
@@ -561,7 +561,7 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
                         )}
                       </button>
                     </div>
-                    <p className="text-[11px] text-neutral-400 leading-relaxed">
+                    <p className="text-[11px] text-neutral-500 leading-relaxed">
                       {locale === 'en'
                         ? 'Keep this token safe. It is connected directly to your credit balance.'
                         : 'Simpan token ini di tempat aman. Token ini langsung menggunakan kuota kredit yang baru dibeli.'}
@@ -628,7 +628,7 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
                     <div className="space-y-1.5 font-mono text-[11px]">
                       <div className="flex items-center justify-between p-2 rounded-lg bg-white border border-neutral-200">
                         <div className="truncate mr-2">
-                          <span className="text-neutral-400 font-sans mr-2">Base URL:</span>
+                          <span className="text-neutral-500 font-sans mr-2">Base URL:</span>
                           <span className="text-neutral-900 font-semibold">{API_BASE_URL}</span>
                         </div>
                         <button
@@ -642,10 +642,10 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
                       </div>
                       <div className="flex items-center justify-between p-2 rounded-lg bg-white border border-neutral-200">
                         <div className="truncate mr-2">
-                          <span className="text-neutral-400 font-sans mr-2">Model:</span>
+                          <span className="text-neutral-500 font-sans mr-2">Model:</span>
                           <span className="text-neutral-900 font-semibold">deepseek-v4</span>
                         </div>
-                        <span className="text-[10px] text-neutral-400 font-sans">atau qwen-max</span>
+                        <span className="text-[10px] text-neutral-500 font-sans">atau qwen-max</span>
                       </div>
                     </div>
                   </div>
@@ -662,7 +662,7 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
                     <div className="space-y-1.5 font-mono text-[11px]">
                       <div className="flex items-center justify-between p-2 rounded-lg bg-white border border-neutral-200">
                         <div className="truncate mr-2">
-                          <span className="text-neutral-400 font-sans mr-2">Base URL:</span>
+                          <span className="text-neutral-500 font-sans mr-2">Base URL:</span>
                           <span className="text-neutral-900 font-semibold">{API_BASE_URL}</span>
                         </div>
                         <button
@@ -676,7 +676,7 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
                       </div>
                       <div className="flex items-center justify-between p-2 rounded-lg bg-white border border-neutral-200">
                         <div className="truncate mr-2">
-                          <span className="text-neutral-400 font-sans mr-2">Model ID:</span>
+                          <span className="text-neutral-500 font-sans mr-2">Model ID:</span>
                           <span className="text-neutral-900 font-semibold">deepseek-v4</span>
                         </div>
                       </div>
@@ -758,7 +758,7 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
                   >
                     <BookOpen className="h-3.5 w-3.5 text-neutral-600" />
                     <span>{locale === 'en' ? 'Setup Guides' : 'Panduan Lengkap'}</span>
-                    <ExternalLink className="h-3 w-3 text-neutral-400" />
+                    <ExternalLink className="h-3 w-3 text-neutral-500" />
                   </a>
                 </div>
               </div>
@@ -846,7 +846,7 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
             <button
               id="checkout-cancel-btn"
               onClick={onClose}
-              className="w-full py-2 text-xs text-neutral-400 hover:text-neutral-600 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
+              className="w-full py-2 text-xs text-neutral-500 hover:text-neutral-600 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
             >
               {locale === 'en' ? 'Cancel' : 'Batal'}
             </button>

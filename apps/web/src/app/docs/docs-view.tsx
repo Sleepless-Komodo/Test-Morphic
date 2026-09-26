@@ -76,7 +76,7 @@ function CodeBlock({
             <div className="w-2.5 h-2.5 rounded-full bg-[#27c93f] border border-[#1aab29]/50" />
           </div>
           {filename && (
-            <span className="font-mono text-[11px] text-neutral-400 font-medium ml-2">
+            <span className="font-mono text-[11px] text-neutral-500 font-medium ml-2">
               {filename}
             </span>
           )}
@@ -702,19 +702,19 @@ curl https://api.morphic.sh/v1/chat/completions \\
 
             <ul className="space-y-2 text-xs sm:text-sm text-neutral-700 pt-1">
               <li id="overview-wire" className="scroll-mt-36 flex items-start gap-2">
-                <span className="font-mono text-neutral-400 font-bold">&bull;</span>
+                <span className="font-mono text-neutral-500 font-bold">&bull;</span>
                 <div>
                   <strong className="text-neutral-950">100% Drop-in Compatibility:</strong> Mendukung rute <code className="font-mono bg-neutral-100 px-1 py-0.5 rounded text-neutral-900">/v1/chat/completions</code> dan <code className="font-mono bg-neutral-100 px-1 py-0.5 rounded text-neutral-900">/v1/models</code> tanpa perubahan kode aplikasi Anda.
                 </div>
               </li>
               <li id="overview-sse" className="scroll-mt-36 flex items-start gap-2">
-                <span className="font-mono text-neutral-400 font-bold">&bull;</span>
+                <span className="font-mono text-neutral-500 font-bold">&bull;</span>
                 <div>
                   <strong className="text-neutral-950">Low-Latency SSE Streaming:</strong> Mendukung Server-Sent Events real-time chunking (<code className="font-mono bg-neutral-100 px-1 py-0.5 rounded text-neutral-900">stream: true</code>) yang dioptimasi untuk Cursor Composer, Cline, dan interactive chat.
                 </div>
               </li>
               <li id="overview-zdr" className="scroll-mt-36 flex items-start gap-2">
-                <span className="font-mono text-neutral-400 font-bold">&bull;</span>
+                <span className="font-mono text-neutral-500 font-bold">&bull;</span>
                 <div>
                   <strong className="text-neutral-950">Zero Data Retention (ZDR):</strong> Seluruh payload prompt, file context, dan completions dialirkan secara ephemeral tanpa pernah disimpan ke persistent disk atau database kami.
                 </div>
@@ -1029,7 +1029,7 @@ curl https://api.morphic.sh/v1/chat/completions \\
 
               {/* Headers Table */}
               <div id="chat-headers" className="scroll-mt-36 space-y-2">
-                <div className="text-[11px] font-mono font-bold text-neutral-400 uppercase tracking-wider">
+                <div className="text-[11px] font-mono font-bold text-neutral-500 uppercase tracking-wider">
                   Request Headers
                 </div>
                 <div className="border border-neutral-200 rounded-xl overflow-hidden text-xs">
@@ -1059,7 +1059,7 @@ curl https://api.morphic.sh/v1/chat/completions \\
 
               {/* Body Parameters Table */}
               <div id="chat-params" className="scroll-mt-36 space-y-2 pt-2">
-                <div className="text-[11px] font-mono font-bold text-neutral-400 uppercase tracking-wider">
+                <div className="text-[11px] font-mono font-bold text-neutral-500 uppercase tracking-wider">
                   Request Body Parameters
                 </div>
                 <div className="border border-neutral-200 rounded-xl overflow-hidden text-xs">
