@@ -43,22 +43,36 @@ export async function reconcilePaypalPayments(): Promise<number> {
       const tooOld = payment.createdAt < cutoff24h;
 
       if (payment.provider === 'duitku') {
-        // Query Duitku transactionStatus API first
-        const status = await checkTransactionStatus(payment.externalId);
+        try {
+          // Query Duitku transactionStatus API first
+          const status = await checkTransactionStatus(payment.externalId);
 
-        if (status.statusCode === '00') {
-          // Verify nominal amount matches stored amountCents
-          if (Number(status.amount) !== payment.amountCents) {
-            console.error(`[payment-reconcile] NEEDS REVIEW: Duitku ${payment.id} got=${status.amount} expected=${payment.amountCents}`);
-            continue;
+          if (status.statusCode === '00') {
+            // Verify nominal amount matches stored amountCents
+            if (Number(status.amount) !== payment.amountCents) {
+              console.error(`[payment-reconcile] NEEDS REVIEW: Duitku ${payment.id} got=${status.amount} expected=${payment.amountCents}`);
+              continue;
+            }
+            if ((await processPaymentSuccess(payment.id)).success) {
+              reconciled++;
+              console.log(`[payment-reconcile] Duitku payment ${payment.id} reconciled → paid`);
+            }
+          } else if (status.statusCode === '02' || tooOld) {
+            await markPaymentIfOpen(payment.id, 'expired');
+            console.log(`[payment-reconcile] Duitku payment ${payment.id} marked expired (statusCode=${status.statusCode}, tooOld=${tooOld})`);
           }
-          if ((await processPaymentSuccess(payment.id)).success) {
-            reconciled++;
-            console.log(`[payment-reconcile] Duitku payment ${payment.id} reconciled → paid`);
+        } catch (err: any) {
+          const isNotFound =
+            err?.message?.includes('HTTP 404') ||
+            err?.message?.includes('Transaction not found') ||
+            err?.message?.includes('not found');
+
+          if (isNotFound || tooOld) {
+            await markPaymentIfOpen(payment.id, 'expired');
+            console.log(`[payment-reconcile] Duitku payment ${payment.id} marked expired (gateway error/404: ${err?.message})`);
+          } else {
+            console.error(`[payment-reconcile] error processing payment ${payment.id}:`, err);
           }
-        } else if (status.statusCode === '02' || tooOld) {
-          await markPaymentIfOpen(payment.id, 'expired');
-          console.log(`[payment-reconcile] Duitku payment ${payment.id} marked expired (statusCode=${status.statusCode}, tooOld=${tooOld})`);
         }
       } else if (payment.provider === 'paypal') {
         // Handle temporary PayPal order attempts (>15m old without real Order ID)
