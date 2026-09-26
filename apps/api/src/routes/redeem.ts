@@ -1,12 +1,32 @@
 import { Hono } from 'hono';
 import { db, schema as s } from '@morphic/db';
-import { eq, and, sql } from 'drizzle-orm';
-import { sessionAuth } from '../middleware/session-auth';
+import { eq, and, or, sql, lt, isNull } from 'drizzle-orm';
+import { sessionAuth, denyKeyDerivedSession } from '../middleware/session-auth';
+import { sessionRateLimit } from '../middleware/session-ratelimit';
 import { grantCredits, grantEntitlement } from '@morphic/db/billing';
+
+class RedeemError extends Error {
+  constructor(public reason: 'code_fully_redeemed') {
+    super(reason);
+  }
+}
+
+/** Detect a Postgres unique-violation across drivers (neon-http: err.code; postgres-js: err.cause.code). */
+function isUniqueViolation(err: any): boolean {
+  return (
+    err?.code === '23505' ||
+    err?.cause?.code === '23505' ||
+    typeof err?.message === 'string' &&
+      (err.message.includes('unique constraint') || err.message.includes('duplicate key'))
+  );
+}
 
 const redeem = new Hono();
 
 redeem.use('*', sessionAuth);
+redeem.use('*', denyKeyDerivedSession);
+// Cap redemption attempts to blunt code brute-forcing (audit H3).
+redeem.use('*', sessionRateLimit('redeem', 10));
 
 // ── POST /v1/redeem ───────────────────────────────────
 redeem.post('/', async (c) => {
@@ -54,35 +74,47 @@ redeem.post('/', async (c) => {
     );
   }
 
-  // Check usage limit
-  if (redeemCode.maxRedemptions && redeemCode.redeemedCount >= redeemCode.maxRedemptions) {
-    return c.json(
-      { error: { message: 'code has reached maximum redemptions', type: 'invalid_request_error', code: 'code_fully_redeemed' } },
-      400,
-    );
-  }
-
-  // Attempt to redeem within a transaction
+  // Redeem atomically. The redemption count is bumped with a CONDITIONAL update so
+  // concurrent redeemers cannot push a capped code past max_redemptions (audit H4):
+  // the WHERE clause re-checks the cap inside the write, and zero rows means the code
+  // is already full. The per-user unique constraint on `redemptions` blocks double-spend.
   try {
     await db.transaction(async (tx) => {
-      // 1. Insert redemption (throws if user already redeemed)
-      await tx.insert(s.redemptions).values({
-        codeId: redeemCode.id,
-        userId,
-      });
-
-      // 2. Increment usage count
-      await tx
+      const bumped = await tx
         .update(s.redeemCodes)
         .set({ redeemedCount: sql`${s.redeemCodes.redeemedCount} + 1` })
-        .where(eq(s.redeemCodes.id, redeemCode.id));
+        .where(
+          and(
+            eq(s.redeemCodes.id, redeemCode.id),
+            or(
+              isNull(s.redeemCodes.maxRedemptions),
+              lt(s.redeemCodes.redeemedCount, s.redeemCodes.maxRedemptions),
+            ),
+          ),
+        )
+        .returning({ id: s.redeemCodes.id });
+
+      if (bumped.length === 0) {
+        throw new RedeemError('code_fully_redeemed');
+      }
+
+      // Insert redemption (unique (code_id, user_id) throws if this user already redeemed).
+      // This runs after the bump so a re-redeem attempt rolls back the increment too.
+      await tx.insert(s.redemptions).values({ codeId: redeemCode.id, userId });
     });
   } catch (err: any) {
-    // Unique constraint violation (23505) means already redeemed
-    if (err.code === '23505' || err.message?.includes('unique constraint')) {
+    if (err instanceof RedeemError && err.reason === 'code_fully_redeemed') {
+      return c.json(
+        { error: { message: 'code has reached maximum redemptions', type: 'invalid_request_error', code: 'code_fully_redeemed' } },
+        400,
+      );
+    }
+    // Unique-violation (23505) means this user already redeemed. postgres-js nests the
+    // pg error under `.cause`, neon-http surfaces it directly — check both.
+    if (isUniqueViolation(err)) {
       return c.json(
         { error: { message: 'you have already redeemed this code', type: 'invalid_request_error', code: 'code_already_redeemed' } },
-        409, // Conflict
+        409,
       );
     }
     console.error('[redeem] transaction failed:', err);

@@ -54,7 +54,7 @@ export default function AdminError({
         </div>
 
         {error.digest && (
-          <p className="text-[10px] text-neutral-400 mt-4 font-mono">
+          <p className="text-[10px] text-neutral-500 mt-4 font-mono">
             Error ID: {error.digest}
           </p>
         )}

@@ -58,3 +58,9 @@ docs-ros/
 .agents
 .to-do
 .vercel
+
+# CodeGraph index (local tooling)
+.codegraph/
+# Next.js auto-generated agent rule files
+apps/web/CLAUDE.md
+apps/web/AGENTS.md

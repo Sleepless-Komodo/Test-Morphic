@@ -40,6 +40,9 @@ export const sessions = pgTable(
     userId: uuid('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
+    // How this session was created. 'api_key' sessions are minted by trading an mp-* key
+    // and are restricted to read-only routes (audit H7); interactive logins leave this null.
+    authMethod: text('auth_method'),
     createdAt: now(),
     updatedAt: updatedAt(),
   },

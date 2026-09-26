@@ -65,7 +65,7 @@ export function RedeemView() {
               value={code}
               onChange={(e) => setCode(e.target.value.toUpperCase())}
               placeholder={t.dashboard.voucherInputPlaceholder}
-              className="w-full px-4 py-3 rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 text-base sm:text-lg font-mono font-bold placeholder:font-sans placeholder:font-normal placeholder:text-neutral-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 focus:border-neutral-950 focus:bg-white transition-all uppercase shadow-2xs"
+              className="w-full px-4 py-3 rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 text-base sm:text-lg font-mono font-bold placeholder:font-sans placeholder:font-normal placeholder:text-neutral-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 focus:border-neutral-950 focus:bg-white transition-all uppercase shadow-2xs"
               disabled={status === 'loading'}
             />
           </div>
@@ -121,7 +121,7 @@ export function RedeemView() {
           <div suppressHydrationWarning className="font-semibold text-neutral-800 flex items-center gap-1.5">
             <span>{t.dashboard.termsCardTitle}</span>
           </div>
-          <ul className="space-y-1.5 text-[11px] text-neutral-500 pl-4 list-disc marker:text-neutral-400">
+          <ul className="space-y-1.5 text-[11px] text-neutral-500 pl-4 list-disc marker:text-neutral-500">
             <li suppressHydrationWarning>{t.dashboard.termItem1}</li>
             <li suppressHydrationWarning>{t.dashboard.termItem2}</li>
             <li suppressHydrationWarning>{t.dashboard.termItem3}</li>

@@ -43,7 +43,7 @@ function CopyPrefixButton({ prefix }: { prefix: string }) {
       type="button"
       onClick={onCopy}
       title={t.dashboard.keyCopyPrefix}
-      className="p-1 rounded hover:bg-neutral-200/60 text-neutral-400 hover:text-neutral-700 transition cursor-pointer"
+      className="p-1 rounded hover:bg-neutral-200/60 text-neutral-500 hover:text-neutral-700 transition cursor-pointer"
     >
       {copied ? <Check className="h-3 w-3 text-emerald-600" /> : <Copy className="h-3 w-3" />}
     </button>
@@ -189,7 +189,7 @@ export function KeysView({ initialKeys }: { initialKeys: KeyItem[] }) {
                   }}
                   className="px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-200 hover:text-white border border-neutral-700 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
                 >
-                  <Activity className="h-3.5 w-3.5 text-neutral-400" />
+                  <Activity className="h-3.5 w-3.5 text-neutral-500" />
                   <span>{isId ? 'Uji Kunci' : 'Test Key'}</span>
                 </button>
                 <button
@@ -210,7 +210,7 @@ export function KeysView({ initialKeys }: { initialKeys: KeyItem[] }) {
                 </button>
               </div>
             </div>
-            <div className="flex items-center gap-2 text-[11px] text-neutral-400">
+            <div className="flex items-center gap-2 text-[11px] text-neutral-500">
               <ShieldAlert className="h-3.5 w-3.5 text-amber-400 shrink-0" />
               <span>{t.dashboard.revealKeyWarning}</span>
             </div>
@@ -281,7 +281,7 @@ export function KeysView({ initialKeys }: { initialKeys: KeyItem[] }) {
                           </span>
                         )
                       ) : (
-                        <span className="text-neutral-400">{t.dashboard.keyStatusNever}</span>
+                        <span className="text-neutral-500">{t.dashboard.keyStatusNever}</span>
                       )}
                     </td>
                     <td className="px-6 py-4 text-neutral-500 font-mono text-[11px]">
