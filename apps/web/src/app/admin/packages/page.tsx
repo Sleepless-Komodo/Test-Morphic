@@ -45,7 +45,7 @@ export default async function AdminPackages() {
               id="pkg-name"
               name="name"
               aria-label="Package Name"
-              className="w-full px-3 py-2 text-xs rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 placeholder:text-neutral-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
+              className="w-full px-3 py-2 text-xs rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 placeholder:text-neutral-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
               placeholder="DeepSeek V4 — 1 Day"
               required
             />
@@ -59,7 +59,7 @@ export default async function AdminPackages() {
               id="pkg-desc"
               name="description"
               aria-label="Description"
-              className="w-full px-3 py-2 text-xs rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 placeholder:text-neutral-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
+              className="w-full px-3 py-2 text-xs rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 placeholder:text-neutral-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
               placeholder="Unlimited for 24 hours (fair use)"
             />
           </div>
@@ -89,7 +89,7 @@ export default async function AdminPackages() {
               id="pkg-allowance"
               name="creditAllowance"
               aria-label="Credit Allowance"
-              className="w-full px-3 py-2 text-xs rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 placeholder:text-neutral-400 font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
+              className="w-full px-3 py-2 text-xs rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 placeholder:text-neutral-500 font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
               type="number"
               placeholder="100000"
               required
@@ -104,7 +104,7 @@ export default async function AdminPackages() {
               id="pkg-duration"
               name="durationHours"
               aria-label="Duration in hours"
-              className="w-full px-3 py-2 text-xs rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 placeholder:text-neutral-400 font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
+              className="w-full px-3 py-2 text-xs rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 placeholder:text-neutral-500 font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
               type="number"
               placeholder="24"
             />
@@ -119,7 +119,7 @@ export default async function AdminPackages() {
                 id="pkg-price"
                 name="priceCents"
                 aria-label="Price in IDR"
-                className="w-full px-3 py-2 text-xs rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 placeholder:text-neutral-400 font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
+                className="w-full px-3 py-2 text-xs rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 placeholder:text-neutral-500 font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
                 type="number"
                 placeholder="25000"
               />

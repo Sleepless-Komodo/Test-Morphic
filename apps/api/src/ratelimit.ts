@@ -1,3 +1,6 @@
+import Redis from 'ioredis';
+import { RedisRateLimitStore } from './lib/redis-store';
+
 export interface IRateLimitStore {
   /** Increments counter for a key, setting TTL if new. Returns updated count. */
   increment(key: string, ttlSeconds: number): Promise<number>;
@@ -76,7 +79,23 @@ export class InMemoryRateLimitStore implements IRateLimitStore {
   }
 }
 
-export const rateLimitStore: IRateLimitStore = new InMemoryRateLimitStore();
+function createStore(): IRateLimitStore {
+  const url = process.env.REDIS_URL;
+  if (url) {
+    try {
+      const client = new Redis(url, { maxRetriesPerRequest: 2 });
+      client.on('error', (e: unknown) => console.error('[ratelimit] redis error:', e));
+      console.log('[ratelimit] using Redis store');
+      return new RedisRateLimitStore(client);
+    } catch (e) {
+      console.error('[ratelimit] Redis init failed, falling back to in-memory:', e);
+    }
+  }
+  console.warn('[ratelimit] REDIS_URL unset — using in-memory store (per-process, resets on restart)');
+  return new InMemoryRateLimitStore();
+}
+
+export const rateLimitStore: IRateLimitStore = createStore();
 
 const RATE_WINDOW_SECONDS = 60;
 const CONCURRENCY_TTL_SECONDS = 300;
@@ -108,4 +127,26 @@ export async function trackConcurrency(
 
 export async function releaseConcurrency(keyId: string, token: string): Promise<void> {
   await rateLimitStore.removeConcurrency(`cc:${keyId}`, token);
+}
+
+
+/**
+ * Fixed-window limiter for session-authenticated management routes.
+ * Keyed on userId AND client IP so neither multi-account nor single-account abuse slips through.
+ */
+export async function checkSessionRateLimit(
+  scope: string,
+  userId: string,
+  ip: string,
+  limit: number,
+  windowSeconds = 60,
+): Promise<boolean> {
+  const bucket = Math.floor(Date.now() / (windowSeconds * 1000));
+  const userKey = `srl:${scope}:u:${userId}:${bucket}`;
+  const ipKey = `srl:${scope}:ip:${ip}:${bucket}`;
+  const [u, i] = await Promise.all([
+    rateLimitStore.increment(userKey, windowSeconds * 2),
+    rateLimitStore.increment(ipKey, windowSeconds * 2),
+  ]);
+  return u <= limit && i <= limit;
 }

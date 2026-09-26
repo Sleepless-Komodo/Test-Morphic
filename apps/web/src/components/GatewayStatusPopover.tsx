@@ -93,9 +93,6 @@ export default function GatewayStatusPopover() {
         }`}
       >
         <span className="relative flex h-1.5 w-1.5 shrink-0">
-          {operational && (
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
-          )}
           <span
             className={`relative inline-flex h-1.5 w-1.5 rounded-full ${
               state === 'checking'
@@ -108,7 +105,7 @@ export default function GatewayStatusPopover() {
         </span>
         <span suppressHydrationWarning>{pillLabel}</span>
         <ChevronDown
-          className={`h-3 w-3 text-neutral-400 transition-transform duration-150 ${open ? 'rotate-180' : ''}`}
+          className={`h-3 w-3 text-neutral-500 transition-transform duration-150 ${open ? 'rotate-180' : ''}`}
         />
       </button>
 
@@ -126,7 +123,7 @@ export default function GatewayStatusPopover() {
               >
                 {operational ? t.dashboard.statusAllOperational : t.dashboard.statusDegradedTitle}
               </div>
-              <div suppressHydrationWarning className="text-[10px] font-mono text-neutral-400 mt-0.5">
+              <div suppressHydrationWarning className="text-[10px] font-mono text-neutral-500 mt-0.5">
                 {t.dashboard.statusUptime}
               </div>
             </div>
@@ -184,7 +181,7 @@ export default function GatewayStatusPopover() {
             )}
           </div>
 
-          <div className="mt-3 border-t border-neutral-100 pt-2 text-[10px] text-neutral-400 font-mono leading-relaxed">
+          <div className="mt-3 border-t border-neutral-100 pt-2 text-[10px] text-neutral-500 font-mono leading-relaxed">
             <span suppressHydrationWarning>{t.dashboard.statusPingNote}</span>
           </div>
         </div>

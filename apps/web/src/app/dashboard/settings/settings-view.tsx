@@ -151,7 +151,7 @@ export function SettingsView({ user }: SettingsViewProps) {
                 <p className="text-xs sm:text-sm text-neutral-600 truncate">{user.email}</p>
                 {memberSince && (
                   <p className="text-xs text-neutral-500 flex items-center gap-1.5 pt-0.5">
-                    <Clock className="h-3.5 w-3.5 text-neutral-400" />
+                    <Clock className="h-3.5 w-3.5 text-neutral-500" />
                     <span>{isId ? `Bergabung sejak ${memberSince}` : `Member since ${memberSince}`}</span>
                   </p>
                 )}

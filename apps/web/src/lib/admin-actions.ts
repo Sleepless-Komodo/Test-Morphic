@@ -5,6 +5,7 @@ import { eq, sql } from 'drizzle-orm';
 import { db, schema as s } from '@morphic/db';
 import { grantCredits } from '@morphic/db/billing';
 import { requireAdmin } from '@/lib/actions';
+import { randomInt } from 'node:crypto';
 
 async function audit(adminId: string, action: string, entity: string, entityId: string | null, detail?: unknown) {
   await db.insert(s.adminAuditLog).values({
@@ -14,6 +15,16 @@ async function audit(adminId: string, action: string, entity: string, entityId: 
     entityId,
     detail: detail ?? null,
   });
+}
+
+// Unambiguous alphabet (no 0/O/1/I) for redeem-code suffixes.
+const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+/** Cryptographically-random redeem-code suffix (audit H2 — replaces Math.random). */
+function randomCodeSuffix(len = 12): string {
+  let out = '';
+  for (let i = 0; i < len; i++) out += CODE_ALPHABET[randomInt(CODE_ALPHABET.length)];
+  return out;
 }
 
 export async function toggleUserSuspension(formData: FormData) {
@@ -138,13 +149,11 @@ export async function generateRedeemCodes(formData: FormData) {
   const maxRedemptions = formData.get('maxRedemptions') ? Number(formData.get('maxRedemptions')) : null;
   const expiresAtRaw = String(formData.get('expiresAt') || '');
 
+  // Single code = the admin's chosen vanity code (e.g. "LAUNCH50"). Batches get a
+  // cryptographically-random 12-char suffix so codes are not enumerable (audit H2).
   const codes: string[] = [];
   for (let i = 0; i < count; i++) {
-    codes.push(
-      count === 1
-        ? prefix
-        : `${prefix}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`,
-    );
+    codes.push(count === 1 ? prefix : `${prefix}-${randomCodeSuffix()}`);
   }
 
   await db

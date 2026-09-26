@@ -103,7 +103,7 @@ export default async function AdminUsers() {
                           name="amount"
                           type="number"
                           aria-label={`Adjust credits for ${u.email}`}
-                          className="w-24 px-2 py-1 text-xs rounded-lg border border-neutral-200 bg-neutral-50 text-neutral-900 placeholder:text-neutral-400 font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
+                          className="w-24 px-2 py-1 text-xs rounded-lg border border-neutral-200 bg-neutral-50 text-neutral-900 placeholder:text-neutral-500 font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
                           placeholder={t.admin.users.adjustPlaceholder}
                         />
                         <button
