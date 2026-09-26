@@ -20,14 +20,12 @@ import {
   Code2,
   BookOpen,
   CreditCard,
-  Coins,
 } from 'lucide-react';
 import { useTranslation } from '@/lib/i18n';
 import { formatCredits, API_BASE_URL, cn } from '@/lib/utils';
 import { PayPalButton } from '@/components/PayPalButton';
 import { provisionPostPaymentKey } from '@/lib/actions';
 import { ApiKeyPingModal } from '@/components/ApiKeyPingModal';
-import { ModelProviderLogo } from '@/components/ProviderLogos';
 
 const API_URL = '/api/backend';
 const POLL_INTERVAL_MS = 3000;
@@ -131,9 +129,6 @@ interface CheckoutModalProps {
     currency?: string;
     creditAllowance: number;
     durationHours?: number;
-    modelId?: string | null;
-    modelDisplayName?: string | null;
-    modelPublicId?: string | null;
   };
   existingPayment?: {
     id: string;
@@ -380,9 +375,6 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
   };
 
   const pkgName = locale === 'en' && pkg.nameEn ? pkg.nameEn : pkg.name;
-  const hasDedicatedModel = Boolean(pkg.modelId || pkg.modelDisplayName || pkg.modelPublicId);
-  const modelKey = pkg.modelPublicId || pkg.modelDisplayName || pkg.name || '';
-  const modelName = pkg.modelDisplayName || (pkg.modelPublicId ? pkg.modelPublicId : (pkg.name?.includes('DeepSeek') ? 'DeepSeek V4' : pkg.name?.includes('Qwen') ? 'Qwen Max' : 'AI Model'));
 
   const formatCountdown = (secs: number) => {
     const m = Math.floor(secs / 60);
@@ -426,36 +418,13 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
           {/* Package info (hidden when paid to keep focus on key and agent setup) */}
           {status !== 'paid' && (
             <div className="text-center">
-              {hasDedicatedModel ? (
-                <div className="inline-flex items-center gap-2 p-1.5 px-3 rounded-2xl bg-neutral-50 border border-neutral-200/80 mb-2.5">
-                  <div className="w-6 h-6 rounded-lg bg-white border border-neutral-200/90 flex items-center justify-center shrink-0 shadow-2xs">
-                    <ModelProviderLogo provider={modelKey} className="w-3.5 h-3.5" />
-                  </div>
-                  <div className="text-left">
-                    <div className="text-[9px] font-mono text-neutral-500 uppercase tracking-wider font-semibold leading-none">
-                      {locale === 'en' ? 'Model Pass' : 'Pass Model'}
-                    </div>
-                    <div className="font-heading font-extrabold text-xs text-neutral-950 leading-tight">
-                      {modelName}
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="inline-flex items-center gap-2 p-1.5 px-3 rounded-2xl bg-emerald-50/80 border border-emerald-200/80 mb-2.5 text-emerald-800">
-                  <Coins className="w-4 h-4 text-emerald-600" />
-                  <span className="text-[10px] font-mono font-bold uppercase tracking-wider">
-                    {locale === 'en' ? 'Universal Credits · All Models' : 'Kredit Universal · Semua Model AI'}
-                  </span>
-                </div>
-              )}
-
               <div className="text-lg font-extrabold text-neutral-950 font-heading">{pkgName}</div>
               <div className="text-3xl font-black text-neutral-950 mt-1 font-mono">
                 {paymentProvider === 'paypal' ? `$ ${usdPrice} USD` : `Rp ${idrPrice.toLocaleString('id-ID')}`}
               </div>
               <div className="text-xs text-neutral-500 mt-1 font-mono">
                 +{formatCredits(pkg.creditAllowance)} credits
-                {pkg.durationHours ? ` · ${pkg.durationHours >= 24 ? `${pkg.durationHours / 24} ${locale === 'en' ? 'days' : 'hari'}` : `${pkg.durationHours} ${locale === 'en' ? 'hours' : 'jam'}`}` : ' · Flexible'}
+                {pkg.durationHours ? ` · ${pkg.durationHours >= 24 ? `${pkg.durationHours / 24} hari` : `${pkg.durationHours} jam`}` : ''}
               </div>
             </div>
           )}
@@ -631,16 +600,6 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
                   <div className="text-xs text-emerald-800 font-medium mt-0.5">
                     +{formatCredits(pkg.creditAllowance)} {locale === 'en' ? 'credits added to your account' : 'kredit telah ditambahkan ke akun Anda'}
                   </div>
-                  {hasDedicatedModel && (
-                    <div className="flex items-center gap-1.5 mt-2 text-xs text-emerald-900 font-medium">
-                      <div className="w-5 h-5 rounded-md bg-white border border-emerald-200 flex items-center justify-center shrink-0 shadow-2xs">
-                        <ModelProviderLogo provider={modelKey} className="w-3.5 h-3.5" />
-                      </div>
-                      <span>
-                        {locale === 'en' ? 'Model Pass Active' : 'Pass Model Aktif'}: <strong>{modelName}</strong> ({pkg.durationHours ? `${pkg.durationHours}h` : 'Flex'})
-                      </span>
-                    </div>
-                  )}
                 </div>
               </div>
 

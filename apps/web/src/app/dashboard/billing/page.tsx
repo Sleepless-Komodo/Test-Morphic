@@ -24,29 +24,6 @@ export default async function BillingPage() {
     if (pkgRes.data?.data) displayPackages = pkgRes.data.data;
     if (entRes.data?.data) entitlements = entRes.data.data;
     if (payRes.data?.data) payments = payRes.data.data;
-
-    // Ensure modelDisplayName and modelPublicId are present for model-tied packages
-    if (displayPackages.some((p) => p.modelId && !p.modelDisplayName)) {
-      try {
-        const modelRows = await db
-          .select({
-            id: s.models.id,
-            displayName: s.models.displayName,
-            publicModelId: s.models.publicModelId,
-          })
-          .from(s.models);
-        const modelMap = new Map(modelRows.map((m) => [m.id, m]));
-        displayPackages = displayPackages.map((p) => {
-          if (p.modelId && modelMap.has(p.modelId)) {
-            const m = modelMap.get(p.modelId)!;
-            return { ...p, modelDisplayName: m.displayName, modelPublicId: m.publicModelId };
-          }
-          return p;
-        });
-      } catch {
-        // ignore enrichment error
-      }
-    }
   } catch (err) {
     console.warn('[BillingPage] Backend API fetch failed, will use DB fallback:', err);
   }
@@ -56,23 +33,7 @@ export default async function BillingPage() {
     if (!needDb) throw { __skip: true };
     const [b, dbPackages, dbEntitlements, dbPayments] = await Promise.all([
       getBalance(user.id),
-      db
-        .select({
-          id: s.packages.id,
-          name: s.packages.name,
-          description: s.packages.description,
-          creditAllowance: s.packages.creditAllowance,
-          modelId: s.packages.modelId,
-          durationHours: s.packages.durationHours,
-          priceCents: s.packages.priceCents,
-          currency: s.packages.currency,
-          status: s.packages.status,
-          modelDisplayName: s.models.displayName,
-          modelPublicId: s.models.publicModelId,
-        })
-        .from(s.packages)
-        .leftJoin(s.models, eq(s.packages.modelId, s.models.id))
-        .where(eq(s.packages.status, 'active')),
+      db.select().from(s.packages).where(eq(s.packages.status, 'active')),
       db
         .select({
           id: s.entitlements.id,
