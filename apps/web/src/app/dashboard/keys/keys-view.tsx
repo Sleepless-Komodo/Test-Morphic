@@ -15,6 +15,8 @@ import {
   Trash2,
   Activity,
   Zap,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { ApiKeyPingModal } from '@/components/ApiKeyPingModal';
 
@@ -24,30 +26,11 @@ interface KeyItem {
   id: string;
   name: string;
   keyPrefix: string;
+  rawKey?: string | null;
   status: string;
   expiresAt?: Date | null;
   lastUsedAt: Date | null;
   createdAt: Date;
-}
-
-function CopyPrefixButton({ prefix }: { prefix: string }) {
-  const [copied, setCopied] = useState(false);
-  const { t } = useTranslation();
-  const onCopy = () => {
-    navigator.clipboard.writeText(prefix);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-  return (
-    <button
-      type="button"
-      onClick={onCopy}
-      title={t.dashboard.keyCopyPrefix}
-      className="p-1 rounded hover:bg-neutral-200/60 text-neutral-500 hover:text-neutral-700 transition cursor-pointer"
-    >
-      {copied ? <Check className="h-3 w-3 text-emerald-600" /> : <Copy className="h-3 w-3" />}
-    </button>
-  );
 }
 
 export function KeysView({ initialKeys }: { initialKeys: KeyItem[] }) {
@@ -59,11 +42,37 @@ export function KeysView({ initialKeys }: { initialKeys: KeyItem[] }) {
   const [createdRawKey, setCreatedRawKey] = useState<string | null>(null);
   const [copiedKey, setCopiedKey] = useState(false);
   const [confirmRevokeId, setConfirmRevokeId] = useState<string | null>(null);
+  const [revealedKeys, setRevealedKeys] = useState<Record<string, boolean>>({});
+  const [copiedKeyId, setCopiedKeyId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
   // Test API Key / Quick Ping modal state
   const [isPingModalOpen, setIsPingModalOpen] = useState(false);
   const [testKey, setTestKey] = useState('');
+
+  const getFullKey = (k: KeyItem): string | null => {
+    if (k.rawKey) return k.rawKey;
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem(`mp_raw_${k.id}`) || localStorage.getItem(`mp_raw_${k.keyPrefix}`);
+      if (stored) return stored;
+    }
+    return null;
+  };
+
+  const toggleReveal = (id: string) => {
+    setRevealedKeys((prev) => ({
+      ...prev,
+      [id]: !prev[id],
+    }));
+  };
+
+  const handleCopyKey = (k: KeyItem) => {
+    const fullKey = getFullKey(k);
+    const textToCopy = fullKey || k.keyPrefix;
+    navigator.clipboard.writeText(textToCopy);
+    setCopiedKeyId(k.id);
+    setTimeout(() => setCopiedKeyId(null), 2000);
+  };
 
   const handleCreate = (e: React.FormEvent) => {
     e.preventDefault();
@@ -80,11 +89,16 @@ export function KeysView({ initialKeys }: { initialKeys: KeyItem[] }) {
         const actualPrefix = (res as any).prefix || res.raw.slice(0, 16);
         const realId = (res as any).id || `k-${Date.now()}`;
         const expiresAt = (res as any).expiresAt || null;
+        try {
+          localStorage.setItem(`mp_raw_${realId}`, res.raw);
+          localStorage.setItem(`mp_raw_${actualPrefix}`, res.raw);
+        } catch {}
         setKeys((prev) => [
           {
             id: realId,
             name: newKeyName.trim(),
             keyPrefix: actualPrefix,
+            rawKey: res.raw,
             status: 'active',
             expiresAt,
             lastUsedAt: null,
@@ -92,6 +106,7 @@ export function KeysView({ initialKeys }: { initialKeys: KeyItem[] }) {
           },
           ...prev,
         ]);
+        setRevealedKeys((prev) => ({ ...prev, [realId]: true }));
         setNewKeyName('');
       }
     });
@@ -249,10 +264,47 @@ export function KeysView({ initialKeys }: { initialKeys: KeyItem[] }) {
                     <td className="px-6 py-4 font-bold text-neutral-900">{k.name}</td>
                     <td className="px-6 py-4 font-mono text-neutral-600">
                       <div className="inline-flex items-center gap-1.5">
-                        <span className="px-2 py-0.5 rounded-md bg-neutral-100 border border-neutral-200">
-                          {maskedKey(k.keyPrefix)}
+                        <span
+                          className={`px-2.5 py-1 rounded-lg border text-xs font-mono select-all transition-all ${
+                            revealedKeys[k.id]
+                              ? 'bg-neutral-900 text-emerald-400 border-neutral-800 font-semibold'
+                              : 'bg-neutral-100 text-neutral-600 border-neutral-200'
+                          }`}
+                        >
+                          {revealedKeys[k.id]
+                            ? (getFullKey(k) || `${k.keyPrefix}••••••••`)
+                            : maskedKey(k.keyPrefix)}
                         </span>
-                        <CopyPrefixButton prefix={k.keyPrefix} />
+
+                        {/* Toggle Visibility (Eye) */}
+                        <button
+                          type="button"
+                          onClick={() => toggleReveal(k.id)}
+                          title={revealedKeys[k.id] ? t.dashboard.keyHide : t.dashboard.keyShow}
+                          aria-label={revealedKeys[k.id] ? t.dashboard.keyHide : t.dashboard.keyShow}
+                          className="p-1.5 rounded-lg border border-neutral-200 hover:border-neutral-400 hover:bg-neutral-100 text-neutral-600 hover:text-neutral-900 transition-colors cursor-pointer shrink-0"
+                        >
+                          {revealedKeys[k.id] ? (
+                            <EyeOff className="h-3.5 w-3.5 text-neutral-700" />
+                          ) : (
+                            <Eye className="h-3.5 w-3.5 text-neutral-600" />
+                          )}
+                        </button>
+
+                        {/* Copy FULL API Key */}
+                        <button
+                          type="button"
+                          onClick={() => handleCopyKey(k)}
+                          title={t.dashboard.keyCopyFull}
+                          aria-label={t.dashboard.keyCopyFull}
+                          className="p-1.5 rounded-lg border border-neutral-200 hover:border-neutral-400 hover:bg-neutral-100 text-neutral-600 hover:text-neutral-900 transition-colors cursor-pointer shrink-0"
+                        >
+                          {copiedKeyId === k.id ? (
+                            <Check className="h-3.5 w-3.5 text-emerald-600" />
+                          ) : (
+                            <Copy className="h-3.5 w-3.5 text-neutral-600" />
+                          )}
+                        </button>
                       </div>
                     </td>
                     <td className="px-6 py-4">
