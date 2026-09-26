@@ -644,3 +644,36 @@ export async function testApiKeyPingAction(params: {
   }
 }
 
+export async function provisionPostPaymentKey(params?: { packageName?: string }) {
+  const user = await requireUser();
+  const name = params?.packageName ? `Pass: ${params.packageName}` : 'Quickstart Key';
+
+  const { raw, hash, prefix } = generateApiKey();
+
+  try {
+    const [inserted] = await db
+      .insert(s.apiKeys)
+      .values({
+        userId: user.id,
+        name,
+        keyHash: hash,
+        keyPrefix: prefix,
+        expiresAt: null,
+      })
+      .returning({ id: s.apiKeys.id, prefix: s.apiKeys.keyPrefix });
+
+    return {
+      ok: true,
+      rawKey: raw,
+      prefix: inserted?.prefix ?? prefix,
+      name,
+    };
+  } catch (err: any) {
+    console.error('[provisionPostPaymentKey] Failed to insert key:', err);
+    return {
+      ok: false,
+      error: err?.message || 'Failed to create API key',
+    };
+  }
+}
+
