@@ -12,16 +12,110 @@ import {
   Building2,
   Wallet,
   X,
+  Copy,
+  Check,
+  KeyRound,
+  Play,
+  Terminal,
+  Code2,
+  BookOpen,
 } from 'lucide-react';
 import { useTranslation } from '@/lib/i18n';
-import { formatCredits } from '@/lib/utils';
+import { formatCredits, API_BASE_URL, cn } from '@/lib/utils';
 import { PayPalButton } from '@/components/PayPalButton';
+import { provisionPostPaymentKey } from '@/lib/actions';
+import { ApiKeyPingModal } from '@/components/ApiKeyPingModal';
 
 const API_URL = '/api/backend';
 const POLL_INTERVAL_MS = 3000;
 const MAX_POLL_ATTEMPTS = 60; // 3 min max polling
 
 type PaymentStatus = 'idle' | 'creating' | 'waiting' | 'pending_paypal' | 'paid' | 'failed' | 'error';
+type IdeTab = 'cursor' | 'cline' | 'claudecode' | 'curl';
+type PaymentCategory = 'all' | 'qris' | 'va' | 'ewallet';
+
+export interface PaymentChannel {
+  code: string;
+  name: string;
+  category: 'qris' | 'va' | 'ewallet';
+  badge?: string;
+  description: string;
+  descriptionEn: string;
+}
+
+export const PAYMENT_CHANNELS: PaymentChannel[] = [
+  {
+    code: 'SP',
+    name: 'QRIS (ShopeePay / Universal)',
+    category: 'qris',
+    badge: 'Rekomendasi',
+    description: 'GoPay, OVO, DANA, BCA, Mandiri & Semua Aplikasi Bank',
+    descriptionEn: 'GoPay, OVO, DANA, BCA, Mandiri & All Banking Apps',
+  },
+  {
+    code: 'NQ',
+    name: 'QRIS (Nobu Bank)',
+    category: 'qris',
+    description: 'Alternatif QRIS instan bebas biaya admin',
+    descriptionEn: 'Instant QRIS alternative zero admin fee',
+  },
+  {
+    code: 'BC',
+    name: 'BCA Virtual Account',
+    category: 'va',
+    description: 'Transfer via BCA Mobile, myBCA, KlikBCA, atau ATM',
+    descriptionEn: 'Transfer via BCA Mobile, myBCA, KlikBCA, or ATM',
+  },
+  {
+    code: 'M2',
+    name: 'Mandiri Virtual Account',
+    category: 'va',
+    description: 'Transfer via Livin by Mandiri atau ATM',
+    descriptionEn: 'Transfer via Livin by Mandiri or ATM',
+  },
+  {
+    code: 'BN',
+    name: 'BNI Virtual Account',
+    category: 'va',
+    description: 'Transfer via BNI Mobile Banking atau ATM',
+    descriptionEn: 'Transfer via BNI Mobile Banking or ATM',
+  },
+  {
+    code: 'BR',
+    name: 'BRI Virtual Account (BRIVA)',
+    category: 'va',
+    description: 'Transfer via BRImo atau ATM BRI',
+    descriptionEn: 'Transfer via BRImo or ATM BRI',
+  },
+  {
+    code: 'BT',
+    name: 'Permata Virtual Account',
+    category: 'va',
+    description: 'Transfer via PermataMobile X atau ATM',
+    descriptionEn: 'Transfer via PermataMobile X or ATM',
+  },
+  {
+    code: 'OV',
+    name: 'OVO',
+    category: 'ewallet',
+    description: 'Pembayaran langsung via aplikasi OVO',
+    descriptionEn: 'Direct payment via OVO app',
+  },
+  {
+    code: 'DA',
+    name: 'DANA',
+    category: 'ewallet',
+    description: 'Pembayaran instan akun DANA',
+    descriptionEn: 'Instant payment with DANA account',
+  },
+  {
+    code: 'SA',
+    name: 'ShopeePay App',
+    category: 'ewallet',
+    description: 'Buka langsung aplikasi ShopeePay',
+    descriptionEn: 'Direct opening in ShopeePay app',
+  },
+];
 
 interface CheckoutModalProps {
   pkg: {
@@ -57,6 +151,18 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
   const pollAttemptsRef = useRef(0);
   const mountedRef = useRef(true);
 
+  const [provisionedToken, setProvisionedToken] = useState<string | null>(null);
+  const [isProvisioningToken, setIsProvisioningToken] = useState(false);
+  const [provisionError, setProvisionError] = useState<string | null>(null);
+  const [activeIdeTab, setActiveIdeTab] = useState<IdeTab>('cursor');
+  const [copiedKey, setCopiedKey] = useState(false);
+  const [copiedBaseUrl, setCopiedBaseUrl] = useState(false);
+  const [copiedSnippet, setCopiedSnippet] = useState(false);
+  const [isPingModalOpen, setIsPingModalOpen] = useState(false);
+
+  const [selectedMethod, setSelectedMethod] = useState<string>('SP');
+  const [categoryFilter, setCategoryFilter] = useState<PaymentCategory>('all');
+
   const isUSD = pkg.currency === 'USD';
 
   useEffect(() => {
@@ -66,6 +172,39 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
       if (pollRef.current) clearTimeout(pollRef.current);
     };
   }, []);
+
+  const fetchPostPaymentToken = useCallback(() => {
+    setIsProvisioningToken(true);
+    provisionPostPaymentKey({ packageName: pkg.name })
+      .then((res) => {
+        if (res?.ok && res.rawKey) {
+          setProvisionedToken(res.rawKey);
+        } else {
+          setProvisionError(res?.error || 'Gagal generate token');
+        }
+      })
+      .catch((err) => {
+        console.error('[checkout-modal] Failed to auto-provision key:', err);
+        setProvisionError('Gagal generate token');
+      })
+      .finally(() => {
+        setIsProvisioningToken(false);
+      });
+  }, [pkg.name]);
+
+  const copyText = (text: string, type: 'key' | 'base' | 'snippet') => {
+    navigator.clipboard.writeText(text);
+    if (type === 'key') {
+      setCopiedKey(true);
+      setTimeout(() => setCopiedKey(false), 2000);
+    } else if (type === 'base') {
+      setCopiedBaseUrl(true);
+      setTimeout(() => setCopiedBaseUrl(false), 2000);
+    } else {
+      setCopiedSnippet(true);
+      setTimeout(() => setCopiedSnippet(false), 2000);
+    }
+  };
 
   // Polling loop for Duitku
   const startPolling = useCallback((pid: string) => {
@@ -91,6 +230,7 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
         if (data.status === 'paid') {
           setStatus('paid');
           onSuccess(pkg.creditAllowance);
+          fetchPostPaymentToken();
           return; // stop polling
         } else if (data.status === 'failed' || data.status === 'expired') {
           setStatus('failed');
@@ -106,12 +246,11 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
     };
 
     pollRef.current = setTimeout(poll, POLL_INTERVAL_MS);
-  }, [pkg.creditAllowance, onSuccess]);
+  }, [pkg.creditAllowance, onSuccess, fetchPostPaymentToken]);
 
   // Resume existing pending payment
   useEffect(() => {
     if (existingPayment) {
-      setPaymentId(existingPayment.id);
       if (existingPayment.provider === 'paypal') {
         fetch(`${API_URL}/v1/payments/paypal/verify/${existingPayment.id}`, {
           credentials: 'include',
@@ -122,6 +261,7 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
             if (data.status === 'paid') {
               setStatus('paid');
               onSuccess(pkg.creditAllowance);
+              fetchPostPaymentToken();
             } else if (data.status === 'pending_paypal') {
               setStatus('pending_paypal');
             } else if (data.status === 'failed' || data.status === 'expired') {
@@ -140,6 +280,7 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
             if (data.status === 'paid') {
               setStatus('paid');
               onSuccess(pkg.creditAllowance);
+              fetchPostPaymentToken();
             } else if (data.status === 'failed' || data.status === 'expired') {
               setStatus('failed');
             } else {
@@ -151,7 +292,7 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
           });
       }
     }
-  }, [existingPayment, onSuccess, pkg.creditAllowance]);
+  }, [existingPayment, onSuccess, pkg.creditAllowance, fetchPostPaymentToken]);
 
   const handleCreateDuitkuPayment = async () => {
     // Open new window synchronously on user gesture to avoid popup blocker
@@ -206,6 +347,7 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
   const handlePayPalSuccess = (credits: number) => {
     setStatus('paid');
     onSuccess(credits);
+    fetchPostPaymentToken();
   };
 
   const handlePayPalPending = () => {
@@ -232,7 +374,9 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
       <div
-        className="bg-white rounded-2xl border border-neutral-200 max-w-md w-full max-h-[90vh] shadow-2xl overflow-hidden flex flex-col"
+        className={`bg-white rounded-2xl border border-neutral-200 w-full max-h-[92vh] shadow-2xl overflow-y-auto flex flex-col transition-all duration-200 ${
+          status === 'paid' ? 'max-w-xl' : 'max-w-md'
+        }`}
         role="dialog"
         aria-modal="true"
         aria-label={`Checkout: ${pkgName}`}
@@ -240,7 +384,9 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-100">
           <span className="text-xs font-mono font-bold text-neutral-500 uppercase tracking-widest">
-            {isUSD ? 'Checkout via PayPal' : 'Checkout via Duitku'}
+            {status === 'paid'
+              ? (locale === 'en' ? 'Payment Complete & Setup' : 'Pembayaran Selesai & Setup Token')
+              : (isUSD ? 'Checkout via PayPal' : 'Checkout via Duitku')}
           </span>
           <button
             id="checkout-modal-close"
@@ -254,17 +400,19 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
 
         {/* Body */}
         <div className="px-6 py-5 space-y-5">
-          {/* Package info */}
-          <div className="text-center">
-            <div className="text-lg font-extrabold text-neutral-950 font-heading">{pkgName}</div>
-            <div className="text-3xl font-black text-neutral-950 mt-1 font-mono">
-              {formattedPrice}
+          {/* Package info (hidden when paid to keep focus on key and agent setup) */}
+          {status !== 'paid' && (
+            <div className="text-center">
+              <div className="text-lg font-extrabold text-neutral-950 font-heading">{pkgName}</div>
+              <div className="text-3xl font-black text-neutral-950 mt-1 font-mono">
+                {formattedPrice}
+              </div>
+              <div className="text-xs text-neutral-500 mt-1 font-mono">
+                +{formatCredits(pkg.creditAllowance)} credits
+                {pkg.durationHours ? ` · ${pkg.durationHours >= 24 ? `${pkg.durationHours / 24} hari` : `${pkg.durationHours} jam`}` : ''}
+              </div>
             </div>
-            <div className="text-xs text-neutral-500 mt-1 font-mono">
-              +{formatCredits(pkg.creditAllowance)} credits
-              {pkg.durationHours ? ` · ${pkg.durationHours >= 24 ? `${pkg.durationHours / 24} hari` : `${pkg.durationHours} jam`}` : ''}
-            </div>
-          </div>
+          )}
 
           {/* PayPal Flow */}
           {isUSD && status !== 'paid' && status !== 'pending_paypal' && status !== 'failed' && (
@@ -351,13 +499,268 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
           )}
 
           {status === 'paid' && (
-            <div className="p-5 rounded-2xl bg-emerald-50 border border-emerald-100 text-center space-y-1.5">
-              <CheckCircle2 className="h-8 w-8 text-emerald-500 mx-auto" />
-              <div className="font-bold text-emerald-900 text-sm">
-                {locale === 'en' ? 'Payment successful!' : 'Pembayaran berhasil!'}
+            <div className="space-y-4">
+              {/* Payment Success Banner */}
+              <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200/80 flex items-start gap-3">
+                <div className="w-8 h-8 rounded-xl bg-emerald-500 text-white flex items-center justify-center shrink-0 mt-0.5 shadow-2xs">
+                  <CheckCircle2 className="h-5 w-5" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="font-bold text-emerald-950 text-sm">
+                    {locale === 'en' ? 'Payment Successful!' : 'Pembayaran Berhasil!'}
+                  </div>
+                  <div className="text-xs text-emerald-800 font-medium mt-0.5">
+                    +{formatCredits(pkg.creditAllowance)} {locale === 'en' ? 'credits added to your account' : 'kredit telah ditambahkan ke akun Anda'}
+                  </div>
+                </div>
               </div>
-              <div className="text-xs text-emerald-700">
-                +{formatCredits(pkg.creditAllowance)} {locale === 'en' ? 'credits added' : 'kredit ditambahkan'}
+
+              {/* Token Section */}
+              <div className="p-4 rounded-2xl bg-neutral-900 text-white border border-neutral-800 space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <KeyRound className="h-4 w-4 text-emerald-400 shrink-0" />
+                    <span className="text-xs font-bold text-neutral-100">
+                      {locale === 'en' ? 'Active API Token' : 'Token API Siap Pakai'}
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-mono uppercase tracking-wider text-emerald-400 bg-emerald-950/80 border border-emerald-800/80 px-2 py-0.5 rounded-full font-bold">
+                    {locale === 'en' ? 'Live & Funded' : 'Aktif & Siap'}
+                  </span>
+                </div>
+
+                {isProvisioningToken && (
+                  <div className="flex items-center gap-2 py-3 px-3 rounded-xl bg-neutral-950 border border-neutral-800 text-xs text-neutral-400">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin text-neutral-300" />
+                    <span>{locale === 'en' ? 'Generating your API token…' : 'Membuat token API Anda…'}</span>
+                  </div>
+                )}
+
+                {!isProvisioningToken && provisionedToken && (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 bg-neutral-950 border border-neutral-800 rounded-xl p-2.5">
+                      <code className="font-mono text-xs text-emerald-300 select-all break-all flex-1 px-1">
+                        {provisionedToken}
+                      </code>
+                      <button
+                        type="button"
+                        onClick={() => copyText(provisionedToken, 'key')}
+                        aria-label={copiedKey ? 'Token tersalin' : 'Salin token'}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-200 hover:text-white text-xs font-semibold transition-colors cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
+                      >
+                        {copiedKey ? (
+                          <>
+                            <Check className="h-3.5 w-3.5 text-emerald-400" />
+                            <span>{locale === 'en' ? 'Copied' : 'Tersalin'}</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="h-3.5 w-3.5" />
+                            <span>{locale === 'en' ? 'Copy Token' : 'Salin Token'}</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                    <p className="text-[11px] text-neutral-400 leading-relaxed">
+                      {locale === 'en'
+                        ? 'Keep this token safe. It is connected directly to your credit balance.'
+                        : 'Simpan token ini di tempat aman. Token ini langsung menggunakan kuota kredit yang baru dibeli.'}
+                    </p>
+                  </div>
+                )}
+
+                {provisionError && (
+                  <div className="text-xs text-red-400 py-1">
+                    {provisionError}. {locale === 'en' ? 'Manage your keys in' : 'Kelola token di'}{' '}
+                    <a href="/dashboard/keys" className="underline hover:text-red-300">
+                      Dashboard Keys
+                    </a>
+                    .
+                  </div>
+                )}
+              </div>
+
+              {/* Try in Agent / Code Editor Section */}
+              <div className="p-4 rounded-2xl bg-neutral-50 border border-neutral-200/90 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Code2 className="h-4 w-4 text-neutral-900 shrink-0" />
+                    <span className="text-xs font-bold text-neutral-950 font-heading">
+                      {locale === 'en' ? 'Try in Agent / Code Editor' : 'Coba di Agent / Code Editor'}
+                    </span>
+                  </div>
+                  <span className="text-[11px] text-neutral-500 font-medium">OpenAI Compatible</span>
+                </div>
+
+                {/* Tabs */}
+                <div className="flex rounded-xl bg-neutral-200/60 p-1 gap-1">
+                  {(
+                    [
+                      { id: 'cursor', label: 'Cursor' },
+                      { id: 'cline', label: 'Cline / Roo' },
+                      { id: 'claudecode', label: 'Claude Code' },
+                      { id: 'curl', label: 'cURL' },
+                    ] as const
+                  ).map((tab) => (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => setActiveIdeTab(tab.id)}
+                      className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 ${
+                        activeIdeTab === tab.id
+                          ? 'bg-white text-neutral-950 shadow-2xs'
+                          : 'text-neutral-600 hover:text-neutral-900'
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Tab content: Cursor */}
+                {activeIdeTab === 'cursor' && (
+                  <div className="space-y-2 text-xs text-neutral-700">
+                    <p className="text-[11px] text-neutral-600">
+                      {locale === 'en'
+                        ? '1. Open Cursor Settings → Models → OpenAI API Key.'
+                        : '1. Buka Settings Cursor → Models → OpenAI API Key.'}
+                    </p>
+                    <div className="space-y-1.5 font-mono text-[11px]">
+                      <div className="flex items-center justify-between p-2 rounded-lg bg-white border border-neutral-200">
+                        <div className="truncate mr-2">
+                          <span className="text-neutral-400 font-sans mr-2">Base URL:</span>
+                          <span className="text-neutral-900 font-semibold">{API_BASE_URL}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => copyText(API_BASE_URL, 'base')}
+                          aria-label={copiedBaseUrl ? 'Base URL tersalin' : 'Salin Base URL'}
+                          className="text-neutral-500 hover:text-neutral-900 cursor-pointer p-1 shrink-0"
+                        >
+                          {copiedBaseUrl ? <Check className="h-3 w-3 text-emerald-600" /> : <Copy className="h-3 w-3" />}
+                        </button>
+                      </div>
+                      <div className="flex items-center justify-between p-2 rounded-lg bg-white border border-neutral-200">
+                        <div className="truncate mr-2">
+                          <span className="text-neutral-400 font-sans mr-2">Model:</span>
+                          <span className="text-neutral-900 font-semibold">deepseek-v4</span>
+                        </div>
+                        <span className="text-[10px] text-neutral-400 font-sans">atau qwen-max</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Tab content: Cline / Roo Code */}
+                {activeIdeTab === 'cline' && (
+                  <div className="space-y-2 text-xs text-neutral-700">
+                    <p className="text-[11px] text-neutral-600">
+                      {locale === 'en'
+                        ? 'Select "OpenAI Compatible" as API Provider in Cline settings.'
+                        : 'Pilih "OpenAI Compatible" di menu pengaturan provider Cline / Roo Code.'}
+                    </p>
+                    <div className="space-y-1.5 font-mono text-[11px]">
+                      <div className="flex items-center justify-between p-2 rounded-lg bg-white border border-neutral-200">
+                        <div className="truncate mr-2">
+                          <span className="text-neutral-400 font-sans mr-2">Base URL:</span>
+                          <span className="text-neutral-900 font-semibold">{API_BASE_URL}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => copyText(API_BASE_URL, 'base')}
+                          aria-label={copiedBaseUrl ? 'Base URL tersalin' : 'Salin Base URL'}
+                          className="text-neutral-500 hover:text-neutral-900 cursor-pointer p-1 shrink-0"
+                        >
+                          {copiedBaseUrl ? <Check className="h-3 w-3 text-emerald-600" /> : <Copy className="h-3 w-3" />}
+                        </button>
+                      </div>
+                      <div className="flex items-center justify-between p-2 rounded-lg bg-white border border-neutral-200">
+                        <div className="truncate mr-2">
+                          <span className="text-neutral-400 font-sans mr-2">Model ID:</span>
+                          <span className="text-neutral-900 font-semibold">deepseek-v4</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Tab content: Claude Code */}
+                {activeIdeTab === 'claudecode' && (
+                  <div className="space-y-2">
+                    <p className="text-[11px] text-neutral-600">
+                      {locale === 'en'
+                        ? 'Export environment variables before running claude in your terminal:'
+                        : 'Export variabel lingkungan berikut di terminal sebelum menjalankan claude:'}
+                    </p>
+                    <div className="relative rounded-xl bg-neutral-950 p-2.5 font-mono text-[11px] text-neutral-200">
+                      <pre className="overflow-x-auto select-all leading-relaxed">{`export ANTHROPIC_BASE_URL="${API_BASE_URL}"\nexport ANTHROPIC_API_KEY="${provisionedToken || 'mp-live-...'}"`}</pre>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          copyText(
+                            `export ANTHROPIC_BASE_URL="${API_BASE_URL}"\nexport ANTHROPIC_API_KEY="${provisionedToken || 'mp-live-...'}"`,
+                            'snippet'
+                          )
+                        }
+                        aria-label={copiedSnippet ? 'Perintah tersalin' : 'Salin perintah'}
+                        className="absolute top-2 right-2 p-1.5 rounded-md bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition cursor-pointer"
+                      >
+                        {copiedSnippet ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Tab content: cURL */}
+                {activeIdeTab === 'curl' && (
+                  <div className="space-y-2">
+                    <p className="text-[11px] text-neutral-600">
+                      {locale === 'en'
+                        ? 'Run this curl snippet in terminal to test the gateway response:'
+                        : 'Jalankan perintah curl ini di terminal untuk uji coba gateway langsung:'}
+                    </p>
+                    <div className="relative rounded-xl bg-neutral-950 p-2.5 font-mono text-[11px] text-neutral-200">
+                      <pre className="overflow-x-auto select-all leading-relaxed whitespace-pre-wrap">{`curl ${API_BASE_URL}/chat/completions \\\n  -H "Authorization: Bearer ${provisionedToken || 'mp-live-...'}" \\\n  -H "Content-Type: application/json" \\\n  -d '{"model": "deepseek-v4", "messages": [{"role": "user", "content": "Hello"}]}'`}</pre>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          copyText(
+                            `curl ${API_BASE_URL}/chat/completions \\\n  -H "Authorization: Bearer ${provisionedToken || 'mp-live-...'}" \\\n  -H "Content-Type: application/json" \\\n  -d '{"model": "deepseek-v4", "messages": [{"role": "user", "content": "Hello"}]}'`,
+                            'snippet'
+                          )
+                        }
+                        aria-label={copiedSnippet ? 'Perintah tersalin' : 'Salin perintah'}
+                        className="absolute top-2 right-2 p-1.5 rounded-md bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition cursor-pointer"
+                      >
+                        {copiedSnippet ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Direct Live Ping action & Docs link */}
+                <div className="flex flex-col sm:flex-row items-center gap-2 pt-1 border-t border-neutral-200/70">
+                  <button
+                    type="button"
+                    onClick={() => setIsPingModalOpen(true)}
+                    disabled={!provisionedToken}
+                    className="w-full sm:flex-1 py-2 px-3 rounded-xl bg-neutral-950 hover:bg-neutral-800 disabled:opacity-50 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
+                  >
+                    <Play className="h-3.5 w-3.5 fill-current text-emerald-400" />
+                    <span>{locale === 'en' ? 'Quick Ping Test (Live)' : 'Uji Coba Sekarang (Quick Ping)'}</span>
+                  </button>
+
+                  <a
+                    href="/docs#ide-setup"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full sm:w-auto py-2 px-3 rounded-xl border border-neutral-200 hover:border-neutral-300 bg-white hover:bg-neutral-50 text-neutral-800 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
+                  >
+                    <BookOpen className="h-3.5 w-3.5 text-neutral-600" />
+                    <span>{locale === 'en' ? 'Setup Guides' : 'Panduan Lengkap'}</span>
+                    <ExternalLink className="h-3 w-3 text-neutral-400" />
+                  </a>
+                </div>
               </div>
             </div>
           )}
@@ -419,7 +822,17 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
             </button>
           )}
 
-          {(status === 'paid' || status === 'failed' || status === 'pending_paypal') && (
+          {status === 'paid' && (
+            <button
+              id="checkout-close-btn"
+              onClick={onClose}
+              className="w-full py-3 rounded-xl bg-neutral-950 hover:bg-neutral-800 text-white text-sm font-bold transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
+            >
+              {locale === 'en' ? 'Done & Close' : 'Selesai & Lanjutkan'}
+            </button>
+          )}
+
+          {(status === 'failed' || status === 'pending_paypal') && (
             <button
               id="checkout-close-btn"
               onClick={onClose}
@@ -440,6 +853,14 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
           )}
         </div>
       </div>
+
+      {/* Test API Key Ping Modal on top of checkout success */}
+      <ApiKeyPingModal
+        isOpen={isPingModalOpen}
+        onClose={() => setIsPingModalOpen(false)}
+        initialApiKey={provisionedToken || ''}
+        zIndex="z-[70]"
+      />
     </div>
   );
 }

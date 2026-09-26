@@ -238,6 +238,8 @@ export const id = {
       emailPageTitleSignUp: 'Daftar Akun Baru',
       emailPageDesc: 'Gunakan alamat email dan kata sandi Anda untuk mengakses akun Morphic.',
       emailPageDescSignUp: 'Buat akun baru untuk mulai menggunakan endpoint AI gateway Morphic.',
+      captchaRequired: 'Harap selesaikan verifikasi reCAPTCHA terlebih dahulu.',
+      captchaFailed: 'Verifikasi reCAPTCHA gagal atau kedaluwarsa. Silakan ulangi centang.',
     },
     faq: {
       badge: 'Tanya Jawab Seputar Layanan',

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
@@ -16,6 +16,7 @@ import {
   TriangleAlert,
   User,
 } from 'lucide-react';
+import RecaptchaWidget, { RecaptchaWidgetRef } from '@/components/RecaptchaWidget';
 
 export default function EmailAuthPage() {
   const { t, locale, setLocale } = useTranslation();
@@ -31,6 +32,10 @@ export default function EmailAuthPage() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [failCount, setFailCount] = useState(0);
   const [lockoutSeconds, setLockoutSeconds] = useState(0);
+
+  const recaptchaRef = useRef<RecaptchaWidgetRef>(null);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const recaptchaSiteKey = process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY;
 
   useEffect(() => {
     if (lockoutSeconds <= 0) return;
@@ -58,10 +63,17 @@ export default function EmailAuthPage() {
       return;
     }
 
+    if (recaptchaSiteKey && !captchaToken) {
+      setErrorMsg(t.login.captchaRequired);
+      return;
+    }
+
     setLoading(true);
     setErrorMsg(null);
 
     const handleAuthFail = (msg: string) => {
+      recaptchaRef.current?.reset();
+      setCaptchaToken(null);
       const nextFails = failCount + 1;
       setFailCount(nextFails);
       if (nextFails >= 5) {
@@ -79,27 +91,46 @@ export default function EmailAuthPage() {
     };
 
     try {
+      const fetchHeaders: Record<string, string> = {};
+      if (captchaToken) {
+        fetchHeaders['x-captcha-response'] = captchaToken;
+      }
+
       if (isSignUpMode) {
         const res = await signUp.email({
           email: trimmedEmail,
           password,
           name: name.trim() || trimmedEmail.split('@')[0],
+          fetchOptions: {
+            headers: fetchHeaders,
+          },
         });
 
         if (res?.error) {
           console.error('Sign up error:', res.error);
-          handleAuthFail(res.error.message || t.login.authGenericError);
+          const isCaptchaErr =
+            res.error.message?.toLowerCase().includes('captcha') ||
+            (res.error as any).code?.toLowerCase?.().includes('captcha');
+          handleAuthFail(
+            isCaptchaErr ? t.login.captchaFailed : (res.error.message || t.login.authGenericError),
+          );
           return;
         }
       } else {
         const res = await signIn.email({
           email: trimmedEmail,
           password,
+          fetchOptions: {
+            headers: fetchHeaders,
+          },
         });
 
         if (res?.error) {
           console.error('Sign in error:', res.error);
-          handleAuthFail(t.login.authGenericError);
+          const isCaptchaErr =
+            res.error.message?.toLowerCase().includes('captcha') ||
+            (res.error as any).code?.toLowerCase?.().includes('captcha');
+          handleAuthFail(isCaptchaErr ? t.login.captchaFailed : t.login.authGenericError);
           return;
         }
       }
@@ -267,6 +298,22 @@ export default function EmailAuthPage() {
               </div>
             </div>
 
+            {/* Google reCAPTCHA Verification */}
+            <RecaptchaWidget
+              ref={recaptchaRef}
+              siteKey={recaptchaSiteKey}
+              onVerify={(token) => {
+                setCaptchaToken(token);
+                setErrorMsg(null);
+              }}
+              onExpire={() => {
+                setCaptchaToken(null);
+              }}
+              onError={() => {
+                setCaptchaToken(null);
+              }}
+            />
+
             <button
               type="submit"
               disabled={loading || lockoutSeconds > 0}
@@ -292,6 +339,8 @@ export default function EmailAuthPage() {
               onClick={() => {
                 setIsSignUpMode(!isSignUpMode);
                 setErrorMsg(null);
+                recaptchaRef.current?.reset();
+                setCaptchaToken(null);
               }}
               className="text-xs font-semibold text-neutral-600 hover:text-neutral-950 transition-colors cursor-pointer"
             >
