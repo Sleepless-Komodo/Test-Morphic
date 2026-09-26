@@ -46,7 +46,7 @@ export default function LandingApiCta({ isLoggedIn = false }: LandingApiCtaProps
 
         {/* Pill Badge */}
         <div className="relative z-10 mb-6 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/[0.06] px-3.5 py-1.5 shadow-2xs">
-          <ShieldCheck className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
+          <ShieldCheck className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
           <span className="font-mono text-[10px] tracking-[0.2em] uppercase font-bold text-neutral-300">
             {locale === 'id' ? 'TANPA KARTU KREDIT · QRIS INSTAN' : 'NO CARD · INSTANT QRIS'}
           </span>
@@ -56,17 +56,17 @@ export default function LandingApiCta({ isLoggedIn = false }: LandingApiCtaProps
         <h2 className="relative z-10 font-heading text-3xl sm:text-4xl lg:text-5xl xl:text-[3.25rem] font-extrabold tracking-tight leading-[1.08] text-balance text-white max-w-2xl">
           {locale === 'id' ? (
             <>
-              Coding dengan semua model,<span className="block text-neutral-400">cukup satu API key.</span>
+              Coding dengan semua model,<span className="block text-neutral-500">cukup satu API key.</span>
             </>
           ) : (
             <>
-              Ship with every model,<span className="block text-neutral-400">on one single key.</span>
+              Ship with every model,<span className="block text-neutral-500">on one single key.</span>
             </>
           )}
         </h2>
 
         {/* Subtitle */}
-        <p className="relative z-10 mt-5 max-w-lg text-sm sm:text-base leading-relaxed text-neutral-400 font-body">
+        <p className="relative z-10 mt-5 max-w-lg text-sm sm:text-base leading-relaxed text-neutral-500 font-body">
           {t.cta.desc}
         </p>
 
@@ -88,7 +88,7 @@ export default function LandingApiCta({ isLoggedIn = false }: LandingApiCtaProps
         </div>
 
         {/* Monochrome single-line trust note */}
-        <div className="relative z-10 mt-10 pt-6 border-t border-white/10 text-[11px] font-mono text-neutral-400 max-w-md w-full">
+        <div className="relative z-10 mt-10 pt-6 border-t border-white/10 text-[11px] font-mono text-neutral-500 max-w-md w-full">
           {locale === 'id'
             ? 'Pembayaran QRIS instan · Hingga 180 RPM · Kompatibel format OpenAI SDK'
             : 'Instant QRIS payment · Up to 180 RPM · OpenAI SDK compatible'}

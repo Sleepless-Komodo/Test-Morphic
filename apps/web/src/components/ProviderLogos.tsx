@@ -59,5 +59,5 @@ export function ModelProviderLogo({ provider, className = 'w-4 h-4' }: { provide
   if (p.includes('01.ai') || /\byi\b/.test(p)) {
     return <YiLogo className={className} />;
   }
-  return <Cpu className={`${className} text-neutral-400`} role="img" aria-label="Unknown provider" />;
+  return <Cpu className={`${className} text-neutral-500`} role="img" aria-label="Unknown provider" />;
 }

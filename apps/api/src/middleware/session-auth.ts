@@ -5,12 +5,34 @@ import { eq, and, gt, or } from 'drizzle-orm';
 export interface AuthedSession {
   userId: string;
   sessionId: string;
+  authMethod: string | null;
 }
 
 declare module 'hono' {
   interface ContextVariableMap {
     userSession: AuthedSession;
   }
+}
+
+const SESSION_COOKIE_NAMES = new Set([
+  'better-auth.session_token',
+  'better-auth_session_token',
+  'better_auth_session_token',
+  'session_token',
+]);
+
+/** Parse the Cookie header into name/value pairs and return the session token by exact name. */
+function readSessionCookie(header: string | undefined): string | undefined {
+  if (!header) return undefined;
+  for (const part of header.split(';')) {
+    const eq = part.indexOf('=');
+    if (eq === -1) continue;
+    let name = part.slice(0, eq).trim();
+    if (name.startsWith('__Secure-')) name = name.slice('__Secure-'.length);
+    if (!SESSION_COOKIE_NAMES.has(name)) continue;
+    return decodeURIComponent(part.slice(eq + 1).trim()).trim();
+  }
+  return undefined;
 }
 
 /** Session authentication for user-facing management routes (API keys, account balance/usage) */
@@ -21,16 +43,10 @@ export async function sessionAuth(c: Context, next: Next) {
   if (authHeader?.startsWith('Bearer ')) {
     rawToken = authHeader.slice('Bearer '.length).trim();
   } else {
-    // Cookie fallbacks (Better Auth session cookies - secure or standard)
-    const cookies = c.req.header('cookie');
-    if (cookies) {
-      const match = cookies.match(
-        /(?:__Secure-)?(?:better-auth\.session_token|better-auth_session_token|better_auth_session_token|session_token)=([^;]+)/,
-      );
-      if (match) {
-        rawToken = decodeURIComponent(match[1]).trim();
-      }
-    }
+    // Cookie fallback. Match the Better Auth session cookie by EXACT name — an
+    // unanchored regex would also accept an attacker-planted cookie such as
+    // `x_session_token` or `evilbetter-auth.session_token` (see security audit M2).
+    rawToken = readSessionCookie(c.req.header('cookie'));
   }
 
   if (!rawToken) {
@@ -54,6 +70,7 @@ export async function sessionAuth(c: Context, next: Next) {
       id: s.sessions.id,
       userId: s.sessions.userId,
       expiresAt: s.sessions.expiresAt,
+      authMethod: s.sessions.authMethod,
       suspended: s.users.suspended,
     })
     .from(s.sessions)
@@ -87,6 +104,26 @@ export async function sessionAuth(c: Context, next: Next) {
     );
   }
 
-  c.set('userSession', { userId: session.userId, sessionId: session.id });
+  c.set('userSession', { userId: session.userId, sessionId: session.id, authMethod: session.authMethod });
+  await next();
+}
+
+/**
+ * Reject sessions minted from an mp-* API key on write / billing-sensitive routes (audit H7).
+ * Must run AFTER sessionAuth. Read-only routes deliberately allow key-derived sessions.
+ */
+export async function denyKeyDerivedSession(c: Context, next: Next) {
+  if (c.get('userSession').authMethod === 'api_key') {
+    return c.json(
+      {
+        error: {
+          message: 'this action requires an interactive login, not an API key session',
+          type: 'auth_error',
+          code: 'api_key_session_forbidden',
+        },
+      },
+      403,
+    );
+  }
   await next();
 }

@@ -276,7 +276,7 @@ export default function LoginView({ googleConfigured, githubConfigured }: LoginV
                   {/* Single Clean Divider */}
                   <div className="my-4 flex items-center gap-3">
                     <div className="border-t border-neutral-200 flex-1" />
-                    <span suppressHydrationWarning className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wider">
+                    <span suppressHydrationWarning className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider">
                       {locale === 'id' ? 'atau' : 'or'}
                     </span>
                     <div className="border-t border-neutral-200 flex-1" />
@@ -319,7 +319,7 @@ export default function LoginView({ googleConfigured, githubConfigured }: LoginV
                         setKeyError(null);
                       }}
                       placeholder="mp-live-xxxxxxxxxxxxxxxxxxxx"
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-neutral-300 text-xs font-mono text-neutral-900 bg-white placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-950 transition-all select-all"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-neutral-300 text-xs font-mono text-neutral-900 bg-white placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-950 transition-all select-all"
                     />
                     {keyError && (
                       <div className="p-2.5 mt-2 rounded-xl bg-rose-50 border border-rose-200 text-[11px] text-rose-700 font-medium leading-relaxed">
@@ -366,7 +366,7 @@ export default function LoginView({ googleConfigured, githubConfigured }: LoginV
               )}
 
               {/* Bottom terms */}
-              <div suppressHydrationWarning className="mt-8 pt-6 border-t border-neutral-100 text-[11px] text-neutral-400 leading-relaxed">
+              <div suppressHydrationWarning className="mt-8 pt-6 border-t border-neutral-100 text-[11px] text-neutral-500 leading-relaxed">
                 {locale === 'id' ? (
                   <>
                     Dengan masuk, Anda menyetujui{' '}
@@ -399,7 +399,7 @@ export default function LoginView({ googleConfigured, githubConfigured }: LoginV
       </div>
 
       {/* Footer copyright */}
-      <div className="text-center text-neutral-400 text-xs">
+      <div className="text-center text-neutral-500 text-xs">
         &copy; 2026 Morphic. All rights reserved.
       </div>
     </main>

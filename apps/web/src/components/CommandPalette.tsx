@@ -264,7 +264,7 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
         >
           {/* Top Search Input Bar */}
           <div className="flex items-center gap-3 px-4.5 py-3.5 border-b border-neutral-100 bg-white">
-            <Search className="w-4 h-4 text-neutral-400 shrink-0" />
+            <Search className="w-4 h-4 text-neutral-500 shrink-0" />
             <input
               ref={inputRef}
               type="text"
@@ -283,13 +283,13 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
                   ? 'Search models, docs, actions, or jump to page...'
                   : 'Cari model, docs, tindakan, atau buka halaman...'
               }
-              className="w-full bg-transparent text-sm font-medium text-neutral-900 placeholder:text-neutral-400 focus:outline-hidden"
+              className="w-full bg-transparent text-sm font-medium text-neutral-900 placeholder:text-neutral-500 focus:outline-hidden"
             />
             {query && (
               <button
                 type="button"
                 onClick={() => setQuery('')}
-                className="p-1 rounded-md text-neutral-400 hover:text-neutral-700 cursor-pointer"
+                className="p-1 rounded-md text-neutral-500 hover:text-neutral-700 cursor-pointer"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
@@ -305,7 +305,7 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
             className="max-h-[380px] overflow-y-auto p-2 scrollbar-thin scrollbar-thumb-neutral-200"
           >
             {filteredItems.length === 0 ? (
-              <div className="py-12 text-center text-xs font-mono text-neutral-400">
+              <div className="py-12 text-center text-xs font-mono text-neutral-500">
                 {locale === 'en' ? `No results found for "${query}"` : `Tidak ada hasil untuk "${query}"`}
               </div>
             ) : (
@@ -384,7 +384,7 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
           </div>
 
           {/* Footer Navigation Hints */}
-          <div className="flex items-center justify-between px-4 py-2.5 border-t border-neutral-100 bg-neutral-50/70 text-[11px] font-mono text-neutral-400">
+          <div className="flex items-center justify-between px-4 py-2.5 border-t border-neutral-100 bg-neutral-50/70 text-[11px] font-mono text-neutral-500">
             <div className="flex items-center gap-3">
               <span className="inline-flex items-center gap-1">
                 <kbd className="px-1 py-0.5 rounded bg-white border border-neutral-200 text-[9px] font-medium text-neutral-600">

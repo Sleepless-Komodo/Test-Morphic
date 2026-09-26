@@ -10,6 +10,8 @@ const ALLOWED_ROUTES: AllowedRoute[] = [
   { prefix: '/v1/payments', methods: ['GET', 'POST'] },
   { prefix: '/v1/account', methods: ['GET'] },
   { prefix: '/v1/redeem', methods: ['POST'] },
+  { prefix: '/v1/keys', methods: ['GET', 'POST', 'DELETE'] },
+  { prefix: '/v1/catalog', methods: ['GET'] },
 ];
 
 function isRouteAllowed(path: string, method: string): boolean {

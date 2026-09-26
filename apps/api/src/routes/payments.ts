@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { db, schema as s } from '@morphic/db';
 import { markPaymentIfOpen, processPaymentSuccess } from '@morphic/db/billing';
 import { eq, and, inArray, sql, gt } from 'drizzle-orm';
-import { sessionAuth } from '../middleware/session-auth';
+import { sessionAuth, denyKeyDerivedSession } from '../middleware/session-auth';
 import { createTransaction, checkTransactionStatus } from '../lib/duitku';
 import * as paypal from '../lib/paypal';
 
@@ -16,6 +16,7 @@ const payments = new Hono();
 
 // Enforce session authentication for all payment routes
 payments.use('*', sessionAuth);
+payments.use('*', denyKeyDerivedSession);
 
 // In-memory rate-limiter map to throttle polling requests (10-second window per payment ID)
 const lastPollMap = new Map<string, number>();

@@ -67,7 +67,7 @@ function CopyTraceId({ id }: { id: string }) {
       {copied ? (
         <Check className="h-3 w-3 text-emerald-600 shrink-0" />
       ) : (
-        <Copy className="h-3 w-3 text-neutral-400 group-hover:text-neutral-700 shrink-0" />
+        <Copy className="h-3 w-3 text-neutral-500 group-hover:text-neutral-700 shrink-0" />
       )}
     </button>
   );
@@ -213,7 +213,7 @@ export function UsageView({ today, month, total, topModels, recent }: UsageViewP
             <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-neutral-500">
               {t.dashboard.usageToday}
             </span>
-            <Coins className="h-4 w-4 text-neutral-400" />
+            <Coins className="h-4 w-4 text-neutral-500" />
           </div>
           <div>
             <div className="text-3xl font-heading font-black text-neutral-950 font-mono tabular-nums">
@@ -228,7 +228,7 @@ export function UsageView({ today, month, total, topModels, recent }: UsageViewP
             <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-neutral-500">
               {t.dashboard.usageThisMonth}
             </span>
-            <Activity className="h-4 w-4 text-neutral-400" />
+            <Activity className="h-4 w-4 text-neutral-500" />
           </div>
           <div>
             <div className="text-3xl font-heading font-black text-neutral-950 font-mono tabular-nums">
@@ -240,16 +240,16 @@ export function UsageView({ today, month, total, topModels, recent }: UsageViewP
 
         <div className="p-6 rounded-3xl bg-neutral-950 text-white border border-neutral-800 shadow-md flex flex-col justify-between">
           <div className="flex items-center justify-between mb-3">
-            <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-neutral-400">
+            <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-neutral-500">
               {t.dashboard.usageTotalRequests}
             </span>
-            <BarChart3 className="h-4 w-4 text-neutral-400" />
+            <BarChart3 className="h-4 w-4 text-neutral-500" />
           </div>
           <div>
             <div className="text-3xl font-heading font-black text-white font-mono tabular-nums">
               {formatCredits(total?.requests ?? 0)}
             </div>
-            <div className="text-xs text-neutral-400 mt-1 font-mono">{t.dashboard.usageAllTimeUnit}</div>
+            <div className="text-xs text-neutral-500 mt-1 font-mono">{t.dashboard.usageAllTimeUnit}</div>
           </div>
         </div>
       </div>
@@ -405,7 +405,7 @@ export function UsageView({ today, month, total, topModels, recent }: UsageViewP
             )}
 
             <div className="relative">
-              <Search className="h-3.5 w-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none" />
+              <Search className="h-3.5 w-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500 pointer-events-none" />
               <input
                 type="text"
                 value={searchTerm}
@@ -457,7 +457,7 @@ export function UsageView({ today, month, total, topModels, recent }: UsageViewP
         <div className="rounded-3xl bg-white border border-neutral-200/90 shadow-2xs overflow-hidden">
           {filteredRecent.length === 0 ? (
             <div className="p-12 text-center space-y-2">
-              <div className="w-10 h-10 rounded-2xl bg-neutral-100 border border-neutral-200 flex items-center justify-center mx-auto text-neutral-400">
+              <div className="w-10 h-10 rounded-2xl bg-neutral-100 border border-neutral-200 flex items-center justify-center mx-auto text-neutral-500">
                 <Terminal className="h-5 w-5" />
               </div>
               <div suppressHydrationWarning className="text-xs text-neutral-500 max-w-md mx-auto">
@@ -577,7 +577,7 @@ export function UsageView({ today, month, total, topModels, recent }: UsageViewP
                 <div className="text-xs text-neutral-500 font-mono flex items-center gap-2">
                   {isLoadingPage && <Loader2 className="h-3.5 w-3.5 animate-spin text-neutral-500" />}
                   <span>{locale === 'en' ? `Page ${page} of ${totalPages}` : `Halaman ${page} dari ${totalPages}`}</span>
-                  <span className="text-neutral-400">({totalCount} {locale === 'en' ? 'total requests' : 'total request'})</span>
+                  <span className="text-neutral-500">({totalCount} {locale === 'en' ? 'total requests' : 'total request'})</span>
                 </div>
                 <div className="flex items-center gap-1.5">
                   <button

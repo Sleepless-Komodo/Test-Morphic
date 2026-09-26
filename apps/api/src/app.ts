@@ -7,8 +7,20 @@ import { keys } from './routes/keys';
 import { account } from './routes/account';
 import { payments } from './routes/payments';
 import { redeem } from './routes/redeem';
+import { catalog } from './routes/catalog';
 
 const app = new Hono();
+
+// Baseline security headers on every API response.
+app.use('*', async (c, next) => {
+  await next();
+  c.header('X-Content-Type-Options', 'nosniff');
+  c.header('X-Frame-Options', 'DENY');
+  c.header('Referrer-Policy', 'no-referrer');
+  if (process.env.NODE_ENV === 'production') {
+    c.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  }
+});
 
 app.use(
   '*',
@@ -52,6 +64,7 @@ app.route('/v1/keys', keys);
 app.route('/v1/account', account);
 app.route('/v1/payments', payments);
 app.route('/v1/redeem', redeem);
+app.route('/v1/catalog', catalog);
 app.route('/v1', v1);
 
 export { app };

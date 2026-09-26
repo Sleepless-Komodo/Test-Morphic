@@ -91,6 +91,15 @@ export const apiKeyAuth = (): BetterAuthPlugin => {
             });
           }
 
+          // Mark this session as key-derived so both the API and server actions can
+          // restrict it to read-only access (audit H7). A leaked inference key must not
+          // be tradeable for a session that can mint keys, redeem codes, or pay.
+          await db
+            .update(s.sessions)
+            .set({ authMethod: 'api_key' })
+            .where(eq(s.sessions.id, session.id))
+            .catch((e) => console.error('[api-key-auth] failed to tag session auth_method:', e));
+
           await setSessionCookie(ctx, { session, user });
 
           return ctx.json({

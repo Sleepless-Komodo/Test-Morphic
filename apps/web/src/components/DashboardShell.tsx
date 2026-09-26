@@ -122,7 +122,7 @@ export function DashboardShell({ session, balance, children }: DashboardShellPro
           <div className="min-w-0">
             <span
               suppressHydrationWarning
-              className="block text-[10px] font-mono font-semibold uppercase tracking-wider text-neutral-400 leading-tight"
+              className="block text-[10px] font-mono font-semibold uppercase tracking-wider text-neutral-500 leading-tight"
             >
               {t.dashboard.balanceLabel}
             </span>
@@ -239,7 +239,7 @@ export function DashboardShell({ session, balance, children }: DashboardShellPro
               className={`h-3.5 w-3.5 shrink-0 transition-colors ${
                 isActive('/dashboard/settings')
                   ? 'text-neutral-950'
-                  : 'text-neutral-400 group-hover:text-neutral-700'
+                  : 'text-neutral-500 group-hover:text-neutral-700'
               }`}
             />
           </Link>
