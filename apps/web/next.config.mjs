@@ -14,7 +14,7 @@ if (fs.existsSync(rootEnv) && typeof process.loadEnvFile === 'function') {
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   transpilePackages: ['@morphic/db', '@morphic/shared'],
-  output: 'standalone',
+ output: process.env.VERCEL ? undefined : 'standalone',
   images: {
     remotePatterns: [
       { protocol: 'https', hostname: 'lh3.googleusercontent.com' },
