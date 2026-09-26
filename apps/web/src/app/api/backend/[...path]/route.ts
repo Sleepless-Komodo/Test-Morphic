@@ -24,11 +24,43 @@ function isRouteAllowed(path: string, method: string): boolean {
   return false;
 }
 
+// In-Memory proxy rate limiter per IP: max 60 req/min
+const proxyRateLimitMap = new Map<string, { count: number; expiresAt: number }>();
+
+function checkProxyRateLimit(ip: string, limit = 60, windowMs = 60_000): boolean {
+  const now = Date.now();
+  if (proxyRateLimitMap.size > 2000) {
+    for (const [k, v] of proxyRateLimitMap.entries()) {
+      if (v.expiresAt <= now) proxyRateLimitMap.delete(k);
+    }
+  }
+  const key = `${ip}:${Math.floor(now / windowMs)}`;
+  const entry = proxyRateLimitMap.get(key);
+  if (!entry || entry.expiresAt <= now) {
+    proxyRateLimitMap.set(key, { count: 1, expiresAt: now + windowMs });
+    return true;
+  }
+  if (entry.count >= limit) return false;
+  entry.count += 1;
+  return true;
+}
+
 async function proxyRequest(req: NextRequest) {
   const url = new URL(req.url);
   const rawPath = url.pathname.replace(/^\/api\/backend/, '') || '/';
 
-  // 1. Path Traversal & Encoding Check
+  // 1. IP Rate Limiting Before any DB or Session Check
+  const forwardedFor = req.headers.get('x-forwarded-for');
+  const clientIp = forwardedFor ? forwardedFor.split(',')[0].trim() : (req.headers.get('x-real-ip') || 'unknown');
+
+  if (!checkProxyRateLimit(clientIp, 60, 60_000)) {
+    return NextResponse.json(
+      { error: { message: 'Too Many Requests to API proxy, please slow down.', code: 'proxy_rate_limited' } },
+      { status: 429, headers: { 'Retry-After': '60' } }
+    );
+  }
+
+  // 2. Path Traversal & Encoding Check
   let decodedForCheck: string;
   try {
     decodedForCheck = decodeURIComponent(rawPath).toLowerCase();
@@ -46,7 +78,7 @@ async function proxyRequest(req: NextRequest) {
     );
   }
 
-  // 2. Allowlist Check (Path & Method)
+  // 3. Allowlist Check (Path & Method)
   if (!isRouteAllowed(rawPath, req.method)) {
     return NextResponse.json(
       { error: { message: 'Not found', code: 'not_found' } },
@@ -54,7 +86,7 @@ async function proxyRequest(req: NextRequest) {
     );
   }
 
-  // 3. CSRF / Origin Validation for Non-GET Requests
+  // 4. CSRF / Origin Validation for Non-GET Requests
   const NON_GET_METHODS = ['POST', 'PUT', 'DELETE', 'PATCH'];
   if (NON_GET_METHODS.includes(req.method)) {
     const origin = req.headers.get('origin');
