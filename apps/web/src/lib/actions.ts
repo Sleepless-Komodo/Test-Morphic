@@ -140,8 +140,33 @@ export async function listApiKeys() {
   }
 }
 
+// ── Rate Limiting / Cooldown Helpers for Server Actions ─────
+const userActionCooldowns = new Map<string, number>();
+const failedRedeemAttempts = new Map<string, { count: number; lockUntil: number }>();
+
+function checkActionCooldown(userId: string, actionKey: string, cooldownMs: number): boolean {
+  const key = `${userId}:${actionKey}`;
+  const now = Date.now();
+  const lastTime = userActionCooldowns.get(key) || 0;
+  if (now - lastTime < cooldownMs) {
+    return false;
+  }
+  userActionCooldowns.set(key, now);
+  if (userActionCooldowns.size > 2000) {
+    for (const [k, ts] of userActionCooldowns.entries()) {
+      if (now - ts > 60_000) userActionCooldowns.delete(k);
+    }
+  }
+  return true;
+}
+
 export async function createApiKey(_prev: { raw: string | null }, formData: FormData) {
   const user = await requireInteractiveUser();
+
+  if (!checkActionCooldown(user.id, 'create-key', 3000)) {
+    throw new Error('Terlalu cepat. Harap tunggu beberapa detik sebelum membuat kunci baru.');
+  }
+
   const name = String(formData.get('name') ?? '').trim() || 'default';
   const expiresIn = String(formData.get('expiresIn') ?? 'none');
 
@@ -229,6 +254,22 @@ export async function redeemCodeDirect(code: string): Promise<{ ok: boolean; mes
 
   const user = await requireInteractiveUser();
 
+  const now = Date.now();
+  const attempt = failedRedeemAttempts.get(user.id);
+  if (attempt && attempt.lockUntil > now) {
+    const mins = Math.ceil((attempt.lockUntil - now) / 60_000);
+    return { ok: false, message: `Terlalu banyak percobaan kode salah. Silakan coba lagi dalam ${mins} menit.`, reward: undefined };
+  }
+
+  const recordFailure = () => {
+    const cur = failedRedeemAttempts.get(user.id) || { count: 0, lockUntil: 0 };
+    cur.count += 1;
+    if (cur.count >= 5) {
+      cur.lockUntil = Date.now() + 10 * 60_000;
+    }
+    failedRedeemAttempts.set(user.id, cur);
+  };
+
   try {
     const apiRes = await fetchBackendApi<{
       ok: boolean;
@@ -240,6 +281,7 @@ export async function redeemCodeDirect(code: string): Promise<{ ok: boolean; mes
     });
 
     if (apiRes.status === 200 && apiRes.data?.ok) {
+      failedRedeemAttempts.delete(user.id);
       return {
         ok: true,
         message: apiRes.data.message || 'Code redeemed successfully',
@@ -248,6 +290,7 @@ export async function redeemCodeDirect(code: string): Promise<{ ok: boolean; mes
     }
 
     if (apiRes.error && apiRes.status !== 0) {
+      recordFailure();
       return { ok: false, message: apiRes.error, reward: undefined };
     }
   } catch (err) {
@@ -606,6 +649,16 @@ export async function testApiKeyPingAction(params: {
   prompt?: string;
 }): Promise<TestPingResult> {
   const user = await requireInteractiveUser();
+
+  if (!checkActionCooldown(user.id, 'test-ping', 2500)) {
+    return {
+      ok: false,
+      status: 429,
+      latencyMs: 0,
+      error: 'Terlalu cepat. Harap tunggu beberapa detik sebelum menguji kembali.',
+      code: 'action_cooldown',
+    };
+  }
 
   const apiKey = params.apiKey?.trim();
   if (!apiKey || !apiKey.startsWith('mp-')) {
