@@ -50,7 +50,13 @@ function CopyPrefixButton({ prefix }: { prefix: string }) {
   );
 }
 
-export function KeysView({ initialKeys }: { initialKeys: KeyItem[] }) {
+export function KeysView({
+  initialKeys,
+  availableModels,
+}: {
+  initialKeys: KeyItem[];
+  availableModels?: Array<{ id: string; name: string }>;
+}) {
   const { t, locale } = useTranslation();
   const isId = locale === 'id';
   const [keys, setKeys] = useState<KeyItem[]>(initialKeys);
@@ -365,6 +371,7 @@ export function KeysView({ initialKeys }: { initialKeys: KeyItem[] }) {
         isOpen={isPingModalOpen}
         onClose={() => setIsPingModalOpen(false)}
         initialApiKey={testKey}
+        availableModels={availableModels}
       />
     </div>
   );
