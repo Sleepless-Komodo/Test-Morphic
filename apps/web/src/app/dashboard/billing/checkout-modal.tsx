@@ -226,10 +226,17 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
     }
   };
 
-  // Polling loop for Duitku
+  // Polling loop for Duitku with adaptive backoff & tab visibility check
   const startPolling = useCallback((pid: string) => {
     const poll = async () => {
       if (!mountedRef.current) return;
+
+      // Don't burn requests if the user minimized the window or switched tab
+      if (typeof document !== 'undefined' && document.hidden) {
+        pollRef.current = setTimeout(poll, 6000);
+        return;
+      }
+
       pollAttemptsRef.current++;
       if (pollAttemptsRef.current > MAX_POLL_ATTEMPTS) {
         setStatus('error');
@@ -261,7 +268,14 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
       }
 
       if (mountedRef.current) {
-        pollRef.current = setTimeout(poll, POLL_INTERVAL_MS);
+        // Adaptive backoff: 3s early, 6s mid, 10s late to prevent burning server bandwidth
+        const nextDelay =
+          pollAttemptsRef.current < 20
+            ? POLL_INTERVAL_MS
+            : pollAttemptsRef.current < 40
+            ? 6000
+            : 10000;
+        pollRef.current = setTimeout(poll, nextDelay);
       }
     };
 
