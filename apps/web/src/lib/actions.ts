@@ -7,7 +7,7 @@ import { db, schema as s } from '@morphic/db';
 import { generateApiKey, maskedKey } from '@morphic/shared/keys';
 import { grantCredits, grantEntitlement } from '@morphic/db/billing';
 import { auth } from '@/lib/auth';
-import { fetchBackendApi } from '@/lib/api-client';
+import { fetchBackendApi } from './api-client';
 
 import { cache } from 'react';
 
@@ -291,7 +291,7 @@ export async function createMockPayment(formData: FormData) {
 
   const packageId = String(formData.get('packageId'));
   const externalId = `mock_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  
+
   const user = await requireUser();
   try {
     const [pkg] = await db.select().from(s.packages).where(eq(s.packages.id, packageId)).limit(1);
