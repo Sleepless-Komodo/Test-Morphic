@@ -19,6 +19,7 @@ import {
   Terminal,
   Code2,
   BookOpen,
+  CreditCard,
 } from 'lucide-react';
 import { useTranslation } from '@/lib/i18n';
 import { formatCredits, API_BASE_URL, cn } from '@/lib/utils';
@@ -163,7 +164,21 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
   const [selectedMethod, setSelectedMethod] = useState<string>('SP');
   const [categoryFilter, setCategoryFilter] = useState<PaymentCategory>('all');
 
-  const isUSD = pkg.currency === 'USD';
+  const [paymentProvider, setPaymentProvider] = useState<'duitku' | 'paypal'>(
+    existingPayment?.provider === 'paypal' ? 'paypal' : (pkg.currency === 'USD' ? 'paypal' : 'duitku')
+  );
+
+  const idrPrice =
+    pkg.currency === 'IDR' || !pkg.currency
+      ? pkg.priceCents
+      : Math.round((pkg.priceCents / 100) * 16000);
+
+  const usdPrice =
+    pkg.currency === 'USD'
+      ? (pkg.priceCents / 100).toFixed(2)
+      : (Math.max(100, Math.round((pkg.priceCents / 16000) * 100)) / 100).toFixed(2);
+
+  const isUSD = paymentProvider === 'paypal';
 
   useEffect(() => {
     mountedRef.current = true;
@@ -386,7 +401,7 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
           <span className="text-xs font-mono font-bold text-neutral-500 uppercase tracking-widest">
             {status === 'paid'
               ? (locale === 'en' ? 'Payment Complete & Setup' : 'Pembayaran Selesai & Setup Token')
-              : (isUSD ? 'Checkout via PayPal' : 'Checkout via Duitku')}
+              : (locale === 'en' ? 'Checkout & Top-up' : 'Checkout & Pembayaran')}
           </span>
           <button
             id="checkout-modal-close"
@@ -405,7 +420,7 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
             <div className="text-center">
               <div className="text-lg font-extrabold text-neutral-950 font-heading">{pkgName}</div>
               <div className="text-3xl font-black text-neutral-950 mt-1 font-mono">
-                {formattedPrice}
+                {paymentProvider === 'paypal' ? `$ ${usdPrice} USD` : `Rp ${idrPrice.toLocaleString('id-ID')}`}
               </div>
               <div className="text-xs text-neutral-500 mt-1 font-mono">
                 +{formatCredits(pkg.creditAllowance)} credits
@@ -414,9 +429,79 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
             </div>
           )}
 
+          {/* Payment Method Selector — Duitku vs PayPal */}
+          {status !== 'paid' && status !== 'waiting' && status !== 'pending_paypal' && (
+            <div className="space-y-2">
+              <div className="text-[11px] font-mono font-bold text-neutral-500 uppercase tracking-wider">
+                {locale === 'en' ? 'Payment Method' : 'Metode Pembayaran'}
+              </div>
+              <div className="grid grid-cols-2 gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPaymentProvider('duitku');
+                    setErrorMsg(null);
+                  }}
+                  className={cn(
+                    "p-3 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-1.5",
+                    paymentProvider === 'duitku'
+                      ? "border-neutral-950 bg-neutral-950 text-white shadow-2xs"
+                      : "border-neutral-200 bg-white hover:border-neutral-300 text-neutral-800"
+                  )}
+                >
+                  <div className="flex items-center justify-between w-full">
+                    <QrCode className="h-4 w-4 shrink-0" />
+                    <span className={cn(
+                      "text-[9px] font-mono px-1.5 py-0.5 rounded font-bold uppercase",
+                      paymentProvider === 'duitku' ? "bg-white/20 text-white" : "bg-neutral-100 text-neutral-600"
+                    )}>
+                      QRIS / VA
+                    </span>
+                  </div>
+                  <div>
+                    <div className="font-bold text-xs">Duitku</div>
+                    <div className={cn("text-[10px] mt-0.5 font-mono", paymentProvider === 'duitku' ? "text-emerald-400 font-bold" : "text-neutral-600 font-semibold")}>
+                      Rp {idrPrice.toLocaleString('id-ID')}
+                    </div>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPaymentProvider('paypal');
+                    setErrorMsg(null);
+                  }}
+                  className={cn(
+                    "p-3 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-1.5",
+                    paymentProvider === 'paypal'
+                      ? "border-neutral-950 bg-neutral-950 text-white shadow-2xs"
+                      : "border-neutral-200 bg-white hover:border-neutral-300 text-neutral-800"
+                  )}
+                >
+                  <div className="flex items-center justify-between w-full">
+                    <CreditCard className="h-4 w-4 shrink-0" />
+                    <span className={cn(
+                      "text-[9px] font-mono px-1.5 py-0.5 rounded font-bold uppercase",
+                      paymentProvider === 'paypal' ? "bg-white/20 text-white" : "bg-neutral-100 text-neutral-600"
+                    )}>
+                      Cards
+                    </span>
+                  </div>
+                  <div>
+                    <div className="font-bold text-xs">PayPal</div>
+                    <div className={cn("text-[10px] mt-0.5 font-mono", paymentProvider === 'paypal' ? "text-emerald-400 font-bold" : "text-neutral-600 font-semibold")}>
+                      $ {usdPrice} USD
+                    </div>
+                  </div>
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* PayPal Flow */}
-          {isUSD && status !== 'paid' && status !== 'pending_paypal' && status !== 'failed' && (
-            <div className="space-y-3">
+          {paymentProvider === 'paypal' && status !== 'paid' && status !== 'pending_paypal' && status !== 'failed' && (
+            <div className="space-y-3 pt-1">
               <PayPalButton
                 packageId={pkg.id}
                 paymentId={existingPayment?.id}
@@ -428,15 +513,18 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
           )}
 
           {/* Duitku Flow */}
-          {!isUSD && status === 'idle' && (
-            <div className="text-center text-sm text-neutral-500 leading-relaxed">
-              {existingPayment
-                ? (locale === 'en'
-                  ? 'Click below to resume your pending payment via Duitku'
-                  : 'Klik di bawah untuk melanjutkan pembayaran yang tertunda via Duitku')
-                : (locale === 'en'
-                  ? 'Click below to open the Duitku payment page (QRIS, VA, e-wallet, etc.)'
-                  : 'Klik di bawah untuk membuka halaman pembayaran Duitku (QRIS, VA, e-wallet, dll.)')}
+          {paymentProvider === 'duitku' && status === 'idle' && (
+            <div className="p-3.5 rounded-xl bg-neutral-50 border border-neutral-200/90 text-center space-y-1.5">
+              <p className="text-xs text-neutral-600 font-medium">
+                {locale === 'en'
+                  ? 'Supported: QRIS (GoPay, OVO, ShopeePay), BCA, Mandiri, BNI, BRI Virtual Account'
+                  : 'Mendukung: QRIS (GoPay, OVO, ShopeePay), BCA, Mandiri, BNI, BRI Virtual Account'}
+              </p>
+              <p className="text-[11px] text-neutral-500 leading-relaxed">
+                {existingPayment
+                  ? (locale === 'en' ? 'Click below to resume your payment.' : 'Klik tombol di bawah untuk melanjutkan pembayaran.')
+                  : (locale === 'en' ? 'Click below to open the secure Duitku payment page.' : 'Klik tombol di bawah untuk membuka halaman pembayaran resmi Duitku.')}
+              </p>
             </div>
           )}
 
@@ -795,7 +883,7 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
 
         {/* Footer actions */}
         <div className="px-6 pb-6 space-y-2">
-          {!isUSD && (status === 'idle' || status === 'error') && (
+          {paymentProvider === 'duitku' && (status === 'idle' || status === 'error') && (
             <button
               id="checkout-pay-btn"
               onClick={handleCreateDuitkuPayment}
@@ -803,11 +891,11 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
             >
               {existingPayment
                 ? (locale === 'en' ? 'Continue Payment with Duitku' : 'Lanjutkan Bayar dengan Duitku')
-                : (locale === 'en' ? 'Pay with Duitku' : 'Bayar dengan Duitku')}
+                : (locale === 'en' ? 'Pay with Duitku (QRIS / VA)' : 'Bayar dengan Duitku (QRIS / VA)')}
             </button>
           )}
 
-          {!isUSD && status === 'waiting' && (
+          {paymentProvider === 'duitku' && status === 'waiting' && (
             <button
               id="checkout-check-btn"
               onClick={() => {

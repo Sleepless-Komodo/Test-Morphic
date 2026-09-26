@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useTranslation } from '@/lib/i18n';
-import { formatCredits } from '@/lib/utils';
+import { formatCredits, cn } from '@/lib/utils';
 import { Zap, CreditCard, Clock, Wallet, QrCode } from 'lucide-react';
 import { CheckoutModal } from './checkout-modal';
 import { fetchBackendApi } from '@/lib/api-client';
@@ -26,7 +26,18 @@ export function BillingView({
   const [balance, setBalance] = useState(initialBalance);
   const [selectedPkg, setSelectedPkg] = useState<any>(null);
   const [resumePayment, setResumePayment] = useState<any>(null);
+  const [selectedCurrency, setSelectedCurrency] = useState<'IDR' | 'USD'>(locale === 'id' ? 'IDR' : 'USD');
   const paymentsList = payments ?? [];
+
+  // Keep currency tab synced when user toggles website language
+  useEffect(() => {
+    setSelectedCurrency(locale === 'id' ? 'IDR' : 'USD');
+  }, [locale]);
+
+  const displayedPackages = initialPackages.filter((p) => {
+    const pkgCurr = p.currency === 'USD' ? 'USD' : 'IDR';
+    return pkgCurr === selectedCurrency;
+  });
 
   const handleSuccess = (creditsAdded: number) => {
     setBalance((prev) => prev + creditsAdded);
@@ -62,33 +73,66 @@ export function BillingView({
 
       {/* Daily Passes & Cheap Packages Section */}
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <CreditCard className="h-4 w-4 text-neutral-950" />
             <h2 className="font-heading font-bold text-lg text-neutral-950">
               {t.dashboard.billingPackagesTitle}
             </h2>
           </div>
-          <span className="text-[11px] font-mono font-bold text-neutral-700 bg-neutral-100 px-2.5 py-1 rounded-md border border-neutral-200">
-            {t.dashboard.scanQrisInstantBadge}
-          </span>
+
+          <div className="flex items-center gap-2">
+            {/* Currency Selector Tab */}
+            <div className="inline-flex p-1 bg-neutral-100 rounded-xl border border-neutral-200/90 text-xs font-mono font-bold">
+              <button
+                type="button"
+                onClick={() => setSelectedCurrency('IDR')}
+                className={cn(
+                  "px-3 py-1 rounded-lg transition-all cursor-pointer",
+                  selectedCurrency === 'IDR'
+                    ? "bg-white text-neutral-950 shadow-2xs font-extrabold"
+                    : "text-neutral-500 hover:text-neutral-900"
+                )}
+              >
+                🇮🇩 IDR (Rp)
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedCurrency('USD')}
+                className={cn(
+                  "px-3 py-1 rounded-lg transition-all cursor-pointer",
+                  selectedCurrency === 'USD'
+                    ? "bg-white text-neutral-950 shadow-2xs font-extrabold"
+                    : "text-neutral-500 hover:text-neutral-900"
+                )}
+              >
+                🌐 USD ($)
+              </button>
+            </div>
+
+            <span className="hidden sm:inline-block text-[11px] font-mono font-bold text-neutral-700 bg-neutral-100 px-2.5 py-1 rounded-md border border-neutral-200">
+              {selectedCurrency === 'IDR' ? 'QRIS & Duitku' : 'PayPal & Cards'}
+            </span>
+          </div>
         </div>
 
-        {initialPackages.length === 0 && (
+        {displayedPackages.length === 0 && (
           <div className="rounded-2xl border border-dashed border-neutral-300 bg-white/60 p-8 text-center">
             <p className="text-sm font-semibold text-neutral-800">
-              {locale === 'en' ? 'Packages are unavailable right now.' : 'Paket sedang tidak tersedia saat ini.'}
+              {locale === 'en'
+                ? `No ${selectedCurrency} packages available right now.`
+                : `Paket dalam mata uang ${selectedCurrency} sedang tidak tersedia.`}
             </p>
             <p className="mt-1.5 text-xs text-neutral-500 max-w-sm mx-auto leading-relaxed">
               {locale === 'en'
-                ? 'We could not load the credit packages. Refresh the page or try again shortly.'
-                : 'Gagal memuat paket kredit. Muat ulang halaman atau coba lagi sebentar.'}
+                ? 'Try switching to the other currency tab above or check back shortly.'
+                : 'Coba pilih tab mata uang lainnya di atas atau coba lagi nanti.'}
             </p>
           </div>
         )}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {initialPackages.map((p) => (
+          {displayedPackages.map((p) => (
             <div
               key={p.id}
               className="p-5 rounded-2xl bg-white border border-neutral-200/90 shadow-2xs flex flex-col justify-between hover:border-neutral-300 hover:shadow-xs transition-all"
@@ -118,21 +162,10 @@ export function BillingView({
                       setSelectedPkg(p);
                       setResumePayment(null);
                     }}
-                    className="w-full py-1.5 rounded-xl bg-neutral-950 hover:bg-neutral-800 text-white text-[11px] font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs active:scale-95"
+                    className="w-full py-2 rounded-xl bg-neutral-950 hover:bg-neutral-800 text-white text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs active:scale-95"
                   >
-                    {p.currency === 'USD' ? (
-                      <>
-                        <CreditCard className="h-3.5 w-3.5" />
-                        <span suppressHydrationWarning>
-                          {locale === 'en' ? 'Pay via PayPal' : 'Bayar via PayPal'}
-                        </span>
-                      </>
-                    ) : (
-                      <>
-                        <QrCode className="h-3 w-3" />
-                        <span suppressHydrationWarning>{t.dashboard.buyPackageBtn}</span>
-                      </>
-                    )}
+                    <CreditCard className="h-3.5 w-3.5" />
+                    <span suppressHydrationWarning>{t.dashboard.buyPackageBtn}</span>
                   </button>
                 </div>
               </div>
