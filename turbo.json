@@ -21,7 +21,16 @@
         "DUITKU_MERCHANT_CODE",
         "DUITKU_API_KEY",
         "DUITKU_ENV",
-        "NEXT_PUBLIC_APP_URL"
+        "NEXT_PUBLIC_APP_URL",
+        "REDIS_URL",
+        "PUBLIC_API_URL",
+        "UPSTREAM_TIMEOUT_MS",
+        "PAYPAL_CLIENT_ID",
+        "PAYPAL_CLIENT_SECRET",
+        "PAYPAL_ENVIRONMENT",
+        "TELEGRAM_BOT_TOKEN",
+        "TELEGRAM_WEBHOOK_SECRET",
+        "CLAUDE_RENTAL_TELEGRAM_USERNAME"
       ]
     },
     "dev": {
