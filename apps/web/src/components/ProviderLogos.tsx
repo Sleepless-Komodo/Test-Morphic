@@ -36,8 +36,12 @@ export function YiLogo({ className = 'w-4 h-4' }: LogoProps) {
   return <Image src="/logos/yi.svg" alt="Yi" width={24} height={24} unoptimized className={className} />;
 }
 
-export function ModelProviderLogo({ provider, className = 'w-4 h-4' }: { provider: string; className?: string }) {
-  const p = provider.toLowerCase();
+export function GrokLogo({ className = 'w-4 h-4' }: LogoProps) {
+  return <Image src="/logos/grok.svg" alt="Grok" width={24} height={24} unoptimized className={className} />;
+}
+
+export function ModelProviderLogo({ provider = '', className = 'w-4 h-4' }: { provider?: string; className?: string }) {
+  const p = (provider || '').toLowerCase();
   if (p.includes('claude') || p.includes('anthropic')) {
     return <ClaudeLogo className={className} />;
   }
@@ -52,6 +56,9 @@ export function ModelProviderLogo({ provider, className = 'w-4 h-4' }: { provide
   }
   if (p.includes('kimi') || p.includes('moonshot')) {
     return <KimiLogo className={className} />;
+  }
+  if (p.includes('grok') || p.includes('xai')) {
+    return <GrokLogo className={className} />;
   }
   if (p.includes('zhipu') || p.includes('glm')) {
     return <ZhipuLogo className={className} />;
