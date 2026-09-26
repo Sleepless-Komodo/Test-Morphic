@@ -2,8 +2,16 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Loader2, Copy, Check, X } from 'lucide-react';
-import { testApiKeyPingAction, TestPingResult } from '@/lib/actions';
+import { testApiKeyPingAction, getActiveModelsForTesting, TestPingResult } from '@/lib/actions';
 import { useTranslation } from '@/lib/i18n';
+
+const DEFAULT_MODELS = [
+  { id: 'deepseek-v4', name: 'DeepSeek V4' },
+  { id: 'qwen-max', name: 'Qwen Max' },
+  { id: 'kimi-coding', name: 'Kimi Coding' },
+  { id: 'MiniMaxAI/MiniMax-M2.7', name: 'MiniMax M2.7' },
+  { id: 'DeepSeek-V4-Flash-0731', name: 'DeepSeek V4 Flash' },
+];
 
 interface ApiKeyPingModalProps {
   isOpen: boolean;
@@ -17,18 +25,18 @@ export function ApiKeyPingModal({
   isOpen,
   onClose,
   initialApiKey = '',
-  availableModels = [
-    { id: 'deepseek-v4', name: 'DeepSeek V4' },
-    { id: 'qwen-max', name: 'Qwen Max' },
-    { id: 'kimi-coding', name: 'Kimi Coding' },
-  ],
+  availableModels,
   zIndex,
 }: ApiKeyPingModalProps) {
   const { locale } = useTranslation();
   const isId = locale === 'id';
 
+  const [modelsList, setModelsList] = useState<Array<{ id: string; name: string }>>(
+    availableModels && availableModels.length > 0 ? availableModels : DEFAULT_MODELS
+  );
+
   const [apiKey, setApiKey] = useState(initialApiKey);
-  const [selectedModel, setSelectedModel] = useState(availableModels[0]?.id || 'deepseek-v4');
+  const [selectedModel, setSelectedModel] = useState(modelsList[0]?.id || 'deepseek-v4');
   const [prompt, setPrompt] = useState(
     isId ? 'Halo! Verifikasi koneksi AI Gateway Morphic.' : 'Hello! Testing Morphic AI Gateway connectivity.'
   );
@@ -39,6 +47,25 @@ export function ApiKeyPingModal({
 
   const [prevInitialApiKey, setPrevInitialApiKey] = useState(initialApiKey);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (availableModels && availableModels.length > 0) {
+      setModelsList(availableModels);
+      if (!availableModels.some((m) => m.id === selectedModel)) {
+        setSelectedModel(availableModels[0].id);
+      }
+    } else if (isOpen) {
+      // Fetch live models from database if not provided
+      getActiveModelsForTesting().then((liveModels) => {
+        if (liveModels && liveModels.length > 0) {
+          setModelsList(liveModels);
+          if (!liveModels.some((m) => m.id === selectedModel)) {
+            setSelectedModel(liveModels[0].id);
+          }
+        }
+      }).catch(() => {});
+    }
+  }, [isOpen, availableModels]);
 
   if (initialApiKey !== prevInitialApiKey) {
     setPrevInitialApiKey(initialApiKey);
@@ -180,7 +207,7 @@ export function ApiKeyPingModal({
                 onChange={(e) => setSelectedModel(e.target.value)}
                 className="w-full px-3 py-2 text-xs rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 focus:bg-white transition-colors cursor-pointer"
               >
-                {availableModels.map((m) => (
+                {modelsList.map((m) => (
                   <option key={m.id} value={m.id}>
                     {m.name} ({m.id})
                   </option>

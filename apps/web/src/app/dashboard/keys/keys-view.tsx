@@ -33,7 +33,12 @@ interface KeyItem {
   createdAt: Date;
 }
 
-export function KeysView({ initialKeys }: { initialKeys: KeyItem[] }) {
+interface KeysViewProps {
+  initialKeys: KeyItem[];
+  availableModels?: Array<{ id: string; name: string }>;
+}
+
+export function KeysView({ initialKeys, availableModels }: KeysViewProps) {
   const { t, locale } = useTranslation();
   const isId = locale === 'id';
   const [keys, setKeys] = useState<KeyItem[]>(initialKeys);
@@ -417,6 +422,7 @@ export function KeysView({ initialKeys }: { initialKeys: KeyItem[] }) {
         isOpen={isPingModalOpen}
         onClose={() => setIsPingModalOpen(false)}
         initialApiKey={testKey}
+        availableModels={availableModels}
       />
     </div>
   );

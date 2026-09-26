@@ -8,7 +8,7 @@ import Footer from '@/components/Footer';
 
 export const metadata = {
   title: 'Models Catalog | Morphic AI Gateway',
-  description: 'Jelajahi seluruh model AI Claude 3.5, DeepSeek, Qwen, Kimi, dan GLM dengan tarif hemat dan endpoint OpenAI-compatible.',
+  description: 'Jelajahi seluruh model AI DeepSeek, Qwen, Kimi, dan MiniMax dengan tarif hemat dan endpoint OpenAI-compatible.',
 };
 
 export default async function ModelsPage() {

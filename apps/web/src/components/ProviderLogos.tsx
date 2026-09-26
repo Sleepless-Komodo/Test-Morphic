@@ -1,7 +1,7 @@
 'use client';
 
 import Image from 'next/image';
-import { Cpu } from 'lucide-react';
+import { Cpu, Sparkles } from 'lucide-react';
 
 interface LogoProps {
   className?: string;
@@ -62,6 +62,9 @@ export function ModelProviderLogo({ provider = '', className = 'w-4 h-4' }: { pr
   }
   if (p.includes('zhipu') || p.includes('glm')) {
     return <ZhipuLogo className={className} />;
+  }
+  if (p.includes('minimax')) {
+    return <Sparkles className={`${className} text-rose-500`} role="img" aria-label="MiniMax" />;
   }
   if (p.includes('01.ai') || /\byi\b/.test(p)) {
     return <YiLogo className={className} />;
