@@ -19,32 +19,39 @@ interface ModelRate {
 
 const MODELS_DATA: ModelRate[] = [
   {
-    id: 'claude-3-5-sonnet-20241022',
-    name: 'Claude 3.5 Sonnet',
-    provider: 'Anthropic Proxy',
-    officialRatePerMillion: 115000,
-    morphicRatePerMillion: 36000,
-  },
-  {
     id: 'deepseek-v4',
-    name: 'DeepSeek V4 Coder',
-    provider: 'DeepSeek Upstream',
+    name: 'DeepSeek V4',
+    provider: 'DeepSeek',
     officialRatePerMillion: 8500,
     morphicRatePerMillion: 2500,
   },
   {
-    id: 'qwen-2.5-max',
-    name: 'Qwen 2.5 Max',
+    id: 'qwen-max',
+    name: 'Qwen Max',
     provider: 'Alibaba Cloud',
     officialRatePerMillion: 42000,
     morphicRatePerMillion: 13000,
   },
   {
-    id: 'kimi-k1.5',
-    name: 'Kimi K1.5 Preview',
+    id: 'kimi-coding',
+    name: 'Kimi Coding',
     provider: 'Moonshot AI',
     officialRatePerMillion: 38000,
     morphicRatePerMillion: 12000,
+  },
+  {
+    id: 'MiniMaxAI/MiniMax-M2.7',
+    name: 'MiniMax M2.7',
+    provider: 'MiniMax',
+    officialRatePerMillion: 28000,
+    morphicRatePerMillion: 8000,
+  },
+  {
+    id: 'DeepSeek-V4-Flash-0731',
+    name: 'DeepSeek V4 Flash',
+    provider: 'DeepSeek',
+    officialRatePerMillion: 6500,
+    morphicRatePerMillion: 2000,
   },
 ];
 
@@ -60,7 +67,7 @@ export default function PricingCalculator() {
   const { locale } = useTranslation();
   const reduced = useReducedMotionSafe();
 
-  const [selectedModelId, setSelectedModelId] = useState<string>('claude-3-5-sonnet-20241022');
+  const [selectedModelId, setSelectedModelId] = useState<string>('deepseek-v4');
   const [tokensMillions, setTokensMillions] = useState<number>(10);
 
   const selectedModel = MODELS_DATA.find((m) => m.id === selectedModelId) || MODELS_DATA[0];
