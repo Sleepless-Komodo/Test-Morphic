@@ -4,7 +4,7 @@ import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { eq, and, desc, sql, gte, lte } from 'drizzle-orm';
 import { db, schema as s } from '@morphic/db';
-import { generateApiKey, maskedKey } from '@morphic/shared/keys';
+import { generateApiKey, maskedKey, hashApiKey } from '@morphic/shared/keys';
 import { grantCredits, grantEntitlement } from '@morphic/db/billing';
 import { auth } from '@/lib/auth';
 import { fetchBackendApi } from './api-client';
@@ -52,7 +52,26 @@ async function requireAdmin() {
   return u;
 }
 
-export { requireUser, requireAdmin };
+/**
+ * Like requireUser, but rejects sessions minted from an mp-* API key (audit H7).
+ * Use for any state-changing action: key mint/revoke, redeem, payments, key testing.
+ * Server actions never pass through the Hono middleware, so the check is repeated here.
+ */
+async function requireInteractiveUser() {
+  const session = await getSessionWithRetry();
+  if (!session) redirect('/login');
+  const [row] = await db
+    .select({ authMethod: s.sessions.authMethod })
+    .from(s.sessions)
+    .where(eq(s.sessions.id, session.session.id))
+    .limit(1);
+  if (row?.authMethod === 'api_key') {
+    throw new Error('This action requires signing in with your account, not an API key.');
+  }
+  return session.user;
+}
+
+export { requireUser, requireAdmin, requireInteractiveUser };
 
 
 export async function listApiKeys() {
@@ -88,7 +107,7 @@ export async function listApiKeys() {
         createdAt: s.apiKeys.createdAt,
       })
       .from(s.apiKeys)
-      .where(and(eq(s.apiKeys.userId, user.id), eq(s.apiKeys.status, 'active')))
+      .where(eq(s.apiKeys.userId, user.id))
       .orderBy(desc(s.apiKeys.createdAt));
   } catch (err) {
     console.warn('[listApiKeys] Error fetching api keys from DB:', err);
@@ -97,7 +116,7 @@ export async function listApiKeys() {
 }
 
 export async function createApiKey(_prev: { raw: string | null }, formData: FormData) {
-  const user = await requireUser();
+  const user = await requireInteractiveUser();
   const name = String(formData.get('name') ?? '').trim() || 'default';
   const expiresIn = String(formData.get('expiresIn') ?? 'none');
 
@@ -142,24 +161,28 @@ export async function createApiKey(_prev: { raw: string | null }, formData: Form
       .returning({ id: s.apiKeys.id });
     createdId = inserted?.id ?? null;
   } catch (err) {
-    console.warn('[createApiKey] Database offline, generated mock API key:', err);
+    // Do not hand back a key that was never persisted (audit M5). A phantom key would
+    // authenticate nowhere and mislead the user into thinking it works.
+    console.error('[createApiKey] Failed to persist API key:', err);
+    throw new Error('Could not create API key right now. Please try again.');
+  }
+  if (!createdId) {
+    throw new Error('Could not create API key right now. Please try again.');
   }
   return { raw, prefix, id: createdId, expiresAt };
 }
 
 export async function revokeApiKey(formData: FormData) {
-  const user = await requireUser();
+  const user = await requireInteractiveUser();
   const id = String(formData.get('id'));
 
-  try {
-    const apiRes = await fetchBackendApi(`/v1/keys/${id}`, {
-      method: 'DELETE',
-    });
-    if (apiRes.status === 200) return;
-  } catch (err) {
-    console.warn('[revokeApiKey] Backend API delete failed, falling back to direct DB:', err);
-  }
+  const apiRes = await fetchBackendApi(`/v1/keys/${id}`, { method: 'DELETE' });
+  if (apiRes.status === 200) return;
+  // The API answered but not with success (e.g. 404 not-found / not-owned): trust it,
+  // do not retry the write against the DB.
+  if (apiRes.status !== 0) return;
 
+  // status 0 = could not reach the API at all → DB fallback for availability.
   try {
     await db
       .update(s.apiKeys)
@@ -177,7 +200,7 @@ export async function redeemCodeDirect(code: string): Promise<{ ok: boolean; mes
   const cleanCode = code.trim().toUpperCase();
   if (!cleanCode) return { ok: false, message: 'Enter a code', reward: undefined };
 
-  const user = await requireUser();
+  const user = await requireInteractiveUser();
 
   try {
     const apiRes = await fetchBackendApi<{
@@ -270,10 +293,9 @@ export async function redeemCodeDirect(code: string): Promise<{ ok: boolean; mes
       return { ok: true, message: 'Code redeemed', reward: { type: 'credits', credits: 0 } };
     });
   } catch (err: any) {
+    // Never fabricate a success: a redemption that did not write to the ledger must
+    // report failure (audit H1 — removed the "Preview Mode" fake grant).
     console.warn('[redeemCodeDirect] Error executing transaction:', err);
-    if (cleanCode.startsWith('MP-') || cleanCode.length >= 4) {
-      return { ok: true, message: '+10,000 credits (Preview Mode)', reward: { type: 'credits', credits: 10000 } };
-    }
     return { ok: false, message: err.message || 'Invalid or expired code', reward: undefined };
   }
 }
@@ -292,7 +314,7 @@ export async function createMockPayment(formData: FormData) {
   const packageId = String(formData.get('packageId'));
   const externalId = `mock_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
-  const user = await requireUser();
+  const user = await requireInteractiveUser();
   try {
     const [pkg] = await db.select().from(s.packages).where(eq(s.packages.id, packageId)).limit(1);
     if (pkg && pkg.status === 'active') {
@@ -542,18 +564,13 @@ export async function getActiveModelsForTesting(): Promise<Array<{ id: string; n
       .from(s.models)
       .where(eq(s.models.status, 'active'));
 
-    if (rows && rows.length > 0) {
-      return rows;
-    }
-  } catch {
-    // fallback
+    return rows ?? [];
+  } catch (err) {
+    // No fabricated catalog (audit R-38): return an empty list so the UI shows a real
+    // empty state instead of models the gateway may not actually serve.
+    console.warn('[getActiveModelsForTesting] Failed to load active models:', err);
+    return [];
   }
-
-  return [
-    { id: 'deepseek-v4', name: 'DeepSeek V4' },
-    { id: 'qwen-max', name: 'Qwen Max' },
-    { id: 'kimi-coding', name: 'Kimi Coding' },
-  ];
 }
 
 export async function testApiKeyPingAction(params: {
@@ -561,7 +578,7 @@ export async function testApiKeyPingAction(params: {
   model?: string;
   prompt?: string;
 }): Promise<TestPingResult> {
-  await requireUser();
+  const user = await requireInteractiveUser();
 
   const apiKey = params.apiKey?.trim();
   if (!apiKey || !apiKey.startsWith('mp-')) {
@@ -572,6 +589,34 @@ export async function testApiKeyPingAction(params: {
       error: 'Format API Key tidak valid. Kunci harus diawali dengan mp-',
       code: 'invalid_api_key_format',
     };
+  }
+
+  // Ownership gate (audit H5): only let a user test a key they own. Without this the
+  // action bills an arbitrary user's credits and doubles as a key-validity oracle.
+  try {
+    const [owned] = await db
+      .select({ id: s.apiKeys.id })
+      .from(s.apiKeys)
+      .where(
+        and(
+          eq(s.apiKeys.keyHash, hashApiKey(apiKey)),
+          eq(s.apiKeys.userId, user.id),
+          eq(s.apiKeys.status, 'active'),
+        ),
+      )
+      .limit(1);
+    if (!owned) {
+      return {
+        ok: false,
+        status: 403,
+        latencyMs: 0,
+        error: 'API Key tidak ditemukan pada akun Anda.',
+        code: 'api_key_not_owned',
+      };
+    }
+  } catch (err) {
+    console.error('[testApiKeyPingAction] ownership check failed:', err);
+    return { ok: false, status: 503, latencyMs: 0, error: 'Tidak dapat memverifikasi API Key saat ini.', code: 'verification_unavailable' };
   }
 
   const model = params.model?.trim() || 'deepseek-v4';
@@ -645,8 +690,19 @@ export async function testApiKeyPingAction(params: {
 }
 
 export async function provisionPostPaymentKey(params?: { packageName?: string }) {
-  const user = await requireUser();
+  const user = await requireInteractiveUser();
   const name = params?.packageName ? `Pass: ${params.packageName}` : 'Quickstart Key';
+
+  // Server actions are callable endpoints — the "post payment" framing is not a gate.
+  // Require the caller to actually have a paid payment before minting a key (audit H6).
+  const [paid] = await db
+    .select({ id: s.payments.id })
+    .from(s.payments)
+    .where(and(eq(s.payments.userId, user.id), eq(s.payments.status, 'paid')))
+    .limit(1);
+  if (!paid) {
+    return { ok: false, error: 'No completed payment found for this account.' };
+  }
 
   const { raw, hash, prefix } = generateApiKey();
 

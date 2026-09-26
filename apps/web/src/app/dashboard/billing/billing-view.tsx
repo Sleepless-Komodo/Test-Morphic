@@ -50,7 +50,7 @@ export function BillingView({
             <Wallet className="h-5 w-5 text-neutral-700" />
           </div>
           <div>
-            <div suppressHydrationWarning className="text-[10px] uppercase font-mono text-neutral-400 font-bold">
+            <div suppressHydrationWarning className="text-[10px] uppercase font-mono text-neutral-500 font-bold">
               {t.dashboard.activeBalanceLabel}
             </div>
             <div className="text-xl font-extrabold text-neutral-950 font-mono">
@@ -74,6 +74,19 @@ export function BillingView({
           </span>
         </div>
 
+        {initialPackages.length === 0 && (
+          <div className="rounded-2xl border border-dashed border-neutral-300 bg-white/60 p-8 text-center">
+            <p className="text-sm font-semibold text-neutral-800">
+              {locale === 'en' ? 'Packages are unavailable right now.' : 'Paket sedang tidak tersedia saat ini.'}
+            </p>
+            <p className="mt-1.5 text-xs text-neutral-500 max-w-sm mx-auto leading-relaxed">
+              {locale === 'en'
+                ? 'We could not load the credit packages. Refresh the page or try again shortly.'
+                : 'Gagal memuat paket kredit. Muat ulang halaman atau coba lagi sebentar.'}
+            </p>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {initialPackages.map((p) => (
             <div
@@ -85,7 +98,7 @@ export function BillingView({
                   <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-neutral-600 bg-neutral-100 px-2 py-0.5 rounded-md border border-neutral-200">
                     {p.durationHours === 24 ? t.dashboard.duration24h : t.dashboard.flexibleDuration}
                   </span>
-                  <span className="text-xs text-neutral-400 font-mono">
+                  <span className="text-xs text-neutral-500 font-mono">
                     {p.durationHours ? `${p.durationHours}h` : 'Flex'}
                   </span>
                 </div>
@@ -322,7 +335,7 @@ export function BillingView({
                         <td className="px-5 py-3 text-neutral-500 max-w-[200px] truncate">
                           {entry.reference ?? '—'}
                         </td>
-                        <td className="px-5 py-3 text-neutral-400 font-mono whitespace-nowrap">
+                        <td className="px-5 py-3 text-neutral-500 font-mono whitespace-nowrap">
                           {new Date(entry.created_at).toLocaleString(
                             locale === 'en' ? 'en-US' : 'id-ID',
                             { dateStyle: 'short', timeStyle: 'short' }

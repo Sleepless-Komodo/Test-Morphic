@@ -4,6 +4,8 @@ import https from 'node:https';
 import { drizzle, type NeonHttpDatabase } from 'drizzle-orm/neon-http';
 import { drizzle as drizzleServerless, type NeonDatabase } from 'drizzle-orm/neon-serverless';
 import { neon, neonConfig, Pool } from '@neondatabase/serverless';
+import { drizzle as drizzlePostgres, type PostgresJsDatabase } from 'drizzle-orm/postgres-js';
+import postgres from 'postgres';
 import ws from 'ws';
 import * as schema from './schema.ts';
 
@@ -31,6 +33,20 @@ if (typeof globalThis !== 'undefined') {
 
 function getConnectionString(): string {
   return process.env.DATABASE_URL ?? 'postgresql://unset:unset@localhost:5432/unset';
+}
+
+/**
+ * Neon speaks HTTP/WebSocket on :443; a plain Postgres server speaks the wire
+ * protocol on :5432. Pick the driver from the host so the same DATABASE_URL works
+ * against Neon in production and against docker-compose in local development.
+ */
+function isNeonConnection(): boolean {
+  try {
+    const host = new URL(getConnectionString()).hostname;
+    return host.endsWith('.neon.tech') || host.includes('neon');
+  } catch {
+    return false;
+  }
 }
 
 function nativeIPv4Fetch(urlInput: string | URL | Request, init?: RequestInit): Promise<Response> {
@@ -135,8 +151,26 @@ neonConfig.fetchFunction = resilientFetch;
 
 let _instance: NeonHttpDatabase<typeof schema> | null = null;
 let _poolDb: NeonDatabase<typeof schema> | null = null;
+let _localDb: PostgresJsDatabase<typeof schema> | null = null;
+
+function getLocalDb(): PostgresJsDatabase<typeof schema> {
+  if (_localDb) return _localDb;
+
+  const client = postgres(getConnectionString(), {
+    max: 10,
+    idle_timeout: 20,
+    connect_timeout: 10,
+  });
+  _localDb = drizzlePostgres(client, { schema });
+
+  return _localDb;
+}
 
 function getDb(): NeonHttpDatabase<typeof schema> {
+  if (!isNeonConnection()) {
+    return getLocalDb() as unknown as NeonHttpDatabase<typeof schema>;
+  }
+
   if (_instance) return _instance;
 
   const sql = neon(getConnectionString());
@@ -146,6 +180,10 @@ function getDb(): NeonHttpDatabase<typeof schema> {
 }
 
 function getPoolDb(): NeonDatabase<typeof schema> {
+  if (!isNeonConnection()) {
+    return getLocalDb() as unknown as NeonDatabase<typeof schema>;
+  }
+
   if (_poolDb) return _poolDb;
 
   const pool = new Pool({

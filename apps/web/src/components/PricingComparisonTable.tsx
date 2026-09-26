@@ -188,7 +188,7 @@ export default function PricingComparisonTable({ isLoggedIn = false }: { isLogge
           <span className="sr-only">{locale === 'en' ? 'Included' : 'Termasuk'}</span>
         </span>
       ) : (
-        <span className="inline-flex items-center justify-center w-5 h-5 text-neutral-400">
+        <span className="inline-flex items-center justify-center w-5 h-5 text-neutral-500">
           <Minus className="w-3.5 h-3.5" aria-hidden="true" />
           <span className="sr-only">{locale === 'en' ? 'Not included' : 'Tidak termasuk'}</span>
         </span>

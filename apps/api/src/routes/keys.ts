@@ -2,11 +2,14 @@ import { randomBytes, createHash } from 'node:crypto';
 import { Hono } from 'hono';
 import { db, schema as s } from '@morphic/db';
 import { eq, and, desc } from 'drizzle-orm';
-import { sessionAuth } from '../middleware/session-auth';
+import { sessionAuth, denyKeyDerivedSession } from '../middleware/session-auth';
+import { sessionRateLimit } from '../middleware/session-ratelimit';
 
 const keys = new Hono();
 
 keys.use('*', sessionAuth);
+keys.use('*', denyKeyDerivedSession);
+keys.use('*', sessionRateLimit('keys', 30));
 
 keys.post('/', async (c) => {
   const { userId } = c.get('userSession');

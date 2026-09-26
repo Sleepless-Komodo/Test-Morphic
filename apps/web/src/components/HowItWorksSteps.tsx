@@ -509,7 +509,7 @@ export default function HowItWorksSteps({ isLoggedIn = false }: HowItWorksStepsP
                               <span className="w-2.5 h-2.5 rounded-full bg-[#27c93f] border border-[#1aab29]/50 shadow-2xs" />
                             </div>
                             <span className="text-[11px] font-mono text-neutral-500 font-medium ml-1">
-                              bash — 80x24
+                              bash · 80x24
                             </span>
                           </div>
                         ) : activeStep === 0 ? (
@@ -528,7 +528,7 @@ export default function HowItWorksSteps({ isLoggedIn = false }: HowItWorksStepsP
                           </div>
                         ) : (
                           <div className="flex items-center gap-2">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                             <span className="text-[11px] font-mono font-semibold text-neutral-600">
                               Gateway Routing Telemetry
                             </span>

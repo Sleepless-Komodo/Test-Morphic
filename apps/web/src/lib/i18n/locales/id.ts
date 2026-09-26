@@ -261,7 +261,7 @@ export const id = {
       statusTitle: 'Status Gateway',
       statusAllOperational: 'Semua Sistem Beroperasi Normal',
       statusDegradedTitle: 'Sebagian Layanan Terganggu',
-      statusUptime: 'Uptime 99.9% dalam 90 hari terakhir',
+      statusUptime: 'Status langsung, dicek dari browser Anda',
       statusPing: 'Latensi',
       statusServiceOperational: 'Operasional',
       statusPingNote: 'Latensi diukur langsung dari browser Anda ke gateway.',

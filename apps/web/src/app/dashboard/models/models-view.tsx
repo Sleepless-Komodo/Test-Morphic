@@ -47,7 +47,7 @@ export function ModelsView({ initialModels }: { initialModels: any[] }) {
 
         {/* Search Input */}
         <div className="relative w-full md:w-72 shrink-0">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400 pointer-events-none" />
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-500 pointer-events-none" />
           <input
             type="text"
             value={search}
@@ -104,7 +104,7 @@ export function ModelsView({ initialModels }: { initialModels: any[] }) {
               <div>
                 {/* Provider + Status */}
                 <div className="flex items-center justify-between gap-1.5 mb-1.5">
-                  <span className="text-[10px] text-neutral-400 font-mono uppercase tracking-wider font-semibold truncate">
+                  <span className="text-[10px] text-neutral-500 font-mono uppercase tracking-wider font-semibold truncate">
                     {m.providerName ?? (locale === 'en' ? 'Official' : 'Resmi')}
                   </span>
                   {m.circuitBreakerState?.state === 'open' ? (
@@ -148,7 +148,7 @@ export function ModelsView({ initialModels }: { initialModels: any[] }) {
                   <code className="text-[10px] font-mono text-neutral-700 truncate select-all">
                     {m.publicModelId}
                   </code>
-                  <span className="shrink-0 text-neutral-400 group-hover/id:text-neutral-900 transition-colors">
+                  <span className="shrink-0 text-neutral-500 group-hover/id:text-neutral-900 transition-colors">
                     {copiedId === m.publicModelId ? (
                       <Check className="h-3 w-3 text-emerald-600" />
                     ) : (
@@ -173,7 +173,7 @@ export function ModelsView({ initialModels }: { initialModels: any[] }) {
                     </span>
                   ))}
                   {(m.capabilities?.length ?? 0) > 2 && (
-                    <span className="px-1 py-0.5 rounded text-[9px] font-mono text-neutral-400">
+                    <span className="px-1 py-0.5 rounded text-[9px] font-mono text-neutral-500">
                       +{(m.capabilities?.length ?? 0) - 2}
                     </span>
                   )}
@@ -183,10 +183,10 @@ export function ModelsView({ initialModels }: { initialModels: any[] }) {
               {/* Pricing & Context Specs Footer */}
               <div className="pt-2 border-t border-neutral-100 mt-auto space-y-0.5">
                 <div className="flex items-baseline justify-between gap-1 text-[10.5px]">
-                  <span className="text-neutral-400 truncate text-[10px]">{t.dashboard.dailyRateLabel}</span>
+                  <span className="text-neutral-500 truncate text-[10px]">{t.dashboard.dailyRateLabel}</span>
                   <span className="font-bold font-mono text-neutral-950 text-[11px] shrink-0">{dailyRateFormatted}</span>
                 </div>
-                <div className="flex items-center justify-between text-[9.5px] text-neutral-400 font-mono">
+                <div className="flex items-center justify-between text-[9.5px] text-neutral-500 font-mono">
                   <span>{formatCredits(m.contextLength)} ctx</span>
                   <span className="truncate">
                     {locale === 'en' ? 'in' : 'msk'} {formatCredits(m.inputCreditsPer1m)} / {locale === 'en' ? 'out' : 'klr'} {formatCredits(m.outputCreditsPer1m)}
@@ -198,10 +198,23 @@ export function ModelsView({ initialModels }: { initialModels: any[] }) {
         })}
       </div>
 
+      {filtered.length === 0 && (
+        <div className="rounded-2xl border border-dashed border-neutral-300 bg-white/60 p-10 text-center">
+          <p className="text-sm font-semibold text-neutral-800">
+            {locale === 'en' ? 'No models available right now.' : 'Belum ada model yang tersedia saat ini.'}
+          </p>
+          <p className="mt-1.5 text-xs text-neutral-500 max-w-sm mx-auto leading-relaxed">
+            {locale === 'en'
+              ? 'The catalog could not be loaded. Refresh the page, or check the gateway status in your dashboard.'
+              : 'Katalog gagal dimuat. Muat ulang halaman, atau periksa status gateway di dashboard Anda.'}
+          </p>
+        </div>
+      )}
+
       {/* Terminal cURL Guide */}
       <div className="p-6 rounded-3xl bg-neutral-950 text-white border border-neutral-800 shadow-md space-y-2">
         <div className="text-xs font-bold text-neutral-200 flex items-center gap-1.5">
-          <Terminal className="h-4 w-4 text-neutral-400" />
+          <Terminal className="h-4 w-4 text-neutral-500" />
           <span>{t.dashboard.curlSampleTitle}</span>
         </div>
         <pre className="p-4 rounded-2xl bg-neutral-900 border border-neutral-800 text-neutral-200 text-xs overflow-x-auto font-mono leading-relaxed">{`curl https://api.morphic.sh/v1/chat/completions \\

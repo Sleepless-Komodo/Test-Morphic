@@ -116,7 +116,7 @@ res = client.chat.completions.create(
         {activeTab === 'ide' && (
           <div className="rounded-2xl bg-neutral-950 border border-neutral-800 p-4 sm:p-5">
             <div className="flex items-start justify-between gap-3 mb-3">
-              <span suppressHydrationWarning className="text-[11px] text-neutral-400">
+              <span suppressHydrationWarning className="text-[11px] text-neutral-500">
                 {locale === 'id'
                   ? 'Buka Settings AI di Cursor / Cline, lalu isi:'
                   : 'Open the AI settings in Cursor / Cline, then fill in:'}
@@ -128,19 +128,19 @@ res = client.chat.completions.create(
             </div>
             <div className="space-y-2.5 font-mono text-xs">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 rounded-lg bg-neutral-900 border border-neutral-800 px-3 py-2">
-                <span className="text-neutral-400">Base URL</span>
+                <span className="text-neutral-500">Base URL</span>
                 <span className="text-emerald-400 break-all">{BASE_URL}</span>
               </div>
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 rounded-lg bg-neutral-900 border border-neutral-800 px-3 py-2">
-                <span className="text-neutral-400">Model</span>
+                <span className="text-neutral-500">Model</span>
                 <span className="text-emerald-400">deepseek-v4</span>
               </div>
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 rounded-lg bg-neutral-900 border border-neutral-800 px-3 py-2">
-                <span className="text-neutral-400">API Key</span>
+                <span className="text-neutral-500">API Key</span>
                 <span className="text-neutral-300">mp-live-xxxxxxxx</span>
               </div>
             </div>
-            <p suppressHydrationWarning className="text-[11px] text-neutral-400 mt-3">
+            <p suppressHydrationWarning className="text-[11px] text-neutral-500 mt-3">
               {t.dashboard.quickstartIdeKeyHint}
             </p>
           </div>
@@ -161,7 +161,7 @@ res = client.chat.completions.create(
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <div className="rounded-2xl bg-neutral-950 border border-neutral-800 p-4 sm:p-5">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-[11px] font-mono text-neutral-400">Node.js / TypeScript</span>
+                <span className="text-[11px] font-mono text-neutral-500">Node.js / TypeScript</span>
                 <CopyButton text={nodeSnippet} locale={locale} />
               </div>
               <pre className="text-xs font-mono text-neutral-200 leading-relaxed overflow-x-auto">
@@ -170,7 +170,7 @@ res = client.chat.completions.create(
             </div>
             <div className="rounded-2xl bg-neutral-950 border border-neutral-800 p-4 sm:p-5">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-[11px] font-mono text-neutral-400">Python</span>
+                <span className="text-[11px] font-mono text-neutral-500">Python</span>
                 <CopyButton text={pythonSnippet} locale={locale} />
               </div>
               <pre className="text-xs font-mono text-neutral-200 leading-relaxed overflow-x-auto">

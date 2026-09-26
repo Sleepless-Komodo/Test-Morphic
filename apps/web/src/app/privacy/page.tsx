@@ -26,7 +26,7 @@ export default async function PrivacyPage() {
 
       <section className="pt-36 sm:pt-44 pb-20 px-4 sm:px-6 max-w-4xl mx-auto w-full">
         <div className="mb-10 text-center sm:text-left">
-          <div className="text-xs font-mono uppercase tracking-[0.2em] text-neutral-400 font-bold mb-2">
+          <div className="text-xs font-mono uppercase tracking-[0.2em] text-neutral-500 font-bold mb-2">
             PRIVACY & DATA PROTECTION
           </div>
           <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight text-neutral-950 font-heading mb-4">
