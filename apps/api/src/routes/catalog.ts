@@ -36,24 +36,8 @@ catalog.get('/models', async (c) => {
 
 catalog.get('/packages', async (c) => {
   const rows = await db
-    .select({
-      id: s.packages.id,
-      name: s.packages.name,
-      description: s.packages.description,
-      creditAllowance: s.packages.creditAllowance,
-      modelId: s.packages.modelId,
-      durationHours: s.packages.durationHours,
-      priceCents: s.packages.priceCents,
-      currency: s.packages.currency,
-      recurring: s.packages.recurring,
-      status: s.packages.status,
-      createdAt: s.packages.createdAt,
-      updatedAt: s.packages.updatedAt,
-      modelDisplayName: s.models.displayName,
-      modelPublicId: s.models.publicModelId,
-    })
+    .select()
     .from(s.packages)
-    .leftJoin(s.models, eq(s.packages.modelId, s.models.id))
     .where(eq(s.packages.status, 'active'));
 
   return c.json({ data: rows });
