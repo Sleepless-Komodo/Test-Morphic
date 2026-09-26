@@ -42,7 +42,7 @@ const BLOCKED_TOOLS_REGEX =
 const PROBING_PATHS_REGEX =
   /(\.php|\.env|\.git|\.aws|\.well-known\/security|wp-admin|wp-login|xmlrpc|cgi-bin|actuator|config\.json)/i;
 
-export function middleware(req: NextRequest) {
+export function proxy(req: NextRequest) {
   const pathname = req.nextUrl.pathname;
 
   // 1. Immediately drop common vulnerability probing / scanner paths
