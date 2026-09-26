@@ -26,7 +26,7 @@ import { PayPalButton } from '@/components/PayPalButton';
 import { provisionPostPaymentKey } from '@/lib/actions';
 import { ApiKeyPingModal } from '@/components/ApiKeyPingModal';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8787';
+const API_URL = '/api/backend';
 const POLL_INTERVAL_MS = 3000;
 const MAX_POLL_ATTEMPTS = 60; // 3 min max polling
 
@@ -268,7 +268,7 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
               setStatus('failed');
             }
           })
-          .catch(() => {});
+          .catch(() => { });
       } else {
         // Verify current status from API first before resuming
         fetch(`${API_URL}/v1/payments/${existingPayment.id}`, {
@@ -360,11 +360,6 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
   };
 
   const pkgName = locale === 'en' && pkg.nameEn ? pkg.nameEn : pkg.name;
-  const selectedChannel = PAYMENT_CHANNELS.find((c) => c.code === selectedMethod) ?? PAYMENT_CHANNELS[0];
-
-  const filteredChannels = categoryFilter === 'all'
-    ? PAYMENT_CHANNELS
-    : PAYMENT_CHANNELS.filter((c) => c.category === categoryFilter);
 
   const formatCountdown = (secs: number) => {
     const m = Math.floor(secs / 60);
@@ -437,11 +432,11 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
             <div className="text-center text-sm text-neutral-500 leading-relaxed">
               {existingPayment
                 ? (locale === 'en'
-                    ? 'Click below to resume your pending payment via Duitku'
-                    : 'Klik di bawah untuk melanjutkan pembayaran yang tertunda via Duitku')
+                  ? 'Click below to resume your pending payment via Duitku'
+                  : 'Klik di bawah untuk melanjutkan pembayaran yang tertunda via Duitku')
                 : (locale === 'en'
-                    ? 'Click below to open the Duitku payment page (QRIS, VA, e-wallet, etc.)'
-                    : 'Klik di bawah untuk membuka halaman pembayaran Duitku (QRIS, VA, e-wallet, dll.)')}
+                  ? 'Click below to open the Duitku payment page (QRIS, VA, e-wallet, etc.)'
+                  : 'Klik di bawah untuk membuka halaman pembayaran Duitku (QRIS, VA, e-wallet, dll.)')}
             </div>
           )}
 
@@ -461,7 +456,7 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
                 </div>
                 <div className="text-xs text-neutral-700 font-medium">
                   {locale === 'en' ? 'Method: ' : 'Metode: '}
-                  <span className="font-bold text-neutral-950">{selectedChannel.name}</span>
+                  <span className="font-bold text-neutral-950">Duitku (QRIS / VA / E-Wallet)</span>
                 </div>
                 <p className="text-xs text-neutral-600 leading-relaxed">
                   {locale === 'en'

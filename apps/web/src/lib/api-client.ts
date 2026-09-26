@@ -31,15 +31,18 @@ export async function fetchBackendApi<T = any>(
 ): Promise<ApiResponse<T>> {
   const isServer = typeof window === 'undefined';
 
-  // Prefer INTERNAL_API_URL on the server (avoids public internet round-trip)
-  const baseUrl = (
-    (isServer ? process.env.INTERNAL_API_URL : undefined) ||
-    process.env.NEXT_PUBLIC_API_URL ||
-    'http://localhost:8787'
-  ).replace(/\/+$/, '');
+  // On server: prefer INTERNAL_API_URL or NEXT_PUBLIC_API_URL directly.
+  // On browser client: route via Next.js proxy (/api/backend) so browser sends auth cookies same-origin.
+  const baseUrl = isServer
+    ? (
+        process.env.INTERNAL_API_URL ||
+        process.env.NEXT_PUBLIC_API_URL ||
+        'http://localhost:8787'
+      ).replace(/\/+$/, '')
+    : '/api/backend';
 
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
-  const url = `${baseUrl}${normalizedPath}`;
+  const url = isServer ? `${baseUrl}${normalizedPath}` : `/api/backend${normalizedPath}`;
 
   const headers = new Headers(options.headers ?? {});
 
@@ -47,8 +50,8 @@ export async function fetchBackendApi<T = any>(
     headers.set('Content-Type', 'application/json');
   }
 
-  // Forward the session cookie when running inside a Server Component or Server Action
-  // so the Hono session-auth middleware can authenticate the request.
+  // Forward the session cookie and attach Authorization Bearer token when running inside a Server Component or Server Action
+  // so the Hono session-auth middleware can authenticate the request reliably.
   if (isServer) {
     try {
       const { headers: getNextHeaders } = await import('next/headers');
@@ -57,8 +60,16 @@ export async function fetchBackendApi<T = any>(
       if (cookie && !headers.has('cookie')) {
         headers.set('cookie', cookie);
       }
+
+      if (!headers.has('authorization')) {
+        const { auth } = await import('@/lib/auth');
+        const session = await auth.api.getSession({ headers: reqHeaders });
+        if (session?.session?.token) {
+          headers.set('authorization', `Bearer ${session.session.token}`);
+        }
+      }
     } catch {
-      // next/headers is unavailable in some edge contexts — safe to skip
+      // next/headers or session resolution is unavailable in some edge contexts — safe to skip
     }
   }
 
