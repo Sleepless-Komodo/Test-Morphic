@@ -1,10 +1,13 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useTransition } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
+import { useRouter } from 'next/navigation';
 import { useTranslation } from '@/lib/i18n';
 import { SignOutButton } from '@/app/dashboard/sign-out';
+import { revokeOtherSessions, revokeSessionById, type ActiveSession } from '@/lib/actions';
+import { timeAgo } from '@/lib/utils';
 import {
   User,
   Mail,
@@ -33,15 +36,90 @@ interface SettingsViewProps {
     emailVerified?: boolean | null;
     role?: string | null;
   };
+  sessions: ActiveSession[];
 }
 
-export function SettingsView({ user }: SettingsViewProps) {
+/** Reads the browser and platform out of a user agent string for the session list. */
+function describeDevice(userAgent: string | null, isId: boolean): string {
+  if (!userAgent) return isId ? 'Perangkat tidak dikenal' : 'Unknown device';
+
+  const browser =
+    /Edg\//.test(userAgent) ? 'Edge'
+    : /OPR\/|Opera/.test(userAgent) ? 'Opera'
+    : /Firefox\//.test(userAgent) ? 'Firefox'
+    : /Chrome\//.test(userAgent) ? 'Chrome'
+    : /Safari\//.test(userAgent) ? 'Safari'
+    : null;
+
+  const platform =
+    /Android/.test(userAgent) ? 'Android'
+    : /iPhone|iPad|iPod/.test(userAgent) ? 'iOS'
+    : /Windows/.test(userAgent) ? 'Windows'
+    : /Mac OS X/.test(userAgent) ? 'macOS'
+    : /Linux/.test(userAgent) ? 'Linux'
+    : null;
+
+  if (browser && platform) return `${browser} · ${platform}`;
+  return browser ?? platform ?? (isId ? 'Perangkat tidak dikenal' : 'Unknown device');
+}
+
+export function SettingsView({ user, sessions }: SettingsViewProps) {
   const { locale } = useTranslation();
   const isId = locale === 'id';
+  const router = useRouter();
 
   const [copiedId, setCopiedId] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [copiedSupport, setCopiedSupport] = useState(false);
+  const [revokingId, setRevokingId] = useState<string | null>(null);
+  const [sessionError, setSessionError] = useState<string | null>(null);
+  const [, startTransition] = useTransition();
+
+  const otherSessions = sessions.filter((item) => !item.isCurrent);
+
+  const genericSessionError = isId
+    ? 'Gagal memproses sesi. Muat ulang halaman lalu coba lagi.'
+    : 'Could not update the session. Reload the page and try again.';
+
+  const handleRevoke = (id: string) => {
+    setSessionError(null);
+    setRevokingId(id);
+    startTransition(async () => {
+      try {
+        const fd = new FormData();
+        fd.set('id', id);
+        const res = await revokeSessionById(fd);
+        if (!res.ok) {
+          setSessionError(res.error ?? genericSessionError);
+          return;
+        }
+        router.refresh();
+      } catch {
+        setSessionError(genericSessionError);
+      } finally {
+        setRevokingId(null);
+      }
+    });
+  };
+
+  const handleRevokeOthers = () => {
+    setSessionError(null);
+    setRevokingId('others');
+    startTransition(async () => {
+      try {
+        const res = await revokeOtherSessions();
+        if (!res.ok) {
+          setSessionError(res.error ?? genericSessionError);
+          return;
+        }
+        router.refresh();
+      } catch {
+        setSessionError(genericSessionError);
+      } finally {
+        setRevokingId(null);
+      }
+    });
+  };
 
   const copyUserId = () => {
     navigator.clipboard.writeText(user.id);
@@ -245,32 +323,88 @@ export function SettingsView({ user }: SettingsViewProps) {
           </div>
 
           <div className="p-5 sm:p-7 space-y-4">
-            {/* Session item 1: Active Browser */}
-            <div className="flex items-center justify-between p-4 rounded-2xl bg-neutral-50/60 border border-neutral-200/70 gap-4">
-              <div className="flex items-center gap-3 min-w-0">
-                <div className="w-9 h-9 rounded-xl bg-white border border-neutral-200 flex items-center justify-center text-neutral-700 shadow-2xs shrink-0">
-                  <Laptop className="h-4 w-4" />
-                </div>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs sm:text-sm font-semibold text-neutral-950">
-                      {isId ? 'Perangkat Ini (Sesi Aktif)' : 'Current Device (Active Session)'}
-                    </span>
-                    <span className="inline-flex items-center gap-1 text-[11px] font-mono text-neutral-600">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
-                      <span>Online</span>
-                    </span>
+            {sessions.map((item) => (
+              <div
+                key={item.id}
+                className="flex items-center justify-between p-4 rounded-2xl bg-neutral-50/60 border border-neutral-200/70 gap-4"
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-9 h-9 rounded-xl bg-white border border-neutral-200 flex items-center justify-center text-neutral-700 shadow-2xs shrink-0">
+                    <Laptop className="h-4 w-4" />
                   </div>
-                  <p className="text-xs text-neutral-500 truncate mt-0.5">
-                    {isId ? 'Sesi web browser terenkripsi (HTTP-only secure cookie)' : 'Encrypted browser session via HTTP-only secure cookie'}
-                  </p>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs sm:text-sm font-semibold text-neutral-950">
+                        {describeDevice(item.userAgent, isId)}
+                      </span>
+                      {item.isCurrent && (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-mono text-neutral-600">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                          <span>{isId ? 'perangkat ini' : 'this device'}</span>
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-neutral-500 truncate mt-0.5">
+                      {item.ipAddress ? `${item.ipAddress} · ` : ''}
+                      {isId ? 'masuk ' : 'signed in '}
+                      {timeAgo(item.createdAt, locale)}
+                      {' · '}
+                      {isId ? 'berlaku sampai ' : 'valid until '}
+                      {new Date(item.expiresAt).toLocaleDateString(isId ? 'id-ID' : 'en-US', {
+                        day: 'numeric',
+                        month: 'short',
+                        year: 'numeric',
+                      })}
+                    </p>
+                  </div>
                 </div>
-              </div>
 
-              <SignOutButton className="px-3 py-1.5 rounded-xl bg-white border border-neutral-200 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-200 text-neutral-700 text-xs font-semibold transition-colors shadow-2xs cursor-pointer shrink-0">
-                {isId ? 'Keluar Sesi' : 'Sign Out'}
-              </SignOutButton>
-            </div>
+                {item.isCurrent ? (
+                  <SignOutButton className="px-3 py-1.5 rounded-xl bg-white border border-neutral-200 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-200 text-neutral-700 text-xs font-semibold transition-colors shadow-2xs cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950">
+                    {isId ? 'Keluar Sesi' : 'Sign Out'}
+                  </SignOutButton>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => handleRevoke(item.id)}
+                    disabled={revokingId !== null}
+                    className="px-3 py-1.5 rounded-xl bg-white border border-neutral-200 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-200 disabled:opacity-60 text-neutral-700 text-xs font-semibold transition-colors shadow-2xs cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
+                  >
+                    {revokingId === item.id
+                      ? isId
+                        ? 'Mengeluarkan...'
+                        : 'Signing out...'
+                      : isId
+                        ? 'Keluarkan'
+                        : 'Sign out'}
+                  </button>
+                )}
+              </div>
+            ))}
+
+            {otherSessions.length > 0 && (
+              <button
+                type="button"
+                onClick={handleRevokeOthers}
+                disabled={revokingId !== null}
+                className="w-full px-3 py-2 rounded-2xl border border-neutral-200 bg-white hover:bg-rose-50 hover:text-rose-700 hover:border-rose-200 disabled:opacity-60 text-neutral-700 text-xs font-semibold transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
+              >
+                {revokingId === 'others'
+                  ? isId
+                    ? 'Mengeluarkan perangkat lain...'
+                    : 'Signing out other devices...'
+                  : isId
+                    ? `Keluarkan ${otherSessions.length} perangkat lain`
+                    : `Sign out ${otherSessions.length} other device${otherSessions.length > 1 ? 's' : ''}`}
+              </button>
+            )}
+
+            {sessionError && (
+              <p role="alert" className="flex items-start gap-2 text-xs text-red-700">
+                <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0 text-red-600" />
+                <span>{sessionError}</span>
+              </p>
+            )}
 
             {/* Security Guarantee Rows */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
