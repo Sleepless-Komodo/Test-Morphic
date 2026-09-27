@@ -36,17 +36,7 @@ export function BillingView({
   const [resumePayment, setResumePayment] = useState<any>(null);
   const paymentsList = payments ?? [];
 
-<<<<<<< HEAD
   const currentCurrency = locale === 'id' ? 'IDR' : 'USD';
-=======
-  // Keep currency tab synced when user toggles website language. Adjusted during render
-  // rather than in an effect, so the tab never paints with the previous locale's currency.
-  const [prevLocale, setPrevLocale] = useState(locale);
-  if (locale !== prevLocale) {
-    setPrevLocale(locale);
-    setSelectedCurrency(locale === 'id' ? 'IDR' : 'USD');
-  }
->>>>>>> affb1007f6b1fe89c880b0bf41ff52df0f8bb33c
 
   const displayedPackages = initialPackages.filter((p) => {
     const pkgCurr = p.currency === 'USD' ? 'USD' : 'IDR';
