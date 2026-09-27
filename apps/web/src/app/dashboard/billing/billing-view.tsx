@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useTranslation } from '@/lib/i18n';
 import { formatCredits, cn } from '@/lib/utils';
 import { Zap, CreditCard, Clock, Wallet, QrCode, Coins, Sparkles } from 'lucide-react';
@@ -37,10 +37,13 @@ export function BillingView({
   const [selectedCurrency, setSelectedCurrency] = useState<'IDR' | 'USD'>(locale === 'id' ? 'IDR' : 'USD');
   const paymentsList = payments ?? [];
 
-  // Keep currency tab synced when user toggles website language
-  useEffect(() => {
+  // Keep currency tab synced when user toggles website language. Adjusted during render
+  // rather than in an effect, so the tab never paints with the previous locale's currency.
+  const [prevLocale, setPrevLocale] = useState(locale);
+  if (locale !== prevLocale) {
+    setPrevLocale(locale);
     setSelectedCurrency(locale === 'id' ? 'IDR' : 'USD');
-  }, [locale]);
+  }
 
   const displayedPackages = initialPackages.filter((p) => {
     const pkgCurr = p.currency === 'USD' ? 'USD' : 'IDR';

@@ -105,10 +105,10 @@ export default function LoginView({ googleConfigured, githubConfigured }: LoginV
         callbackURL: '/dashboard',
       });
       if (res?.error) {
-        console.error('Sign-in error:', res.error);
-        setAuthError(
-          provider === 'google' ? t.login.googleNotConfigured : t.login.githubNotConfigured,
-        );
+        // The "not configured" case is already handled above, so anything landing here is a
+        // different failure (rejected origin, provider error). Show what the server said.
+        console.error('Sign-in error:', res.error.code ?? res.error.status, res.error.message);
+        setAuthError(res.error.message || t.login.authGenericError);
         setLoadingProvider(null);
       }
     } catch (err) {

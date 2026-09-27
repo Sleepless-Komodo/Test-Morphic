@@ -28,6 +28,27 @@ const resolvedSecret = secretIsValid
     ? 'build-phase-placeholder-secret-not-used-at-runtime-000000'
     : authSecret;
 
+// Better Auth derives its trusted origin from `baseURL` alone, so every other host the app
+// is served on (localhost during development, a Vercel preview URL) fails the origin check
+// with 403 INVALID_ORIGIN the moment the browser sends a cookie. List the app's own origins.
+const trustedOrigins = [
+  ...new Set(
+    [
+      process.env.NEXT_PUBLIC_APP_URL,
+      process.env.BETTER_AUTH_URL,
+      process.env.VERCEL_PROJECT_PRODUCTION_URL && `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`,
+      process.env.VERCEL_URL && `https://${process.env.VERCEL_URL}`,
+    ].flatMap((value) => {
+      if (!value) return [];
+      try {
+        return [new URL(value).origin];
+      } catch {
+        return [];
+      }
+    }),
+  ),
+];
+
 const authPlugins = [apiKeyAuth()];
 if (process.env.RECAPTCHA_SECRET_KEY) {
   authPlugins.push(
@@ -75,6 +96,7 @@ export const auth = betterAuth({
   },
   secret: resolvedSecret,
   baseURL: process.env.BETTER_AUTH_URL,
+  trustedOrigins,
   advanced: {
     database: { generateId: false },
     defaultCookieAttributes: {

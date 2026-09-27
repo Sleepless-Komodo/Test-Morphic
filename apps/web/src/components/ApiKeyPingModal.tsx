@@ -31,12 +31,22 @@ export function ApiKeyPingModal({
   const { locale } = useTranslation();
   const isId = locale === 'id';
 
-  const [modelsList, setModelsList] = useState<Array<{ id: string; name: string }>>(
-    availableModels && availableModels.length > 0 ? availableModels : DEFAULT_MODELS
-  );
+  // The catalogue comes from the props when the caller has it, otherwise from the fetch
+  // below. Derived here instead of mirrored into state so a prop change needs no sync pass.
+  const [fetchedModels, setFetchedModels] = useState<Array<{ id: string; name: string }> | null>(null);
+  const modelsList =
+    availableModels && availableModels.length > 0
+      ? availableModels
+      : (fetchedModels ?? DEFAULT_MODELS);
 
   const [apiKey, setApiKey] = useState(initialApiKey);
-  const [selectedModel, setSelectedModel] = useState(modelsList[0]?.id || 'deepseek-v4');
+  // Null until the user picks one, so the default follows the catalogue that is actually
+  // loaded and a stale id can never be submitted.
+  const [pickedModel, setPickedModel] = useState<string | null>(null);
+  const selectedModel =
+    pickedModel && modelsList.some((m) => m.id === pickedModel)
+      ? pickedModel
+      : (modelsList[0]?.id ?? 'deepseek-v4');
   const [prompt, setPrompt] = useState(
     isId ? 'Halo! Verifikasi koneksi AI Gateway Morphic.' : 'Hello! Testing Morphic AI Gateway connectivity.'
   );
@@ -49,22 +59,13 @@ export function ApiKeyPingModal({
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (availableModels && availableModels.length > 0) {
-      setModelsList(availableModels);
-      if (!availableModels.some((m) => m.id === selectedModel)) {
-        setSelectedModel(availableModels[0].id);
-      }
-    } else if (isOpen) {
-      // Fetch live models from database if not provided
-      getActiveModelsForTesting().then((liveModels) => {
-        if (liveModels && liveModels.length > 0) {
-          setModelsList(liveModels);
-          if (!liveModels.some((m) => m.id === selectedModel)) {
-            setSelectedModel(liveModels[0].id);
-          }
-        }
-      }).catch(() => {});
-    }
+    if (!isOpen || (availableModels && availableModels.length > 0)) return;
+    // Fetch live models from database if the caller did not pass any
+    getActiveModelsForTesting()
+      .then((liveModels) => {
+        if (liveModels && liveModels.length > 0) setFetchedModels(liveModels);
+      })
+      .catch(() => {});
   }, [isOpen, availableModels]);
 
   if (initialApiKey !== prevInitialApiKey) {
@@ -204,7 +205,7 @@ export function ApiKeyPingModal({
               <select
                 id="ping-model"
                 value={selectedModel}
-                onChange={(e) => setSelectedModel(e.target.value)}
+                onChange={(e) => setPickedModel(e.target.value)}
                 className="w-full px-3 py-2 text-xs rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 focus:bg-white transition-colors cursor-pointer"
               >
                 {modelsList.map((m) => (
