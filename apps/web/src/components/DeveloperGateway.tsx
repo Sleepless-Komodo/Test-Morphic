@@ -18,16 +18,10 @@ import { formatCredits, formatTokenEstimate, timeAgo, API_BASE_URL } from '@/lib
 import GatewayStatusPopover from '@/components/GatewayStatusPopover';
 import QuickstartHub from '@/components/QuickstartHub';
 import { ApiKeyPingModal } from '@/components/ApiKeyPingModal';
-import { INFERENCE_MODELS, CapabilityTag, ModelItem } from '@/lib/models-data';
+import { ModelItem } from '@/lib/models-data';
 export type { ModelItem } from '@/lib/models-data';
 
 const BASE_URL = API_BASE_URL || 'https://morphic-api.web.id/v1';
-
-const CHEAP_DAILY_PACKAGES = [
-  { id: 'starter', label: 'Starter', labelEn: 'Starter', desc: 'Rp 10.000 / bulan', descEn: 'Rp 10,000 / month', credits: 10000 },
-  { id: 'pro', label: 'Pro', labelEn: 'Pro', desc: 'Rp 25.000 / bulan', descEn: 'Rp 25,000 / month', credits: 25000 },
-  { id: 'power', label: 'Power', labelEn: 'Power', desc: 'Rp 50.000 / bulan', descEn: 'Rp 50,000 / month', credits: 50000 },
-] as const;
 
 interface UsageSummary {
   totalTokens: number;
@@ -57,10 +51,7 @@ interface DeveloperGatewayProps {
   session?: unknown;
   userBalance?: number;
   balanceUpdatedAt?: string | null;
-  /**
-   * Optional initial models passed from the Server Component (fetched from PostgreSQL database).
-   * If not provided or empty, the component will fall back to static default models.
-   */
+  /** Active models from the database, passed in by the Server Component. */
   initialModels?: ModelItem[];
   recentRequests?: RecentRequestItem[];
   /** Pre-computed server-side model stats to avoid client-side string parsing */
@@ -88,104 +79,30 @@ export default function DeveloperGateway({
   const [baseUrlCopied, setBaseUrlCopied] = useState(false);
   const [isPingModalOpen, setIsPingModalOpen] = useState(false);
 
-  // Filter state
-  const [selectedCapability, setSelectedCapability] = useState<CapabilityTag | 'All'>('All');
-  const [selectedProvider, setSelectedProvider] = useState<string>('All');
-  const [searchQuery, setSearchQuery] = useState('');
-
-  // API Key state
-  const [keyName, setKeyName] = useState('');
-  const [isCreatingKey, setIsCreatingKey] = useState(false);
-  const [keysList, setKeysList] = useState<{ id: string; name: string; key: string; date: string }[]>([]);
-
-  // Voucher / balance state
-  const [voucherCode, setVoucherCode] = useState('');
-  const [voucherSuccess, setVoucherSuccess] = useState<string | null>(null);
-  const [voucherBonus, setVoucherBonus] = useState(0);
-  const [voucherUpdatedAt, setVoucherUpdatedAt] = useState<string | null>(null);
-
-  const balance = userBalance + voucherBonus;
-  const balanceUpdatedAtState = voucherUpdatedAt ?? balanceUpdatedAt;
+  const balance = userBalance;
+  const balanceUpdatedAtState = balanceUpdatedAt;
 
   // Recent requests (may be overridden by real-time data in the future)
   const [recentRequests] = useState<RecentRequestItem[]>(initialRecentRequests);
 
   // Derived metrics from active model list / server data
-  const activeKeys = serverActiveKeys !== undefined ? serverActiveKeys : keysList.length;
+  const activeKeys = serverActiveKeys ?? 0;
 
-  const getPackageDesc = (pkg: (typeof CHEAP_DAILY_PACKAGES)[number]) =>
-    locale === 'en' && pkg.descEn ? pkg.descEn : pkg.desc;
+  // The catalogue shown here is whatever the database returned. It used to fall back to a
+  // static list of six models, so an empty or unreachable catalogue looked fully stocked.
+  const activeModelList = useMemo(() => initialModels ?? [], [initialModels]);
 
-  // Resolve dynamic model list: use database-fetched models if available, fallback to static defaults
-  const activeModelList = useMemo(() => {
-    return initialModels && initialModels.length > 0 ? initialModels : INFERENCE_MODELS;
-  }, [initialModels]);
-
-  // Derived metrics — prefer server-side pre-computed values (accurate, from real DB);
-  // fall back to client-side parsing of dailyRate strings only for static INFERENCE_MODELS.
+  // Every figure below is computed server-side from the catalogue; the client-side estimates
+  // that replaced them parsed a price string that no longer exists.
   const modelCount = serverModelCount ?? activeModelList.length;
-  const minInputRate = useMemo(() => {
-    if (serverMinInputRate !== undefined) return serverMinInputRate;
-    const rates = activeModelList
-      .map((m) => parseInt((m.dailyRate ?? '').replace(/[^0-9]/g, ''), 10))
-      .filter((r) => !isNaN(r) && r > 0);
-    return rates.length > 0 ? Math.min(...rates) : 0;
-  }, [activeModelList, serverMinInputRate]);
-  const avgCreditsPer1m = useMemo(() => {
-    if (serverAvgCreditsPer1m !== undefined) return serverAvgCreditsPer1m;
-    const rates = activeModelList
-      .map((m) => parseInt((m.dailyRate ?? '').replace(/[^0-9]/g, ''), 10))
-      .filter((r) => !isNaN(r) && r > 0);
-    return rates.length > 0 ? rates.reduce((a, b) => a + b, 0) / rates.length : 0;
-  }, [activeModelList, serverAvgCreditsPer1m]);
+  const minInputRate = serverMinInputRate ?? 0;
+  const avgCreditsPer1m = serverAvgCreditsPer1m ?? 0;
 
   // Real or server-provided usage summary
   const usage = useMemo<{ totalTokens: number; promptTokens: number; completionTokens: number }>(
     () => serverUsage ?? { totalTokens: 0, promptTokens: 0, completionTokens: 0 },
     [serverUsage],
   );
-
-  const filteredModels = useMemo(
-    () =>
-      activeModelList.filter((m) => {
-        const matchCap = selectedCapability === 'All' || m.capabilities.includes(selectedCapability as CapabilityTag);
-        const matchProv = selectedProvider === 'All' || m.provider === selectedProvider;
-        const matchSearch =
-          m.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          m.id.toLowerCase().includes(searchQuery.toLowerCase());
-        return matchCap && matchProv && matchSearch;
-      }),
-    [activeModelList, selectedCapability, selectedProvider, searchQuery],
-  );
-
-  const categories = useMemo(() => Array.from(new Set(filteredModels.map((m) => m.category))), [filteredModels]);
-
-  const handleCreateKey = () => {
-    if (!keyName.trim()) return;
-    setIsCreatingKey(true);
-    setTimeout(() => {
-      const hex = Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
-      setKeysList((prev) => [
-        { id: `k-${Date.now()}`, name: keyName, key: `mp-live-${hex}`, date: locale === 'id' ? 'Baru saja' : 'Just now' },
-        ...prev,
-      ]);
-      setKeyName('');
-      setIsCreatingKey(false);
-    }, 400);
-  };
-
-  const handleRedeemVoucher = () => {
-    if (!voucherCode.trim()) return;
-    const msg =
-      locale === 'en'
-        ? `Voucher "${voucherCode.toUpperCase()}" active! +Rp 5,000 balance added.`
-        : `Kupon "${voucherCode.toUpperCase()}" aktif! +Rp 5.000 saldo ditambahkan.`;
-    setVoucherSuccess(msg);
-    setVoucherBonus((p) => p + 5000);
-    setVoucherUpdatedAt(new Date().toISOString());
-    setVoucherCode('');
-    setTimeout(() => setVoucherSuccess(null), 5000);
-  };
 
   const copyBaseUrl = () => {
     navigator.clipboard.writeText(BASE_URL).then(() => {

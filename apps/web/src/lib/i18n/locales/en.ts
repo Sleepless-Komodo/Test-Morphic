@@ -312,7 +312,7 @@ export const en = {
       backToSite: 'Back to Site',
       languageLabel: 'Language',
       creditsUnit: 'credits',
-      developerFallback: 'Developer',
+      developerFallback: 'Account',
       manageKeys: 'Manage Keys',
       exploreCatalog: 'Explore Catalog',
       viewUsageLogs: 'View Usage Logs',

@@ -517,47 +517,8 @@ export async function getUsageLogsAction(params: {
   const page = Math.max(1, params.page ?? 1);
   const limit = Math.min(100, Math.max(1, params.limit ?? 50));
 
-  let query = `?page=${page}&limit=${limit}`;
-  if (params.from) query += `&from=${encodeURIComponent(params.from)}`;
-  if (params.to) query += `&to=${encodeURIComponent(params.to)}`;
-
-  try {
-    const apiRes = await fetchBackendApi<{
-      data: any[];
-      total: number;
-      page: number;
-      limit: number;
-    }>(`/v1/account/usage${query}`, {
-      headers: {
-        Authorization: `Bearer ${session.session.token}`,
-      },
-    });
-
-    if (apiRes.data?.data && Array.isArray(apiRes.data.data)) {
-      return {
-        data: apiRes.data.data.map((u: any) => ({
-          id: u.id,
-          requestId: u.request_id,
-          model: u.model,
-          publicModelId: u.model,
-          promptTokens: u.prompt_tokens,
-          completionTokens: u.completion_tokens,
-          totalTokens: u.total_tokens,
-          credits: u.credits_consumed,
-          status: u.status,
-          streamed: u.streamed,
-          latencyMs: u.latency_ms,
-          createdAt: u.created_at,
-        })),
-        total: apiRes.data.total ?? 0,
-        page: apiRes.data.page ?? page,
-        limit: apiRes.data.limit ?? limit,
-      };
-    }
-  } catch (err) {
-    console.warn('[getUsageLogsAction] Backend API usage fetch failed, using DB fallback:', err);
-  }
-
+  // Read the usage table directly: the gateway endpoint this used to call issues the same
+  // two queries against the same rows, one region away.
   try {
     const conditions = [eq(s.usageRecords.userId, session.user.id)];
     if (params.from) {

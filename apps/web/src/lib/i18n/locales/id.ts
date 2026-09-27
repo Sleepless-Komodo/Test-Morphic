@@ -312,7 +312,7 @@ export const id = {
       backToSite: 'Kembali ke Situs',
       languageLabel: 'Bahasa',
       creditsUnit: 'kredit',
-      developerFallback: 'Pengembang',
+      developerFallback: 'Akun',
       manageKeys: 'Kelola API Key',
       exploreCatalog: 'Jelajahi Model',
       viewUsageLogs: 'Lihat Log Pemakaian',
