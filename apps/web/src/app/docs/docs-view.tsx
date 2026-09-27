@@ -28,7 +28,7 @@ import { API_BASE_URL } from '@/lib/utils';
 
 const BASE_URL = API_BASE_URL;
 
-type IdeKey = 'cursor' | 'cline' | 'windsurf' | 'claudecode' | 'aider';
+type IdeKey = 'cursor' | 'cline' | 'windsurf' | 'claudecode' | 'opencode' | 'aider';
 type SdkKey = 'ts' | 'python' | 'curl';
 type OsKey = 'windows' | 'macos' | 'linux';
 type WindowsShell = 'powershell' | 'cmd';
@@ -375,6 +375,110 @@ claude "Analyze this repository architecture"`,
     };
   };
 
+  // opencode reads a JSON config; every OS block below writes that file and exports the key
+  // in one paste, so the agent connects without opening an editor.
+  // Config path and provider schema: https://opencode.ai/docs/config
+  const getOpencodeSnippet = (os: OsKey, winShell: WindowsShell) => {
+    const configJson = `{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "morphic": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Morphic AI Gateway",
+      "options": {
+        "baseURL": "${BASE_URL}",
+        "apiKey": "{env:MORPHIC_API_KEY}"
+      },
+      "models": {
+        "deepseek-v4": { "name": "DeepSeek V4" },
+        "kimi-coding": { "name": "Kimi Coding" },
+        "qwen-max": { "name": "Qwen Max" }
+      }
+    }
+  },
+  "model": "morphic/deepseek-v4"
+}`;
+
+    if (os === 'macos') {
+      return {
+        file: 'setup-opencode-macos.sh',
+        language: 'bash',
+        menuPath: '~/.config/opencode/opencode.json (macOS Terminal / zsh)',
+        code: `# macOS: tulis config opencode lalu langsung jalan
+mkdir -p ~/.config/opencode
+cat > ~/.config/opencode/opencode.json <<'JSON'
+${configJson}
+JSON
+
+# API key dibaca dari environment, bukan disimpan di file config
+export MORPHIC_API_KEY="mp-live-xxxxxxxxxxxxxxxxxxxx"
+echo 'export MORPHIC_API_KEY="mp-live-xxxxxxxxxxxxxxxxxxxx"' >> ~/.zshrc
+
+opencode`,
+      };
+    }
+
+    if (os === 'linux') {
+      return {
+        file: 'setup-opencode-linux.sh',
+        language: 'bash',
+        menuPath: '~/.config/opencode/opencode.json (Linux Terminal / bash)',
+        code: `# Linux: tulis config opencode lalu langsung jalan
+mkdir -p ~/.config/opencode
+cat > ~/.config/opencode/opencode.json <<'JSON'
+${configJson}
+JSON
+
+# API key dibaca dari environment, bukan disimpan di file config
+export MORPHIC_API_KEY="mp-live-xxxxxxxxxxxxxxxxxxxx"
+echo 'export MORPHIC_API_KEY="mp-live-xxxxxxxxxxxxxxxxxxxx"' >> ~/.bashrc
+
+opencode`,
+      };
+    }
+
+    if (winShell === 'cmd') {
+      const cmdEchoLines = configJson
+        .split('\n')
+        .map((line) => `  echo ${line}`)
+        .join('\n');
+      return {
+        file: 'setup-opencode.cmd',
+        language: 'cmd',
+        menuPath: '%USERPROFILE%\\.config\\opencode\\opencode.json (Command Prompt)',
+        code: `REM Windows CMD: tulis config opencode lalu langsung jalan
+mkdir "%USERPROFILE%\\.config\\opencode" 2>nul
+> "%USERPROFILE%\\.config\\opencode\\opencode.json" (
+${cmdEchoLines}
+)
+
+REM API key dibaca dari environment; setx menyimpannya permanen
+set MORPHIC_API_KEY=mp-live-xxxxxxxxxxxxxxxxxxxx
+setx MORPHIC_API_KEY mp-live-xxxxxxxxxxxxxxxxxxxx
+
+opencode`,
+      };
+    }
+
+    return {
+      file: 'setup-opencode.ps1',
+      language: 'powershell',
+      menuPath: '%USERPROFILE%\\.config\\opencode\\opencode.json (PowerShell)',
+      code: `# Windows PowerShell: tulis config opencode lalu langsung jalan
+$dir = "$env:USERPROFILE\\.config\\opencode"
+New-Item -ItemType Directory -Force -Path $dir | Out-Null
+@'
+${configJson}
+'@ | Set-Content -Encoding utf8 (Join-Path $dir 'opencode.json')
+
+# API key dibaca dari environment; setx menyimpannya permanen
+$env:MORPHIC_API_KEY="mp-live-xxxxxxxxxxxxxxxxxxxx"
+setx MORPHIC_API_KEY "mp-live-xxxxxxxxxxxxxxxxxxxx" | Out-Null
+
+opencode`,
+    };
+  };
+
   const getAiderSnippet = (os: OsKey, winShell: WindowsShell) => {
     if (os === 'macos') {
       return {
@@ -425,6 +529,7 @@ aider --model openai/deepseek-v4`,
   };
 
   const claudeSnippet = getClaudeCodeSnippet(selectedOs, selectedWinShell);
+  const opencodeSnippet = getOpencodeSnippet(selectedOs, selectedWinShell);
   const aiderSnippet = getAiderSnippet(selectedOs, selectedWinShell);
 
   const ideConfigs: Record<
@@ -502,6 +607,16 @@ API Key:  mp-live-xxxxxxxxxxxxxxxxxxxx
       file: claudeSnippet.file,
       language: claudeSnippet.language,
       code: claudeSnippet.code,
+    },
+    opencode: {
+      name: 'opencode',
+      title: 'opencode (Terminal AI Agent)',
+      desc: 'Tulis config opencode sekali paste di terminal, lalu agent langsung terhubung ke Morphic Gateway.',
+      descEn: 'Paste one terminal block to write the opencode config, and the agent connects to Morphic Gateway straight away.',
+      menuPath: opencodeSnippet.menuPath,
+      file: opencodeSnippet.file,
+      language: opencodeSnippet.language,
+      code: opencodeSnippet.code,
     },
     aider: {
       name: 'Aider',
@@ -824,6 +939,14 @@ curl https://api.morphic.sh/v1/chat/completions \\
           label: 'Claude Code CLI',
           href: '#ide-setup',
           onClick: () => setActiveIde('claudecode'),
+        },
+        {
+          id: 'ide-opencode',
+          sectionId: 'ide-setup',
+          key: 'opencode',
+          label: 'opencode',
+          href: '#ide-setup',
+          onClick: () => setActiveIde('opencode'),
         },
         {
           id: 'ide-aider',
@@ -1289,7 +1412,7 @@ curl https://api.morphic.sh/v1/chat/completions \\
                     <h3 className="font-bold text-sm sm:text-base text-neutral-950">
                       {ideConfigs[activeIde].title}
                     </h3>
-                    {(activeIde === 'claudecode' || activeIde === 'aider') && (
+                    {(activeIde === 'claudecode' || activeIde === 'opencode' || activeIde === 'aider') && (
                       <OsSelector
                         selectedOs={selectedOs}
                         onSelectOs={setSelectedOs}
