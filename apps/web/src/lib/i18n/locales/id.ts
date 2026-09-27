@@ -1,3 +1,5 @@
+import { API_BASE_URL } from '@/lib/utils';
+
 export const id = {
     nav: {
       models: 'Models',
@@ -170,7 +172,7 @@ export const id = {
       step2Badge: 'Multi-Key Ready',
       step3Num: '03',
       step3Title: 'Tempel di Cursor / IDE Anda',
-      step3Desc: 'Ganti Base URL menjadi https://api.morphic.sh/v1 dan masukkan API Key Anda. 100% kompatibel dengan Cursor, Cline, Windsurf, dan SDK resmi OpenAI.',
+      step3Desc: `Ganti Base URL menjadi ${API_BASE_URL} dan masukkan API Key Anda. 100% kompatibel dengan Cursor, Cline, Windsurf, dan SDK resmi OpenAI.`,
       step3Badge: 'OpenAI Format',
       step4Num: '04',
       step4Title: 'Agent AI Aktif Bekerja',

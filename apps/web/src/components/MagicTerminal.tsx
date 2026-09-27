@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Copy, Check, Terminal as TerminalIcon } from 'lucide-react';
 import { useTranslation } from '@/lib/i18n';
+import { API_BASE_URL } from '@/lib/utils';
 import { useReducedMotionSafe } from '@/lib/use-reduced-motion-safe';
 
 type TabKey = 'cursor' | 'cline' | 'python' | 'curl';
@@ -34,20 +35,20 @@ const TERMINAL_SNIPPETS: Record<
     file: 'cursor.settings.json',
     command: 'cursor settings apply --provider openai',
     outputLines: [
-      '✔ Base URL: https://api.morphic.sh/v1',
+      `✔ Base URL: ${API_BASE_URL}`,
       '✔ API Key:  mp-xxxxxxxxxxxxxxxxxxxx',
-      '✔ Models: deepseek-v4-coder, claude-3.5-sonnet-proxy, qwen-2.5-max, kimi-k1.5-coding',
+      '✔ Models: deepseek-v4, kimi-coding, qwen-max, DeepSeek-V4-Flash-0731',
       '✔ Status: OpenAI-compatible ready for composer',
     ],
     rawSnippet: `// Cursor Settings > Models > OpenAI API:
-Base URL: https://api.morphic.sh/v1
+Base URL: ${API_BASE_URL}
 API Key:  mp-xxxxxxxxxxxxxxxxxxxx
 
 // Models supported:
-- deepseek-v4-coder
-- claude-3.5-sonnet-proxy
-- qwen-2.5-max
-- kimi-k1.5-coding`,
+- deepseek-v4
+- kimi-coding
+- qwen-max
+- DeepSeek-V4-Flash-0731`,
   },
   cline: {
     label: 'Cline / VSCode',
@@ -55,16 +56,16 @@ API Key:  mp-xxxxxxxxxxxxxxxxxxxx
     command: 'cline settings apply cline_mcp_settings.json',
     outputLines: [
       '✔ apiProvider: openai',
-      '✔ openAiBaseUrl: https://api.morphic.sh/v1',
+      `✔ openAiBaseUrl: ${API_BASE_URL}`,
       '✔ openAiApiKey: mp-xxxxxxxxxxxxxxxxxxxx',
-      '✔ openAiModelId: deepseek-v4-coder',
+      '✔ openAiModelId: deepseek-v4',
       '✔ Provider ready. Start chatting in VSCode',
     ],
     rawSnippet: `{
   "apiProvider": "openai",
-  "openAiBaseUrl": "https://api.morphic.sh/v1",
+  "openAiBaseUrl": "${API_BASE_URL}",
   "openAiApiKey": "mp-xxxxxxxxxxxxxxxxxxxx",
-  "openAiModelId": "deepseek-v4-coder"
+  "openAiModelId": "deepseek-v4"
 }`,
   },
   python: {
@@ -73,19 +74,19 @@ API Key:  mp-xxxxxxxxxxxxxxxxxxxx
     command: 'python -m pip install openai -q && python quickstart.py',
     outputLines: [
       '>>> Morphic Client Initialized...',
-      '>>> Sending prompt to model="deepseek-v4-coder"',
+      '>>> Sending prompt to model="deepseek-v4"',
       '<<< [Response 200 OK]: "Here is your clean TypeScript auth module..."',
       '✔ Completed in 184ms | Tokens: 42 in / 158 out',
     ],
     rawSnippet: `from openai import OpenAI
 
 client = OpenAI(
-    base_url="https://api.morphic.sh/v1",
+    base_url="${API_BASE_URL}",
     api_key="mp-xxxxxxxxxxxxxxxxxxxx",
 )
 
 response = client.chat.completions.create(
-    model="deepseek-v4-coder",
+    model="deepseek-v4",
     messages=[{"role": "user", "content": "Write TypeScript auth helper"}]
 )
 print(response.choices[0].message.content)`,
@@ -93,7 +94,7 @@ print(response.choices[0].message.content)`,
   curl: {
     label: 'cURL',
     file: 'request.sh',
-    command: `curl https://api.morphic.sh/v1/chat/completions \\
+    command: `curl ${API_BASE_URL}/chat/completions \\
   -H "Authorization: Bearer mp-xxxxxxxx" \\
   -H "Content-Type: application/json" \\
   -d '{"model": "deepseek-v4", "messages": [{"role": "user", "content": "Hello"}]}'`,
@@ -103,7 +104,7 @@ print(response.choices[0].message.content)`,
       'x-morphic-latency: 142ms',
       '{"id":"chatcmpl-9x","choices":[{"message":{"role":"assistant","content":"Hello! How can I help you?"}}]}',
     ],
-    rawSnippet: `curl https://api.morphic.sh/v1/chat/completions \\
+    rawSnippet: `curl ${API_BASE_URL}/chat/completions \\
   -H "Authorization: Bearer mp-xxxxxxxx" \\
   -H "Content-Type: application/json" \\
   -d '{"model": "deepseek-v4", "messages": [{"role": "user", "content": "Hello"}]}'`,
