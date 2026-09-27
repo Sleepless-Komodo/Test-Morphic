@@ -61,8 +61,9 @@ export function LanguageProvider({
           }
         }
 
-        if (resolved !== locale) {
-          // eslint-disable-next-line react-hooks/set-state-in-effect
+        // Compared against initialLocale, the value this branch started from: reading the
+        // live `locale` here only re-read the same thing through a stale closure.
+        if (resolved !== initialLocale) {
           setLocaleState(resolved);
         }
         localStorage.setItem('morphic_locale', resolved);
