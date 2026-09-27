@@ -69,8 +69,17 @@ export function KeysView({ initialKeys, availableModels }: KeysViewProps) {
 
   const handleCopyKey = (k: KeyItem) => {
     const fullKey = getFullKey(k);
-    const textToCopy = fullKey || k.keyPrefix;
-    navigator.clipboard.writeText(textToCopy);
+    // Copying the prefix when the secret is unavailable handed out a truncated key that
+    // authenticates nowhere, and the copy tick made it look complete. Say so instead.
+    if (!fullKey) {
+      setCreateError(
+        isId
+          ? 'Key ini tidak bisa ditampilkan lagi. Cabut lalu buat key baru untuk dapat nilai lengkapnya.'
+          : 'This key can no longer be shown. Revoke it and create a new one to get the full value.',
+      );
+      return;
+    }
+    navigator.clipboard.writeText(fullKey);
     setCopiedKeyId(k.id);
     setTimeout(() => setCopiedKeyId(null), 2000);
   };
@@ -296,21 +305,25 @@ export function KeysView({ initialKeys, availableModels }: KeysViewProps) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100">
-                {keys.map((k) => (
+                {keys.map((k) => {
+                  const fullKey = getFullKey(k);
+                  const secretLabel = isId ? 'tidak bisa ditampilkan lagi' : 'no longer retrievable';
+                  const unavailableTitle = isId
+                    ? 'Nilai lengkap key ini tidak tersimpan. Cabut lalu buat key baru.'
+                    : 'The full value of this key is not stored. Revoke it and create a new one.';
+                  return (
                   <tr key={k.id} className="hover:bg-neutral-50/50 transition-colors">
                     <td className="px-6 py-4 font-bold text-neutral-900">{k.name}</td>
                     <td className="px-6 py-4 font-mono text-neutral-600">
                       <div className="inline-flex items-center gap-1.5">
                         <span
                           className={`px-2.5 py-1 rounded-lg border text-xs font-mono select-all transition-all ${
-                            revealedKeys[k.id]
+                            revealedKeys[k.id] && fullKey
                               ? 'bg-neutral-900 text-emerald-400 border-neutral-800 font-semibold'
                               : 'bg-neutral-100 text-neutral-600 border-neutral-200'
                           }`}
                         >
-                          {revealedKeys[k.id]
-                            ? (getFullKey(k) || `${k.keyPrefix}••••••••`)
-                            : maskedKey(k.keyPrefix)}
+                          {revealedKeys[k.id] && fullKey ? fullKey : maskedKey(k.keyPrefix)}
                         </span>
 
                         {!getFullKey(k) && (
@@ -338,7 +351,7 @@ export function KeysView({ initialKeys, availableModels }: KeysViewProps) {
                           aria-label={revealedKeys[k.id] ? t.dashboard.keyHide : t.dashboard.keyShow}
                           className="p-1.5 rounded-lg border border-neutral-200 hover:border-neutral-400 hover:bg-neutral-100 text-neutral-600 hover:text-neutral-900 transition-colors cursor-pointer shrink-0"
                         >
-                          {revealedKeys[k.id] ? (
+                          {revealedKeys[k.id] && fullKey ? (
                             <EyeOff className="h-3.5 w-3.5 text-neutral-700" />
                           ) : (
                             <Eye className="h-3.5 w-3.5 text-neutral-600" />
@@ -440,7 +453,8 @@ export function KeysView({ initialKeys, availableModels }: KeysViewProps) {
                       )}
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

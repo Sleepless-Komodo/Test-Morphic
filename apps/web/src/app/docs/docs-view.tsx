@@ -29,7 +29,7 @@ import { API_BASE_URL, CHAT_COMPLETIONS_URL } from '@/lib/utils';
 const BASE_URL = API_BASE_URL;
 const CHAT_URL = CHAT_COMPLETIONS_URL;
 
-type IdeKey = 'cursor' | 'cline' | 'windsurf' | 'claudecode' | 'aider';
+type IdeKey = 'cursor' | 'cline' | 'windsurf' | 'claudecode' | 'opencode' | 'aider';
 type SdkKey = 'ts' | 'python' | 'curl';
 type OsKey = 'windows' | 'macos' | 'linux';
 type WindowsShell = 'powershell' | 'cmd';
@@ -376,6 +376,110 @@ claude "Analyze this repository architecture"`,
     };
   };
 
+  // opencode reads a JSON config; every OS block below writes that file and exports the key
+  // in one paste, so the agent connects without opening an editor.
+  // Config path and provider schema: https://opencode.ai/docs/config
+  const getOpencodeSnippet = (os: OsKey, winShell: WindowsShell) => {
+    const configJson = `{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "morphic": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Morphic AI Gateway",
+      "options": {
+        "baseURL": "${BASE_URL}",
+        "apiKey": "{env:MORPHIC_API_KEY}"
+      },
+      "models": {
+        "deepseek-v4": { "name": "DeepSeek V4" },
+        "kimi-coding": { "name": "Kimi Coding" },
+        "qwen-max": { "name": "Qwen Max" }
+      }
+    }
+  },
+  "model": "morphic/deepseek-v4"
+}`;
+
+    if (os === 'macos') {
+      return {
+        file: 'setup-opencode-macos.sh',
+        language: 'bash',
+        menuPath: '~/.config/opencode/opencode.json (macOS Terminal / zsh)',
+        code: `# macOS: tulis config opencode lalu langsung jalan
+mkdir -p ~/.config/opencode
+cat > ~/.config/opencode/opencode.json <<'JSON'
+${configJson}
+JSON
+
+# API key dibaca dari environment, bukan disimpan di file config
+export MORPHIC_API_KEY="mp-live-xxxxxxxxxxxxxxxxxxxx"
+echo 'export MORPHIC_API_KEY="mp-live-xxxxxxxxxxxxxxxxxxxx"' >> ~/.zshrc
+
+opencode`,
+      };
+    }
+
+    if (os === 'linux') {
+      return {
+        file: 'setup-opencode-linux.sh',
+        language: 'bash',
+        menuPath: '~/.config/opencode/opencode.json (Linux Terminal / bash)',
+        code: `# Linux: tulis config opencode lalu langsung jalan
+mkdir -p ~/.config/opencode
+cat > ~/.config/opencode/opencode.json <<'JSON'
+${configJson}
+JSON
+
+# API key dibaca dari environment, bukan disimpan di file config
+export MORPHIC_API_KEY="mp-live-xxxxxxxxxxxxxxxxxxxx"
+echo 'export MORPHIC_API_KEY="mp-live-xxxxxxxxxxxxxxxxxxxx"' >> ~/.bashrc
+
+opencode`,
+      };
+    }
+
+    if (winShell === 'cmd') {
+      const cmdEchoLines = configJson
+        .split('\n')
+        .map((line) => `  echo ${line}`)
+        .join('\n');
+      return {
+        file: 'setup-opencode.cmd',
+        language: 'cmd',
+        menuPath: '%USERPROFILE%\\.config\\opencode\\opencode.json (Command Prompt)',
+        code: `REM Windows CMD: tulis config opencode lalu langsung jalan
+mkdir "%USERPROFILE%\\.config\\opencode" 2>nul
+> "%USERPROFILE%\\.config\\opencode\\opencode.json" (
+${cmdEchoLines}
+)
+
+REM API key dibaca dari environment; setx menyimpannya permanen
+set MORPHIC_API_KEY=mp-live-xxxxxxxxxxxxxxxxxxxx
+setx MORPHIC_API_KEY mp-live-xxxxxxxxxxxxxxxxxxxx
+
+opencode`,
+      };
+    }
+
+    return {
+      file: 'setup-opencode.ps1',
+      language: 'powershell',
+      menuPath: '%USERPROFILE%\\.config\\opencode\\opencode.json (PowerShell)',
+      code: `# Windows PowerShell: tulis config opencode lalu langsung jalan
+$dir = "$env:USERPROFILE\\.config\\opencode"
+New-Item -ItemType Directory -Force -Path $dir | Out-Null
+@'
+${configJson}
+'@ | Set-Content -Encoding utf8 (Join-Path $dir 'opencode.json')
+
+# API key dibaca dari environment; setx menyimpannya permanen
+$env:MORPHIC_API_KEY="mp-live-xxxxxxxxxxxxxxxxxxxx"
+setx MORPHIC_API_KEY "mp-live-xxxxxxxxxxxxxxxxxxxx" | Out-Null
+
+opencode`,
+    };
+  };
+
   const getAiderSnippet = (os: OsKey, winShell: WindowsShell) => {
     if (os === 'macos') {
       return {
@@ -426,6 +530,7 @@ aider --model openai/deepseek-v4`,
   };
 
   const claudeSnippet = getClaudeCodeSnippet(selectedOs, selectedWinShell);
+  const opencodeSnippet = getOpencodeSnippet(selectedOs, selectedWinShell);
   const aiderSnippet = getAiderSnippet(selectedOs, selectedWinShell);
 
   const ideConfigs: Record<
@@ -457,9 +562,9 @@ Base URL: ${BASE_URL}
 API Key:  mp-live-xxxxxxxxxxxxxxxxxxxx
 
 // Rekomendasi Model IDs untuk ditambahkan (+ Add Model):
-- deepseek-v4              (Coding cepat, presisi, hemat biaya)
-- claude-3.5-sonnet-proxy  (Arsitektur multi-file & refactoring)
-- qwen-2.5-max             (Reasoning kompleks & full-stack)`,
+- deepseek-v4    (Coding & reasoning, konteks 64K)
+- kimi-coding    (Konteks 256K, refactoring multi-file)
+- qwen-max       (General purpose & reasoning, konteks 32K)`,
     },
     cline: {
       name: 'Cline / Roo',
@@ -503,6 +608,16 @@ API Key:  mp-live-xxxxxxxxxxxxxxxxxxxx
       file: claudeSnippet.file,
       language: claudeSnippet.language,
       code: claudeSnippet.code,
+    },
+    opencode: {
+      name: 'opencode',
+      title: 'opencode (Terminal AI Agent)',
+      desc: 'Tulis config opencode sekali paste di terminal, lalu agent langsung terhubung ke Morphic Gateway.',
+      descEn: 'Paste one terminal block to write the opencode config, and the agent connects to Morphic Gateway straight away.',
+      menuPath: opencodeSnippet.menuPath,
+      file: opencodeSnippet.file,
+      language: opencodeSnippet.language,
+      code: opencodeSnippet.code,
     },
     aider: {
       name: 'Aider',
@@ -713,7 +828,7 @@ print(response.choices[0].message.content)
 
 # 2. Real-time Streaming (SSE)
 stream = client.chat.completions.create(
-    model="claude-3.5-sonnet-proxy",
+    model="kimi-coding",
     messages=[{"role": "user", "content": "Optimasi query PostgreSQL berikut..."}],
     stream=True,
 )
@@ -825,6 +940,14 @@ curl ${CHAT_URL} \\
           label: 'Claude Code CLI',
           href: '#ide-setup',
           onClick: () => setActiveIde('claudecode'),
+        },
+        {
+          id: 'ide-opencode',
+          sectionId: 'ide-setup',
+          key: 'opencode',
+          label: 'opencode',
+          href: '#ide-setup',
+          onClick: () => setActiveIde('opencode'),
         },
         {
           id: 'ide-aider',
@@ -1290,7 +1413,7 @@ curl ${CHAT_URL} \\
                     <h3 className="font-bold text-sm sm:text-base text-neutral-950">
                       {ideConfigs[activeIde].title}
                     </h3>
-                    {(activeIde === 'claudecode' || activeIde === 'aider') && (
+                    {(activeIde === 'claudecode' || activeIde === 'opencode' || activeIde === 'aider') && (
                       <OsSelector
                         selectedOs={selectedOs}
                         onSelectOs={setSelectedOs}
@@ -1494,7 +1617,7 @@ curl ${CHAT_URL} \\
                         <td className="p-3 font-mono font-bold text-neutral-950">model</td>
                         <td className="p-3 font-mono text-neutral-500">string</td>
                         <td className="p-3 text-red-600 font-bold">Required</td>
-                        <td className="p-3">ID Model resmi (misal: <code className="font-mono bg-neutral-100 px-1 rounded">deepseek-v4</code>, <code className="font-mono bg-neutral-100 px-1 rounded">claude-3.5-sonnet-proxy</code>).</td>
+                        <td className="p-3">ID Model resmi (misal: <code className="font-mono bg-neutral-100 px-1 rounded">deepseek-v4</code>, <code className="font-mono bg-neutral-100 px-1 rounded">kimi-coding</code>).</td>
                       </tr>
                       <tr>
                         <td className="p-3 font-mono font-bold text-neutral-950">messages</td>
@@ -1560,13 +1683,13 @@ curl ${CHAT_URL} \\
       "owned_by": "morphic"
     },
     {
-      "id": "claude-3.5-sonnet-proxy",
+      "id": "kimi-coding",
       "object": "model",
       "created": 1740000000,
       "owned_by": "morphic"
     },
     {
-      "id": "qwen-2.5-max",
+      "id": "qwen-max",
       "object": "model",
       "created": 1740000000,
       "owned_by": "morphic"
@@ -1608,32 +1731,32 @@ curl ${CHAT_URL} \\
                     </tr>
                     <tr>
                       <td className="p-3 sm:p-3.5 font-mono font-bold text-neutral-950">
-                        claude-3.5-sonnet-proxy
+                        kimi-coding
                       </td>
-                      <td className="p-3 sm:p-3.5">Anthropic</td>
-                      <td className="p-3 sm:p-3.5 font-mono">200K</td>
+                      <td className="p-3 sm:p-3.5">Kimi</td>
+                      <td className="p-3 sm:p-3.5 font-mono">256K</td>
                       <td className="p-3 sm:p-3.5 text-xs text-neutral-600">
-                        Standar industri coding agent. Terbaik untuk refactoring multi-file di Cursor Composer.
+                        Konteks terpanjang di katalog. Untuk refactoring multi-file dan membaca repo besar sekaligus.
                       </td>
                     </tr>
                     <tr>
                       <td className="p-3 sm:p-3.5 font-mono font-bold text-neutral-950">
-                        qwen-2.5-max
+                        qwen-max
                       </td>
-                      <td className="p-3 sm:p-3.5">Alibaba Cloud</td>
-                      <td className="p-3 sm:p-3.5 font-mono">128K</td>
+                      <td className="p-3 sm:p-3.5">Qwen</td>
+                      <td className="p-3 sm:p-3.5 font-mono">32K</td>
                       <td className="p-3 sm:p-3.5 text-xs text-neutral-600">
                         Kuat dalam logika matematika, data engineering, dan database schema design.
                       </td>
                     </tr>
                     <tr>
                       <td className="p-3 sm:p-3.5 font-mono font-bold text-neutral-950">
-                        deepseek-r1
+                        DeepSeek-V4-Flash-0731
                       </td>
-                      <td className="p-3 sm:p-3.5">DeepSeek</td>
+                      <td className="p-3 sm:p-3.5">Dahl</td>
                       <td className="p-3 sm:p-3.5 font-mono">64K</td>
                       <td className="p-3 sm:p-3.5 text-xs text-neutral-600">
-                        Reasoning model dengan chain-of-thought transparan untuk debugging mendalam.
+                        Varian Flash dari DeepSeek V4, tanpa dukungan vision.
                       </td>
                     </tr>
                   </tbody>

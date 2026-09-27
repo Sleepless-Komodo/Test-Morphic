@@ -5,6 +5,21 @@ import { getBalance } from '@morphic/db/billing';
 import { fetchBackendApi } from '@/lib/api-client';
 import { BillingView } from './billing-view';
 
+/** Balance from the gateway, with the direct read as the availability fallback. */
+async function loadBalance(userId: string): Promise<number> {
+  try {
+    const balRes = await fetchBackendApi<{ credits: number }>('/v1/account/balance');
+    if (balRes.data?.credits != null) return balRes.data.credits;
+    return await getBalance(userId);
+  } catch {
+    try {
+      return await getBalance(userId);
+    } catch {
+      return 0;
+    }
+  }
+}
+
 export default async function BillingPage() {
   const user = await requireUser();
   let balance = 0;
@@ -16,14 +31,20 @@ export default async function BillingPage() {
   // Prefer the live API for every user-scoped list; direct DB below is the availability
   // fallback only (audit M6 — no fabricated data, honest empty state on total failure).
   try {
-    const [pkgRes, entRes, payRes] = await Promise.all([
+    // Balance and the ledger used to be awaited after this wave, adding two serial round
+    // trips to the gateway for data that depends on nothing here.
+    const [pkgRes, entRes, payRes, balanceValue, ledgerRes] = await Promise.all([
       fetchBackendApi<{ data: any[] }>('/v1/catalog/packages'),
       fetchBackendApi<{ data: any[] }>('/v1/account/entitlements'),
       fetchBackendApi<{ data: any[] }>('/v1/account/payments?limit=20'),
+      loadBalance(user.id),
+      fetchBackendApi<{ data: any[]; total: number }>('/v1/account/transactions?limit=50'),
     ]);
     if (pkgRes.data?.data) displayPackages = pkgRes.data.data;
     if (entRes.data?.data) entitlements = entRes.data.data;
     if (payRes.data?.data) payments = payRes.data.data;
+    balance = balanceValue;
+    if (ledgerRes.data?.data) ledger = ledgerRes.data.data;
 
     // Ensure modelDisplayName and modelPublicId are present for model-tied packages
     if (displayPackages.some((p) => p.modelId && !p.modelDisplayName)) {
@@ -54,8 +75,7 @@ export default async function BillingPage() {
   try {
     const needDb = displayPackages.length === 0 || entitlements.length === 0 || payments.length === 0;
     if (!needDb) throw { __skip: true };
-    const [b, dbPackages, dbEntitlements, dbPayments] = await Promise.all([
-      getBalance(user.id),
+    const [dbPackages, dbEntitlements, dbPayments] = await Promise.all([
       db
         .select({
           id: s.packages.id,
@@ -99,34 +119,11 @@ export default async function BillingPage() {
         .orderBy(desc(s.payments.createdAt))
         .limit(20),
     ]);
-    balance = b;
     if (displayPackages.length === 0 && dbPackages.length > 0) displayPackages = dbPackages;
     if (entitlements.length === 0) entitlements = dbEntitlements;
     if (payments.length === 0) payments = dbPayments;
   } catch (err: any) {
     if (!err?.__skip) console.warn('[BillingPage] Database fallback unavailable:', err);
-  }
-
-  // Balance always via getBalance (cheap) if not already set by API below.
-
-  // Balance: API first, direct getBalance as the availability fallback.
-  try {
-    const balRes = await fetchBackendApi<{ credits: number }>('/v1/account/balance');
-    if (balRes.data?.credits != null) {
-      balance = balRes.data.credits;
-    } else {
-      balance = await getBalance(user.id);
-    }
-  } catch {
-    try { balance = await getBalance(user.id); } catch { balance = 0; }
-  }
-
-  // Fetch credit ledger from backend API (authenticated via session cookie forwarding)
-  const ledgerRes = await fetchBackendApi<{ data: any[]; total: number }>(
-    '/v1/account/transactions?limit=50',
-  );
-  if (ledgerRes.data?.data) {
-    ledger = ledgerRes.data.data;
   }
 
   return (
