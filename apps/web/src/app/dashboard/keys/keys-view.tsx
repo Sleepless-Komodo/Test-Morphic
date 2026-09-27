@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useRef, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useTranslation } from '@/lib/i18n';
-import { createApiKey, revokeApiKey } from '@/lib/actions';
+import { revokeApiKey } from '@/lib/actions';
 import { timeAgo } from '@/lib/utils';
 import {
   ArrowUpRight,
@@ -45,6 +45,9 @@ export function KeysView({ initialKeys, availableModels }: KeysViewProps) {
   const [newKeyName, setNewKeyName] = useState('');
   const [expiresIn, setExpiresIn] = useState<'none' | '30d' | '90d'>('none');
   const [createdRawKey, setCreatedRawKey] = useState<string | null>(null);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
+  const nameInputRef = useRef<HTMLInputElement>(null);
   const [copiedKey, setCopiedKey] = useState(false);
   const [confirmRevokeId, setConfirmRevokeId] = useState<string | null>(null);
   const [revealedKeys, setRevealedKeys] = useState<Record<string, boolean>>({});
@@ -55,14 +58,7 @@ export function KeysView({ initialKeys, availableModels }: KeysViewProps) {
   const [isPingModalOpen, setIsPingModalOpen] = useState(false);
   const [testKey, setTestKey] = useState('');
 
-  const getFullKey = (k: KeyItem): string | null => {
-    if (k.rawKey) return k.rawKey;
-    if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem(`mp_raw_${k.id}`) || localStorage.getItem(`mp_raw_${k.keyPrefix}`);
-      if (stored) return stored;
-    }
-    return null;
-  };
+  const getFullKey = (k: KeyItem): string | null => k.rawKey ?? null;
 
   const toggleReveal = (id: string) => {
     setRevealedKeys((prev) => ({
@@ -79,42 +75,68 @@ export function KeysView({ initialKeys, availableModels }: KeysViewProps) {
     setTimeout(() => setCopiedKeyId(null), 2000);
   };
 
-  const handleCreate = (e: React.FormEvent) => {
+  // Minting goes straight to the gateway through the /api/backend proxy instead of a
+  // Server Action: the proxy re-derives the Authorization header from the session, and a
+  // route handler keeps working for tabs opened before a deploy (action ids rotate).
+  const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newKeyName.trim()) return;
+    if (isCreating) return;
 
-    startTransition(async () => {
-      const fd = new FormData();
-      fd.set('name', newKeyName.trim());
-      fd.set('expiresIn', expiresIn);
-      const res = await createApiKey({ raw: null }, fd);
-      if (res.raw) {
-        setCreatedRawKey(res.raw);
-        setTestKey(res.raw);
-        const actualPrefix = (res as any).prefix || res.raw.slice(0, 16);
-        const realId = (res as any).id || `k-${Date.now()}`;
-        const expiresAt = (res as any).expiresAt || null;
-        try {
-          localStorage.setItem(`mp_raw_${realId}`, res.raw);
-          localStorage.setItem(`mp_raw_${actualPrefix}`, res.raw);
-        } catch {}
-        setKeys((prev) => [
-          {
-            id: realId,
-            name: newKeyName.trim(),
-            keyPrefix: actualPrefix,
-            rawKey: res.raw,
-            status: 'active',
-            expiresAt,
-            lastUsedAt: null,
-            createdAt: new Date(),
-          },
-          ...prev,
-        ]);
-        setRevealedKeys((prev) => ({ ...prev, [realId]: true }));
-        setNewKeyName('');
+    const name = newKeyName.trim();
+    if (!name) {
+      // The submit button used to be disabled here, so an empty field made the click do
+      // nothing with no explanation. Say what is missing instead.
+      setCreateError(
+        isId ? 'Kasih nama dulu buat key ini.' : 'Give the key a name first.',
+      );
+      nameInputRef.current?.focus();
+      return;
+    }
+
+    setCreateError(null);
+    setIsCreating(true);
+    try {
+      const res = await fetch('/api/backend/v1/keys', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, expiresIn }),
+      });
+      const body = await res.json().catch(() => null);
+
+      if (!res.ok || !body?.key) {
+        setCreateError(
+          body?.error?.message ||
+            (isId ? 'Gagal membuat key. Coba lagi.' : 'Could not create the key. Try again.'),
+        );
+        return;
       }
-    });
+
+      setCreatedRawKey(body.key);
+      setTestKey(body.key);
+      setKeys((prev) => [
+        {
+          id: body.id,
+          name: body.name,
+          keyPrefix: body.prefix,
+          rawKey: body.key,
+          status: body.status,
+          expiresAt: body.expires_at ? new Date(body.expires_at) : null,
+          lastUsedAt: null,
+          createdAt: body.created_at ? new Date(body.created_at) : new Date(),
+        },
+        ...prev,
+      ]);
+      setRevealedKeys((prev) => ({ ...prev, [body.id]: true }));
+      setNewKeyName('');
+    } catch {
+      setCreateError(
+        isId
+          ? 'Tidak bisa menghubungi server. Cek koneksi lalu coba lagi.'
+          : 'Could not reach the server. Check your connection and try again.',
+      );
+    } finally {
+      setIsCreating(false);
+    }
   };
 
   const handleRevoke = (id: string) => {
@@ -162,11 +184,14 @@ export function KeysView({ initialKeys, availableModels }: KeysViewProps) {
       <div className="p-6 rounded-3xl bg-white border border-neutral-200/90 shadow-xs space-y-4">
         <form onSubmit={handleCreate} className="flex flex-col sm:flex-row gap-3">
           <input
+            ref={nameInputRef}
             type="text"
             value={newKeyName}
             onChange={(e) => setNewKeyName(e.target.value)}
             placeholder={t.dashboard.keyNameInputPlaceholder}
             aria-label={t.dashboard.keyNameInputPlaceholder}
+            aria-invalid={createError ? true : undefined}
+            aria-describedby={createError ? 'create-key-error' : undefined}
             className="flex-1 bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-2.5 text-xs text-neutral-900 focus:outline-none focus:border-neutral-950 focus-visible:ring-2 focus-visible:ring-neutral-950 transition-colors"
           />
           <select
@@ -181,13 +206,20 @@ export function KeysView({ initialKeys, availableModels }: KeysViewProps) {
           </select>
           <button
             type="submit"
-            disabled={isPending || !newKeyName.trim()}
+            disabled={isCreating}
             className="px-5 py-2.5 rounded-xl bg-neutral-950 hover:bg-neutral-800 disabled:opacity-50 text-white text-xs font-bold transition-all shadow-xs shrink-0 flex items-center justify-center gap-1.5 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 focus-visible:ring-offset-2 active:scale-95"
           >
             <KeyRound className="h-3.5 w-3.5" />
-            <span>{isPending ? t.dashboard.creatingKeyBtn : t.dashboard.createKeyBtn}</span>
+            <span>{isCreating ? t.dashboard.creatingKeyBtn : t.dashboard.createKeyBtn}</span>
           </button>
         </form>
+
+        {createError && (
+          <p id="create-key-error" role="alert" className="flex items-start gap-2 text-xs text-red-700">
+            <ShieldAlert className="h-3.5 w-3.5 mt-0.5 shrink-0 text-red-600" />
+            <span>{createError}</span>
+          </p>
+        )}
 
         {/* Revealed Key Banner with Instant Test Button */}
         {createdRawKey && (

@@ -2,7 +2,7 @@
 
 import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { eq, and, desc, sql, gte, lte } from 'drizzle-orm';
+import { eq, and, desc, sql, gt, gte, lte } from 'drizzle-orm';
 import { db, schema as s } from '@morphic/db';
 import { generateApiKey, maskedKey, hashApiKey, encryptApiKey, decryptApiKey } from '@morphic/shared/keys';
 import { grantCredits, grantEntitlement } from '@morphic/db/billing';
@@ -160,68 +160,69 @@ function checkActionCooldown(userId: string, actionKey: string, cooldownMs: numb
   return true;
 }
 
-export async function createApiKey(_prev: { raw: string | null }, formData: FormData) {
+export interface ActiveSession {
+  id: string;
+  isCurrent: boolean;
+  ipAddress: string | null;
+  userAgent: string | null;
+  createdAt: Date;
+  expiresAt: Date;
+}
+
+/**
+ * Sessions the account can sign out from. The session token is the credential Better Auth
+ * revokes by, so it stays on the server: the UI addresses a session by its row id instead.
+ */
+export async function listActiveSessions(): Promise<ActiveSession[]> {
+  const session = await getSessionWithRetry();
+  if (!session) redirect('/login');
+
+  const rows = await db
+    .select({
+      id: s.sessions.id,
+      ipAddress: s.sessions.ipAddress,
+      userAgent: s.sessions.userAgent,
+      createdAt: s.sessions.createdAt,
+      expiresAt: s.sessions.expiresAt,
+    })
+    .from(s.sessions)
+    .where(and(eq(s.sessions.userId, session.user.id), gt(s.sessions.expiresAt, new Date())))
+    .orderBy(desc(s.sessions.createdAt));
+
+  return rows.map((row) => ({ ...row, isCurrent: row.id === session.session.id }));
+}
+
+export async function revokeSessionById(formData: FormData): Promise<{ ok: boolean; error?: string }> {
   const user = await requireInteractiveUser();
+  const id = String(formData.get('id') ?? '').trim();
+  if (!id) return { ok: false, error: 'Session id is required.' };
 
-  if (!checkActionCooldown(user.id, 'create-key', 3000)) {
-    throw new Error('Terlalu cepat. Harap tunggu beberapa detik sebelum membuat kunci baru.');
-  }
-
-  const name = String(formData.get('name') ?? '').trim() || 'default';
-  const expiresIn = String(formData.get('expiresIn') ?? 'none');
-
-  try {
-    const apiRes = await fetchBackendApi<{
-      id: string;
-      name: string;
-      prefix: string;
-      key: string;
-      status: string;
-      expires_at: string | null;
-    }>('/v1/keys', {
-      method: 'POST',
-      body: JSON.stringify({ name, expiresIn }),
-    });
-
-    if (apiRes.data?.key) {
-      return {
-        raw: apiRes.data.key,
-        prefix: apiRes.data.prefix,
-        id: apiRes.data.id,
-        expiresAt: apiRes.data.expires_at ? new Date(apiRes.data.expires_at) : null,
-      };
-    }
-  } catch (err) {
-    console.warn('[createApiKey] Backend API create failed, falling back to direct DB:', err);
-  }
-
-  const { raw, hash, prefix } = generateApiKey();
-  const encryptedKey = encryptApiKey(raw);
-  let createdId: string | null = null;
-  let expiresAt: Date | null = null;
-  if (expiresIn === '30d') {
-    expiresAt = new Date(Date.now() + 30 * 86_400_000);
-  } else if (expiresIn === '90d') {
-    expiresAt = new Date(Date.now() + 90 * 86_400_000);
-  }
+  const [row] = await db
+    .select({ token: s.sessions.token })
+    .from(s.sessions)
+    .where(and(eq(s.sessions.id, id), eq(s.sessions.userId, user.id)))
+    .limit(1);
+  if (!row) return { ok: false, error: 'That session is already signed out.' };
 
   try {
-    await ensureApiKeyEncryptedColumn();
-    const [inserted] = await db
-      .insert(s.apiKeys)
-      .values({ userId: user.id, name, keyHash: hash, keyPrefix: prefix, encryptedKey, expiresAt })
-      .returning({ id: s.apiKeys.id });
-    createdId = inserted?.id ?? null;
+    await auth.api.revokeSession({ body: { token: row.token }, headers: await headers() });
+    return { ok: true };
   } catch (err) {
-    // Do not hand back a key that was never persisted (audit M5). A phantom key would
-    // authenticate nowhere and mislead the user into thinking it works.
-    console.error('[createApiKey] Failed to persist API key:', err);
-    throw new Error('Could not create API key right now. Please try again.');
+    console.error('[revokeSessionById] Failed to revoke session:', err);
+    return { ok: false, error: 'Could not sign that device out. Please try again.' };
   }
-  if (!createdId) {
-    throw new Error('Could not create API key right now. Please try again.');
+}
+
+export async function revokeOtherSessions(): Promise<{ ok: boolean; error?: string }> {
+  await requireInteractiveUser();
+
+  try {
+    await auth.api.revokeOtherSessions({ headers: await headers() });
+    return { ok: true };
+  } catch (err) {
+    console.error('[revokeOtherSessions] Failed to revoke other sessions:', err);
+    return { ok: false, error: 'Could not sign the other devices out. Please try again.' };
   }
-  return { raw, prefix, id: createdId, expiresAt };
 }
 
 export async function revokeApiKey(formData: FormData) {
