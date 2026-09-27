@@ -5,6 +5,7 @@ import Image from 'next/image';
 import { motion } from 'framer-motion';
 import { useTranslation } from '@/lib/i18n';
 import { useReducedMotionSafe } from '@/lib/use-reduced-motion-safe';
+import { API_BASE_URL } from '@/lib/utils';
 import { Lock } from 'lucide-react';
 import {
   OpenAILogo,
@@ -148,7 +149,7 @@ function IdeDropinVisual() {
         <div><span className="text-neutral-500">{'// Standard OpenAI Configuration'}</span></div>
         <div className="mt-1">
           <span className="text-neutral-400">&quot;baseURL&quot;: </span>
-          <span className="text-neutral-200">&quot;https://api.morphic.sh/v1&quot;</span>
+          <span className="text-neutral-200">&quot;{API_BASE_URL}&quot;</span>
         </div>
         <div>
           <span className="text-neutral-400">&quot;apiKey&quot;: </span>

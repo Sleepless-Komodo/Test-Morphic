@@ -41,5 +41,7 @@ export function timeAgo(date: Date | string | null, locale: string = 'en'): stri
 export const API_BASE_URL =
   (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_API_URL)
     ? `${process.env.NEXT_PUBLIC_API_URL.replace(/\/+$/, '')}/v1`
-    : 'https://api.morphic.sh/v1';
+    : 'https://morphic-api.web.id/v1';
+
+export const CHAT_COMPLETIONS_URL = `${API_BASE_URL}/chat/completions`;
 

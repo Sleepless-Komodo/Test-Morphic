@@ -24,9 +24,10 @@ import {
   X,
 } from 'lucide-react';
 import { useTranslation } from '@/lib/i18n';
-import { API_BASE_URL } from '@/lib/utils';
+import { API_BASE_URL, CHAT_COMPLETIONS_URL } from '@/lib/utils';
 
 const BASE_URL = API_BASE_URL;
+const CHAT_URL = CHAT_COMPLETIONS_URL;
 
 type IdeKey = 'cursor' | 'cline' | 'windsurf' | 'claudecode' | 'aider';
 type SdkKey = 'ts' | 'python' | 'curl';
@@ -329,7 +330,7 @@ export default function DocsView({ session }: DocsViewProps) {
         language: 'bash',
         menuPath: 'macOS Terminal (zsh / bash)',
         code: `# macOS (Terminal / zsh):
-export ANTHROPIC_BASE_URL="https://api.morphic.sh/v1"
+export ANTHROPIC_BASE_URL="${BASE_URL}"
 export ANTHROPIC_API_KEY="mp-live-xxxxxxxxxxxxxxxxxxxx"
 
 # Jalankan Claude Code CLI:
@@ -342,7 +343,7 @@ claude "Analyze this repository architecture"`,
         language: 'bash',
         menuPath: 'Linux Terminal (bash)',
         code: `# Linux (Bash):
-export ANTHROPIC_BASE_URL="https://api.morphic.sh/v1"
+export ANTHROPIC_BASE_URL="${BASE_URL}"
 export ANTHROPIC_API_KEY="mp-live-xxxxxxxxxxxxxxxxxxxx"
 
 # Jalankan Claude Code CLI:
@@ -355,7 +356,7 @@ claude "Analyze this repository architecture"`,
         language: 'cmd',
         menuPath: 'Windows Command Prompt (CMD)',
         code: `REM Windows Command Prompt (CMD):
-set ANTHROPIC_BASE_URL=https://api.morphic.sh/v1
+set ANTHROPIC_BASE_URL=${BASE_URL}
 set ANTHROPIC_API_KEY=mp-live-xxxxxxxxxxxxxxxxxxxx
 
 REM Jalankan Claude Code CLI:
@@ -367,7 +368,7 @@ claude "Analyze this repository architecture"`,
       language: 'powershell',
       menuPath: 'Windows PowerShell Terminal',
       code: `# Windows PowerShell:
-$env:ANTHROPIC_BASE_URL="https://api.morphic.sh/v1"
+$env:ANTHROPIC_BASE_URL="${BASE_URL}"
 $env:ANTHROPIC_API_KEY="mp-live-xxxxxxxxxxxxxxxxxxxx"
 
 # Jalankan Claude Code CLI:
@@ -382,7 +383,7 @@ claude "Analyze this repository architecture"`,
         language: 'bash',
         menuPath: 'macOS Terminal (zsh)',
         code: `# macOS / zsh: Jalankan Aider dengan Morphic Gateway
-export OPENAI_API_BASE="https://api.morphic.sh/v1"
+export OPENAI_API_BASE="${BASE_URL}"
 export OPENAI_API_KEY="mp-live-xxxxxxxxxxxxxxxxxxxx"
 
 aider --model openai/deepseek-v4`,
@@ -394,7 +395,7 @@ aider --model openai/deepseek-v4`,
         language: 'bash',
         menuPath: 'Linux Terminal (bash)',
         code: `# Linux / bash: Jalankan Aider dengan Morphic Gateway
-export OPENAI_API_BASE="https://api.morphic.sh/v1"
+export OPENAI_API_BASE="${BASE_URL}"
 export OPENAI_API_KEY="mp-live-xxxxxxxxxxxxxxxxxxxx"
 
 aider --model openai/deepseek-v4`,
@@ -406,7 +407,7 @@ aider --model openai/deepseek-v4`,
         language: 'cmd',
         menuPath: 'Windows Command Prompt (CMD)',
         code: `REM Windows CMD: Jalankan Aider dengan Morphic Gateway
-set OPENAI_API_BASE=https://api.morphic.sh/v1
+set OPENAI_API_BASE=${BASE_URL}
 set OPENAI_API_KEY=mp-live-xxxxxxxxxxxxxxxxxxxx
 
 aider --model openai/deepseek-v4`,
@@ -417,7 +418,7 @@ aider --model openai/deepseek-v4`,
       language: 'powershell',
       menuPath: 'Windows PowerShell Terminal',
       code: `# Windows PowerShell: Jalankan Aider dengan Morphic Gateway
-$env:OPENAI_API_BASE="https://api.morphic.sh/v1"
+$env:OPENAI_API_BASE="${BASE_URL}"
 $env:OPENAI_API_KEY="mp-live-xxxxxxxxxxxxxxxxxxxx"
 
 aider --model openai/deepseek-v4`,
@@ -452,7 +453,7 @@ aider --model openai/deepseek-v4`,
       file: 'cursor.settings.json',
       language: 'json',
       code: `// Cursor Settings > Models > OpenAI API:
-Base URL: https://api.morphic.sh/v1
+Base URL: ${BASE_URL}
 API Key:  mp-live-xxxxxxxxxxxxxxxxxxxx
 
 // Rekomendasi Model IDs untuk ditambahkan (+ Add Model):
@@ -473,7 +474,7 @@ API Key:  mp-live-xxxxxxxxxxxxxxxxxxxx
       language: 'json',
       code: `{
   "apiProvider": "openai",
-  "openAiBaseUrl": "https://api.morphic.sh/v1",
+  "openAiBaseUrl": "${BASE_URL}",
   "openAiApiKey": "mp-live-xxxxxxxxxxxxxxxxxxxx",
   "openAiModelId": "deepseek-v4"
 }`,
@@ -488,7 +489,7 @@ API Key:  mp-live-xxxxxxxxxxxxxxxxxxxx
       language: 'json',
       code: `{
   "provider": "openai-compatible",
-  "endpoint": "https://api.morphic.sh/v1",
+  "endpoint": "${BASE_URL}",
   "apiKey": "mp-live-xxxxxxxxxxxxxxxxxxxx",
   "defaultModel": "deepseek-v4"
 }`,
@@ -520,7 +521,7 @@ API Key:  mp-live-xxxxxxxxxxxxxxxxxxxx
       return {
         filename: 'curl_quickstart.sh',
         language: 'bash',
-        code: `curl https://api.morphic.sh/v1/chat/completions \\
+        code: `curl ${CHAT_URL} \\
   -H "Authorization: Bearer mp-live-xxxxxxxxxxxxxxxxxxxx" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -537,7 +538,7 @@ API Key:  mp-live-xxxxxxxxxxxxxxxxxxxx
       return {
         filename: 'curl_quickstart.sh',
         language: 'bash',
-        code: `curl https://api.morphic.sh/v1/chat/completions \\
+        code: `curl ${CHAT_URL} \\
   -H "Authorization: Bearer mp-live-xxxxxxxxxxxxxxxxxxxx" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -554,7 +555,7 @@ API Key:  mp-live-xxxxxxxxxxxxxxxxxxxx
       return {
         filename: 'quickstart.cmd',
         language: 'cmd',
-        code: `curl.exe https://api.morphic.sh/v1/chat/completions ^
+        code: `curl.exe ${CHAT_URL} ^
   -H "Authorization: Bearer mp-live-xxxxxxxxxxxxxxxxxxxx" ^
   -H "Content-Type: application/json" ^
   -d "{\\"model\\":\\"deepseek-v4\\",\\"messages\\":[{\\"role\\":\\"system\\",\\"content\\":\\"You are an expert developer.\\"},{\\"role\\":\\"user\\",\\"content\\":\\"Hello Morphic Gateway!\\"}],\\"temperature\\":0.2}"`,
@@ -564,7 +565,7 @@ API Key:  mp-live-xxxxxxxxxxxxxxxxxxxx
       filename: 'quickstart.ps1',
       language: 'powershell',
       code: `# Opsi 1: Menggunakan curl.exe bawaan Windows (PowerShell)
-curl.exe https://api.morphic.sh/v1/chat/completions \`
+curl.exe ${CHAT_URL} \`
   -H "Authorization: Bearer mp-live-xxxxxxxxxxxxxxxxxxxx" \`
   -H "Content-Type: application/json" \`
   -d '{"model":"deepseek-v4","messages":[{"role":"system","content":"You are an expert developer."},{"role":"user","content":"Hello Morphic Gateway!"}],"temperature":0.2}'
@@ -583,7 +584,7 @@ $body = @{
   temperature = 0.2
 } | ConvertTo-Json -Depth 5
 
-Invoke-RestMethod -Uri "https://api.morphic.sh/v1/chat/completions" -Method Post -Headers $headers -Body $body`,
+Invoke-RestMethod -Uri "${CHAT_URL}" -Method Post -Headers $headers -Body $body`,
     };
   };
 
@@ -593,7 +594,7 @@ Invoke-RestMethod -Uri "https://api.morphic.sh/v1/chat/completions" -Method Post
         filename: 'curl_example.sh',
         language: 'bash',
         code: `# 1. Chat Completion Standar (JSON):
-curl https://api.morphic.sh/v1/chat/completions \\
+curl ${CHAT_URL} \\
   -H "Authorization: Bearer mp-live-xxxxxxxxxxxxxxxxxxxx" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -606,7 +607,7 @@ curl https://api.morphic.sh/v1/chat/completions \\
   }'
 
 # 2. Server-Sent Events (SSE Streaming):
-curl https://api.morphic.sh/v1/chat/completions \\
+curl ${CHAT_URL} \\
   -N \\
   -H "Authorization: Bearer mp-live-xxxxxxxxxxxxxxxxxxxx" \\
   -H "Content-Type: application/json" \\
@@ -622,13 +623,13 @@ curl https://api.morphic.sh/v1/chat/completions \\
         filename: 'curl_example.cmd',
         language: 'cmd',
         code: `REM 1. Chat Completion Standar (curl.exe di Command Prompt):
-curl.exe https://api.morphic.sh/v1/chat/completions ^
+curl.exe ${CHAT_URL} ^
   -H "Authorization: Bearer mp-live-xxxxxxxxxxxxxxxxxxxx" ^
   -H "Content-Type: application/json" ^
   -d "{\\"model\\":\\"deepseek-v4\\",\\"messages\\":[{\\"role\\":\\"user\\",\\"content\\":\\"Halo Morphic! Buatkan fungsi validasi email.\\"}],\\"temperature\\":0.5,\\"max_tokens\\":512}"
 
 REM 2. Server-Sent Events (SSE Streaming via curl.exe):
-curl.exe https://api.morphic.sh/v1/chat/completions -N ^
+curl.exe ${CHAT_URL} -N ^
   -H "Authorization: Bearer mp-live-xxxxxxxxxxxxxxxxxxxx" ^
   -H "Content-Type: application/json" ^
   -d "{\\"model\\":\\"deepseek-v4\\",\\"messages\\":[{\\"role\\":\\"user\\",\\"content\\":\\"Hitung 1 sampai 5 perlahan.\\"}],\\"stream\\":true}"`,
@@ -638,13 +639,13 @@ curl.exe https://api.morphic.sh/v1/chat/completions -N ^
       filename: 'curl_example.ps1',
       language: 'powershell',
       code: `# 1. Chat Completion Standar (curl.exe bawaan Windows PowerShell):
-curl.exe https://api.morphic.sh/v1/chat/completions \`
+curl.exe ${CHAT_URL} \`
   -H "Authorization: Bearer mp-live-xxxxxxxxxxxxxxxxxxxx" \`
   -H "Content-Type: application/json" \`
   -d '{"model":"deepseek-v4","messages":[{"role":"user","content":"Halo Morphic! Buatkan fungsi validasi email."}],"temperature":0.5,"max_tokens":512}'
 
 # 2. Server-Sent Events (SSE Streaming via curl.exe):
-curl.exe https://api.morphic.sh/v1/chat/completions -N \`
+curl.exe ${CHAT_URL} -N \`
   -H "Authorization: Bearer mp-live-xxxxxxxxxxxxxxxxxxxx" \`
   -H "Content-Type: application/json" \`
   -d '{"model":"deepseek-v4","messages":[{"role":"user","content":"Hitung 1 sampai 5 perlahan."}],"stream":true}'`,
@@ -658,7 +659,7 @@ curl.exe https://api.morphic.sh/v1/chat/completions -N \`
 
 // Inisialisasi client resmi OpenAI mengarah ke Morphic Gateway
 const client = new OpenAI({
-  baseURL: "https://api.morphic.sh/v1",
+  baseURL: "${BASE_URL}",
   apiKey: process.env.MORPHIC_API_KEY || "mp-live-xxxxxxxxxxxxxxxxxxxx",
 });
 
@@ -694,7 +695,7 @@ from openai import OpenAI
 
 # Inisialisasi OpenAI SDK resmi dengan endpoint Morphic Gateway
 client = OpenAI(
-    base_url="https://api.morphic.sh/v1",
+    base_url="${BASE_URL}",
     api_key=os.environ.get("MORPHIC_API_KEY", "mp-live-xxxxxxxxxxxxxxxxxxxx"),
 )
 
@@ -723,7 +724,7 @@ for chunk in stream:
 `;
 
   const curlCode = `# 1. Chat Completion Standar (JSON):
-curl https://api.morphic.sh/v1/chat/completions \\
+curl ${CHAT_URL} \\
   -H "Authorization: Bearer mp-live-xxxxxxxxxxxxxxxxxxxx" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -736,7 +737,7 @@ curl https://api.morphic.sh/v1/chat/completions \\
   }'
 
 # 2. Server-Sent Events (SSE Streaming):
-curl https://api.morphic.sh/v1/chat/completions \\
+curl ${CHAT_URL} \\
   -N \\
   -H "Authorization: Bearer mp-live-xxxxxxxxxxxxxxxxxxxx" \\
   -H "Content-Type: application/json" \\
@@ -1546,7 +1547,7 @@ curl https://api.morphic.sh/v1/chat/completions \\
                 <CodeBlock
                   filename="models_response.json"
                   language="json"
-                  code={`// GET https://api.morphic.sh/v1/models
+                  code={`// GET ${BASE_URL}/models
 // Header: Authorization: Bearer mp-live-xxxx
 
 {
@@ -1736,8 +1737,8 @@ curl https://api.morphic.sh/v1/chat/completions \\
               <p className="leading-relaxed">
                 <strong className="font-semibold text-amber-950">Penting:</strong>{' '}
                 {isId
-                  ? 'Jika Cursor menampilkan peringatan "Connection failed", pastikan tidak menambahkan garis miring di akhir URL: gunakan persis https://api.morphic.sh/v1 (bukan .../v1/).'
-                  : 'If Cursor displays "Connection failed", ensure there is no trailing slash: use strictly https://api.morphic.sh/v1 (not .../v1/).'}
+                  ? 'Jika Cursor menampilkan peringatan "Connection failed", pastikan tidak menambahkan garis miring di akhir URL: gunakan persis ${BASE_URL} (bukan .../v1/).'
+                  : 'If Cursor displays "Connection failed", ensure there is no trailing slash: use strictly ${BASE_URL} (not .../v1/).'}
               </p>
             </div>
           </section>

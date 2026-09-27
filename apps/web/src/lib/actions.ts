@@ -91,11 +91,24 @@ export async function listApiKeys() {
   try {
     const apiRes = await fetchBackendApi<{ data: any[] }>('/v1/keys');
     if (apiRes.data?.data) {
+      let encMap = new Map<string, string | null>();
+      try {
+        const user = await requireUser();
+        await ensureApiKeyEncryptedColumn();
+        const dbRows = await db
+          .select({ id: s.apiKeys.id, encryptedKey: s.apiKeys.encryptedKey })
+          .from(s.apiKeys)
+          .where(eq(s.apiKeys.userId, user.id));
+        encMap = new Map(dbRows.map((r) => [r.id, r.encryptedKey]));
+      } catch {
+        // Fall back to backend data alone if DB query fails
+      }
+
       return apiRes.data.data.map((k: any) => ({
         id: k.id,
         name: k.name,
         keyPrefix: k.prefix,
-        rawKey: k.key || null,
+        rawKey: k.key || decryptApiKey(encMap.get(k.id)),
         status: k.status,
         expiresAt: k.expires_at ? new Date(k.expires_at) : null,
         lastUsedAt: k.last_used_at ? new Date(k.last_used_at) : null,

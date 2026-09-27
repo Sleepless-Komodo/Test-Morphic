@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { useTranslation } from '@/lib/i18n';
 import { useReducedMotionSafe } from '@/lib/use-reduced-motion-safe';
+import { API_BASE_URL } from '@/lib/utils';
 
 interface HowItWorksStepsProps {
   isLoggedIn?: boolean;
@@ -186,7 +187,7 @@ function CodeConnectionPreview({ locale }: { locale: string }) {
             client = OpenAI(
           </div>
           <div className="pl-4">
-            base_url=<span className="text-emerald-400">&quot;https://api.morphic.sh/v1&quot;</span>,
+            base_url=<span className="text-emerald-400">&quot;{API_BASE_URL}&quot;</span>,
           </div>
           <div className="pl-4">
             api_key=<span className="text-emerald-400">&quot;mp-live-xxxxxx&quot;</span>,
@@ -197,7 +198,7 @@ function CodeConnectionPreview({ locale }: { locale: string }) {
         <div className="rounded-xl bg-neutral-950 p-3.5 font-mono text-[11px] leading-relaxed text-neutral-300 shadow-inner overflow-x-auto">
           <div>{'{'}</div>
           <div className="pl-4">
-            &quot;override_base_url&quot;: <span className="text-emerald-400">&quot;https://api.morphic.sh/v1&quot;</span>,
+            &quot;override_base_url&quot;: <span className="text-emerald-400">&quot;{API_BASE_URL}&quot;</span>,
           </div>
           <div className="pl-4">
             &quot;api_key&quot;: <span className="text-emerald-400">&quot;mp-live-xxxxxx&quot;</span>,
@@ -371,8 +372,8 @@ export default function HowItWorksSteps({ isLoggedIn = false }: HowItWorksStepsP
       icon: TerminalSquare,
       bullets: [
         locale === 'en'
-          ? 'Point base_url to https://api.morphic.sh/v1 with standard OpenAI API schema'
-          : 'Arahkan base_url ke https://api.morphic.sh/v1 dengan skema OpenAI standar',
+          ? `Point base_url to ${API_BASE_URL} with standard OpenAI API schema`
+          : `Arahkan base_url ke ${API_BASE_URL} dengan skema OpenAI standar`,
         locale === 'en'
           ? 'Zero code changes needed: compatible with Cursor, Cline, Windsurf & Python/Node SDK'
           : 'Tanpa bongkar kode: langsung jalan di Cursor, Cline, Windsurf & SDK resmi',
