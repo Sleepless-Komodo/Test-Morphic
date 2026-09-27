@@ -21,7 +21,7 @@ import { ApiKeyPingModal } from '@/components/ApiKeyPingModal';
 import { INFERENCE_MODELS, CapabilityTag, ModelItem } from '@/lib/models-data';
 export type { ModelItem } from '@/lib/models-data';
 
-const BASE_URL = 'https://api.morphic.sh/v1';
+const BASE_URL = API_BASE_URL || 'https://morphic-api.web.id/v1';
 
 const CHEAP_DAILY_PACKAGES = [
   { id: 'starter', label: 'Starter', labelEn: 'Starter', desc: 'Rp 10.000 / bulan', descEn: 'Rp 10,000 / month', credits: 10000 },

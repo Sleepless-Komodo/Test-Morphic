@@ -169,6 +169,30 @@ async function proxyRequest(req: NextRequest) {
     resHeaders.delete('content-encoding');
     resHeaders.delete('content-length');
 
+    if (rawPath === '/v1/keys' && req.method === 'POST' && res.ok) {
+      try {
+        const text = await res.text();
+        const json = JSON.parse(text);
+        if (json?.id && json?.key) {
+          const { db, schema: s } = await import('@morphic/db');
+          const { eq } = await import('drizzle-orm');
+          const { encryptApiKey } = await import('@morphic/shared/keys');
+          const encryptedKey = encryptApiKey(json.key);
+          await db
+            .update(s.apiKeys)
+            .set({ encryptedKey })
+            .where(eq(s.apiKeys.id, json.id));
+        }
+        return new NextResponse(text, {
+          status: res.status,
+          statusText: res.statusText,
+          headers: resHeaders,
+        });
+      } catch (err) {
+        console.error('[proxy] Backfill encryptedKey error:', err);
+      }
+    }
+
     return new NextResponse(res.body, {
       status: res.status,
       statusText: res.statusText,

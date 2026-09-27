@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from 'react';
 import { useTranslation } from '@/lib/i18n';
-import { formatCredits } from '@/lib/utils';
+import { formatCredits, CHAT_COMPLETIONS_URL } from '@/lib/utils';
 import { Search, Terminal, Copy, Check, Cpu } from 'lucide-react';
 import { ModelProviderLogo } from '@/components/ProviderLogos';
 
@@ -48,7 +48,7 @@ export function ModelsView({ initialModels }: { initialModels: any[] }) {
     filtered[0] ||
     initialModels[0] || { publicModelId: 'deepseek-v4', displayName: 'DeepSeek V4' };
 
-  const curlCommand = `curl https://api.morphic.sh/v1/chat/completions \\
+  const curlCommand = `curl ${CHAT_COMPLETIONS_URL} \\
   -H "Authorization: Bearer mp-live-xxxxxxxxxxxx" \\
   -H "Content-Type: application/json" \\
   -d '{

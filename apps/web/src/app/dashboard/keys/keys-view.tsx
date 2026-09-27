@@ -313,11 +313,28 @@ export function KeysView({ initialKeys, availableModels }: KeysViewProps) {
                             : maskedKey(k.keyPrefix)}
                         </span>
 
+                        {!getFullKey(k) && (
+                          <span
+                            title={
+                              isId
+                                ? 'Key lama dibuat sebelum enkripsi key aktif (hanya hash satu arah tersimpan). Buat key baru untuk melihat & menyalin key lengkap.'
+                                : 'Legacy key created before encrypted storage was enabled. Create a new key to reveal & copy full key.'
+                            }
+                            className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-50 border border-amber-200 text-amber-700 font-semibold cursor-help shrink-0"
+                          >
+                            Legacy
+                          </span>
+                        )}
+
                         {/* Toggle Visibility (Eye) */}
                         <button
                           type="button"
                           onClick={() => toggleReveal(k.id)}
-                          title={revealedKeys[k.id] ? t.dashboard.keyHide : t.dashboard.keyShow}
+                          title={
+                            !getFullKey(k)
+                              ? (isId ? 'Key lama: hanya prefix yang tersedia' : 'Legacy key: only prefix available')
+                              : (revealedKeys[k.id] ? t.dashboard.keyHide : t.dashboard.keyShow)
+                          }
                           aria-label={revealedKeys[k.id] ? t.dashboard.keyHide : t.dashboard.keyShow}
                           className="p-1.5 rounded-lg border border-neutral-200 hover:border-neutral-400 hover:bg-neutral-100 text-neutral-600 hover:text-neutral-900 transition-colors cursor-pointer shrink-0"
                         >
@@ -332,7 +349,13 @@ export function KeysView({ initialKeys, availableModels }: KeysViewProps) {
                         <button
                           type="button"
                           onClick={() => handleCopyKey(k)}
-                          title={t.dashboard.keyCopyFull}
+                          title={
+                            getFullKey(k)
+                              ? t.dashboard.keyCopyFull
+                              : isId
+                                ? 'Salin prefix (Key lama hanya tersimpan hash. Buat key baru untuk full key)'
+                                : 'Copy prefix (Legacy key: only hash stored. Create new key for full key)'
+                          }
                           aria-label={t.dashboard.keyCopyFull}
                           className="p-1.5 rounded-lg border border-neutral-200 hover:border-neutral-400 hover:bg-neutral-100 text-neutral-600 hover:text-neutral-900 transition-colors cursor-pointer shrink-0"
                         >

@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useTranslation } from '@/lib/i18n';
 import { useReducedMotionSafe } from '@/lib/use-reduced-motion-safe';
+import { API_BASE_URL } from '@/lib/utils';
 import { Plus } from 'lucide-react';
 
 const EASE = [0.16, 1, 0.3, 1] as const;
@@ -31,8 +32,8 @@ const FAQS: FaqItem[] = [
       en: 'How do I configure my API Key in Cursor or Cline?',
     },
     a: {
-      id: 'Sangat mudah! Di pengaturan Cursor atau ekstensi Cline, pilih provider "OpenAI Compatible", ubah Base URL menjadi https://api.morphic.sh/v1, dan masukkan API Key Morphic (mp-xxxx) Anda. Semua request langsung diteruskan dengan latensi rendah.',
-      en: 'Super simple! In Cursor Settings or Cline extension, select "OpenAI Compatible", set the Base URL to https://api.morphic.sh/v1, and enter your Morphic API key (mp-xxxx). All requests route instantly with minimal latency.',
+      id: `Sangat mudah! Di pengaturan Cursor atau ekstensi Cline, pilih provider "OpenAI Compatible", ubah Base URL menjadi ${API_BASE_URL}, dan masukkan API Key Morphic (mp-xxxx) Anda. Semua request langsung diteruskan dengan latensi rendah.`,
+      en: `Super simple! In Cursor Settings or Cline extension, select "OpenAI Compatible", set the Base URL to ${API_BASE_URL}, and enter your Morphic API key (mp-xxxx). All requests route instantly with minimal latency.`,
     },
   },
   {
