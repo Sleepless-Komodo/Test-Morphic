@@ -1,3 +1,5 @@
+import { API_BASE_URL } from '@/lib/utils';
+
 export const id = {
     nav: {
       models: 'Models',

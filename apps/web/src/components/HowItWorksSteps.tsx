@@ -23,10 +23,10 @@ interface HowItWorksStepsProps {
 }
 
 const ROUTER_MODELS = [
-  { id: 'deepseek-v4', label: 'DeepSeek V4 Coder', latency: '138ms', costId: 'Hemat 70%', costEn: 'Save 70%' },
-  { id: 'claude-3.5-sonnet-proxy', label: 'Claude 3.5 Sonnet', latency: '152ms', costId: 'Auto-Routing', costEn: 'Auto-Routing' },
-  { id: 'qwen-2.5-max', label: 'Qwen 2.5 Max', latency: '144ms', costId: '128K Konteks', costEn: '128K Context' },
-  { id: 'kimi-coding', label: 'Kimi Coding 256K', latency: '146ms', costId: 'Long Horizon', costEn: 'Long Horizon' },
+  { id: 'deepseek-v4', label: 'DeepSeek V4', costId: '64K Konteks', costEn: '64K context' },
+  { id: 'kimi-coding', label: 'Kimi Coding', costId: '256K Konteks', costEn: '256K context' },
+  { id: 'qwen-max', label: 'Qwen Max', costId: '32K Konteks', costEn: '32K context' },
+  { id: 'DeepSeek-V4-Flash-0731', label: 'DeepSeek V4 Flash', costId: '64K Konteks', costEn: '64K context' },
 ];
 
 function RouterSwitcher({ locale }: { locale: string }) {
@@ -57,11 +57,7 @@ function RouterSwitcher({ locale }: { locale: string }) {
           </span>
         </div>
         <div className="flex justify-between items-center text-neutral-400">
-          <span>upstream_latency:</span>
-          <span className="text-neutral-200 font-bold">{cur.latency}</span>
-        </div>
-        <div className="flex justify-between items-center text-neutral-400">
-          <span>efficiency:</span>
+          <span>context_window:</span>
           <span className="text-neutral-200">{locale === 'en' ? cur.costEn : cur.costId}</span>
         </div>
       </div>
@@ -204,7 +200,7 @@ function CodeConnectionPreview({ locale }: { locale: string }) {
             &quot;api_key&quot;: <span className="text-emerald-400">&quot;mp-live-xxxxxx&quot;</span>,
           </div>
           <div className="pl-4">
-            &quot;model&quot;: <span className="text-neutral-400">&quot;deepseek-v4-coder&quot;</span>
+            &quot;model&quot;: <span className="text-neutral-400">&quot;deepseek-v4&quot;</span>
           </div>
           <div>{'}'}</div>
         </div>
