@@ -16,9 +16,7 @@ export default async function UsagePage() {
   let topModels: any[] = [];
   let recent: any[] = [];
 
-  // The gateway log read used to be awaited before the aggregate queries, so the page paid
-  // two serial waves. It now rides along with them; the DB log query is the fallback that
-  // only gets used when the gateway returns nothing.
+  // One wave, all of it against Postgres: the paged log read plus the aggregates.
   try {
     const [logsRes, [t], [m], [tot], tm, rec] = await Promise.all([
       getUsageLogsAction({ limit: 50 }).catch((err) => {

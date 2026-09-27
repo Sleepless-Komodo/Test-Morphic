@@ -161,7 +161,7 @@ export function SettingsView({ user, sessions }: SettingsViewProps) {
             <p className="text-xs md:text-sm text-neutral-600 mt-1 max-w-2xl leading-relaxed">
               {isId
                 ? 'Kelola identitas akun pengembang, status otentikasi sesi, dan standar keamanan data gateway Anda.'
-                : 'Manage your developer identity, session authentication status, and gateway data security standards.'}
+                : 'Manage your account, active sessions, and gateway data security standards.'}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -174,7 +174,7 @@ export function SettingsView({ user, sessions }: SettingsViewProps) {
       </div>
 
       <div className="space-y-6">
-        {/* CARD 1: Developer Profile & Identity */}
+        {/* CARD 1: Account Profile & Identity */}
         <section
           aria-labelledby="profile-heading"
           className="rounded-3xl bg-white border border-neutral-200/90 shadow-2xs overflow-hidden"
@@ -186,15 +186,15 @@ export function SettingsView({ user, sessions }: SettingsViewProps) {
               </div>
               <div>
                 <h2 id="profile-heading" className="text-sm sm:text-base font-bold text-neutral-950 font-heading">
-                  {isId ? 'Profil & Identitas Pengembang' : 'Developer Profile & Identity'}
+                  {isId ? 'Profil & Identitas Akun' : 'Account Profile & Identity'}
                 </h2>
                 <p className="text-xs text-neutral-500">
-                  {isId ? 'Informasi dasar identitas pengembang Anda di Morphic' : 'Your core developer profile information on Morphic'}
+                  {isId ? 'Informasi dasar akun Anda di Morphic' : 'Your core account information on Morphic'}
                 </p>
               </div>
             </div>
-            <span className="text-[11px] font-mono px-2.5 py-1 rounded-lg bg-neutral-100 text-neutral-700 font-semibold border border-neutral-200/80">
-              DEVELOPER
+            <span className="text-[11px] font-mono px-2.5 py-1 rounded-lg bg-neutral-100 text-neutral-700 font-semibold border border-neutral-200/80 uppercase">
+              {user.role ?? (isId ? 'pengguna' : 'user')}
             </span>
           </div>
 
@@ -219,12 +219,19 @@ export function SettingsView({ user, sessions }: SettingsViewProps) {
               <div className="min-w-0 flex-1 space-y-1">
                 <div className="flex items-center gap-2 flex-wrap">
                   <h3 className="text-base sm:text-lg font-bold text-neutral-950 truncate">
-                    {user.name || (isId ? 'Pengembang Morphic' : 'Morphic Developer')}
+                    {user.name || user.email || (isId ? 'Tanpa nama' : 'Unnamed account')}
                   </h3>
-                  <span className="inline-flex items-center gap-1 text-[11px] font-medium text-neutral-600">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
-                    <span>{isId ? 'Terverifikasi' : 'Verified'}</span>
-                  </span>
+                  {user.emailVerified ? (
+                    <span className="inline-flex items-center gap-1 text-[11px] font-medium text-neutral-600">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                      <span>{isId ? 'Email terverifikasi' : 'Email verified'}</span>
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 text-[11px] font-medium text-neutral-500">
+                      <span className="w-1.5 h-1.5 rounded-full bg-neutral-400 shrink-0" />
+                      <span>{isId ? 'Email belum terverifikasi' : 'Email not verified'}</span>
+                    </span>
+                  )}
                 </div>
                 <p className="text-xs sm:text-sm text-neutral-600 truncate">{user.email}</p>
                 {memberSince && (
@@ -264,11 +271,11 @@ export function SettingsView({ user, sessions }: SettingsViewProps) {
                 </p>
               </div>
 
-              {/* Developer UUID */}
+              {/* Account UUID */}
               <div className="md:col-span-2 p-4 rounded-2xl bg-neutral-50/60 border border-neutral-200/70 space-y-2">
                 <div className="flex items-center justify-between">
                   <div className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider">
-                    {isId ? 'Developer ID (Account UUID)' : 'Developer ID (Account UUID)'}
+                    {isId ? 'ID Akun (UUID)' : 'Account ID (UUID)'}
                   </div>
                   <button
                     type="button"
@@ -548,7 +555,7 @@ export function SettingsView({ user, sessions }: SettingsViewProps) {
             <div className="py-4 last:pb-0 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div className="space-y-1 max-w-lg">
                 <h3 className="text-xs sm:text-sm font-bold text-red-950">
-                  {isId ? 'Hapus Akun Pengembang' : 'Delete Developer Account'}
+                  {isId ? 'Hapus Akun' : 'Delete Account'}
                 </h3>
                 <p className="text-xs text-neutral-600 leading-relaxed">
                   {isId

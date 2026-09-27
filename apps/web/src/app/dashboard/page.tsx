@@ -1,11 +1,7 @@
-import { headers } from 'next/headers';
 import { eq, sql, desc, and } from 'drizzle-orm';
-import { auth } from '@/lib/auth';
 import { getSessionWithRetry } from '@/lib/actions';
 import { db, schema as s } from '@morphic/db';
-import { getBalance } from '@morphic/db/billing';
 import DeveloperGateway, { ModelItem } from '@/components/DeveloperGateway';
-import { fetchBackendApi } from '@/lib/api-client';
 
 /**
  * Fetches active AI models and their provider info directly from PostgreSQL.
@@ -56,17 +52,16 @@ async function getModelsFromDb(): Promise<ModelItem[] | undefined> {
         capabilities: caps,
         contextWindow,
         category: caps.includes('Code') ? 'Coding' : caps.includes('Reasoning') ? 'Reasoning' : caps.includes('Vision') ? 'Multimodal' : 'Chat',
-        dailyRate: `Rp ${((m.inputCreditsPer1m || 100) * 25).toLocaleString('id-ID')} / hari`,
-        dailyRateEn: `Rp ${((m.inputCreditsPer1m || 100) * 25).toLocaleString('en-US')} / day`,
-        speed: 'Fast' as const,
-        estimatedLatency: '~200ms',
+        // Real per-million credit rates from the catalogue. The daily price, speed grade and
+        // latency this used to derive were invented: nothing measured them.
+        inputCreditsPer1m: m.inputCreditsPer1m ?? undefined,
+        outputCreditsPer1m: m.outputCreditsPer1m ?? undefined,
         description: {
           id: m.description || `${m.displayName} AI model`,
           en: m.description || `${m.displayName} AI model`,
         },
         badge: formattedProvider.toUpperCase(),
         badgeEn: formattedProvider.toUpperCase(),
-        badgeType: 'popular' as const,
       };
     });
   } catch (error) {
@@ -81,26 +76,21 @@ interface BalanceSnapshot {
 }
 
 async function loadBalance(userId: string): Promise<BalanceSnapshot> {
+  // The gateway's /v1/account/balance runs this exact query against this exact row, so going
+  // through it only added an HTTPS round trip to another region.
   try {
-    const balRes = await fetchBackendApi<{ credits: number; updated_at?: string | null }>('/v1/account/balance');
-    if (balRes.data?.credits != null) {
-      return { credits: balRes.data.credits, updatedAt: balRes.data.updated_at ?? null };
-    }
-    return { credits: await getBalance(userId), updatedAt: null };
-  } catch {
-    try {
-      const [bal] = await db
-        .select({ credits: s.balances.credits, updatedAt: s.balances.updatedAt })
-        .from(s.balances)
-        .where(eq(s.balances.userId, userId))
-        .limit(1);
-      return {
-        credits: bal?.credits ?? 0,
-        updatedAt: bal?.updatedAt ? bal.updatedAt.toISOString() : null,
-      };
-    } catch {
-      return { credits: 0, updatedAt: null };
-    }
+    const [bal] = await db
+      .select({ credits: s.balances.credits, updatedAt: s.balances.updatedAt })
+      .from(s.balances)
+      .where(eq(s.balances.userId, userId))
+      .limit(1);
+    return {
+      credits: bal?.credits ?? 0,
+      updatedAt: bal?.updatedAt ? bal.updatedAt.toISOString() : null,
+    };
+  } catch (err) {
+    console.warn('[DashboardPage] Balance read failed:', err);
+    return { credits: 0, updatedAt: null };
   }
 }
 
@@ -139,28 +129,6 @@ async function loadUsageTotals(userId: string) {
 
 async function loadRecentRequests(userId: string): Promise<any[]> {
   try {
-    const usageRes = await fetchBackendApi<{ data: any[] }>('/v1/account/usage?limit=6');
-    if (usageRes.data?.data && Array.isArray(usageRes.data.data) && usageRes.data.data.length > 0) {
-      return usageRes.data.data.map((u: any) => ({
-        id: u.id,
-        requestId: u.request_id,
-        model: u.model,
-        publicModelId: u.model,
-        promptTokens: u.prompt_tokens,
-        completionTokens: u.completion_tokens,
-        totalTokens: u.total_tokens,
-        credits: u.credits_consumed,
-        status: u.status,
-        streamed: u.streamed,
-        latencyMs: u.latency_ms,
-        createdAt: new Date(u.created_at),
-      }));
-    }
-  } catch (err) {
-    console.warn('[DashboardPage] Backend API usage fetch failed, trying DB:', err);
-  }
-
-  try {
     return await db
       .select({
         id: s.usageRecords.id,
@@ -182,7 +150,7 @@ async function loadRecentRequests(userId: string): Promise<any[]> {
       .orderBy(desc(s.usageRecords.createdAt))
       .limit(6);
   } catch (err) {
-    console.warn('[DashboardPage] Database offline, showing empty recent requests:', err);
+    console.warn('[DashboardPage] Recent request read failed:', err);
     return [];
   }
 }
