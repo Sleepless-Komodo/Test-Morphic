@@ -30,6 +30,120 @@ const BASE_URL = API_BASE_URL;
 
 type IdeKey = 'cursor' | 'cline' | 'windsurf' | 'claudecode' | 'aider';
 type SdkKey = 'ts' | 'python' | 'curl';
+type OsKey = 'windows' | 'macos' | 'linux';
+type WindowsShell = 'powershell' | 'cmd';
+
+function WindowsIcon({ className = 'w-3.5 h-3.5' }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+      <path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.4H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-12.949-1.801" />
+    </svg>
+  );
+}
+
+function AppleIcon({ className = 'w-3.5 h-3.5' }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+      <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.97 6.37c.61-.75 1.04-1.8 1.01-2.87-.96.04-2.15.65-2.81 1.43-.58.68-.99 1.74-.95 2.81 1.08.08 2.14-.61 2.75-1.37z" />
+    </svg>
+  );
+}
+
+function LinuxIcon({ className = 'w-3.5 h-3.5' }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12.003 2c-2.228 0-4.033 1.792-4.033 4.004 0 .548.11 1.07.31 1.55C6.012 8.448 4.5 10.536 4.5 13.003c0 2.222 1.22 4.159 3.026 5.18-.017.26-.026.525-.026.793 0 1.67.667 3.024 3.002 3.024h3.001c2.335 0 3.002-1.354 3.002-3.024 0-.268-.009-.533-.026-.793 1.806-1.021 3.026-2.958 3.026-5.18 0-2.467-1.512-4.555-3.78-5.449.2-.48.31-1.002.31-1.55C16.036 3.792 14.231 2 12.003 2zm-1.501 4.502a.75.75 0 110-1.5.75.75 0 010 1.5zm3.002 0a.75.75 0 110-1.5.75.75 0 010 1.5z" />
+    </svg>
+  );
+}
+
+function OsSelector({
+  selectedOs,
+  onSelectOs,
+  selectedWinShell,
+  onSelectWinShell,
+  isId,
+  className = '',
+}: {
+  selectedOs: OsKey;
+  onSelectOs: (os: OsKey) => void;
+  selectedWinShell: WindowsShell;
+  onSelectWinShell: (shell: WindowsShell) => void;
+  isId: boolean;
+  className?: string;
+}) {
+  return (
+    <div className={`flex flex-wrap items-center gap-2 ${className}`}>
+      <div className="inline-flex items-center gap-1 p-1 bg-neutral-100 rounded-xl border border-neutral-200/80 text-xs">
+        <button
+          type="button"
+          onClick={() => onSelectOs('windows')}
+          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${
+            selectedOs === 'windows'
+              ? 'bg-white text-neutral-950 shadow-2xs font-bold'
+              : 'text-neutral-600 hover:text-neutral-950 hover:bg-neutral-200/50'
+          }`}
+        >
+          <WindowsIcon className="w-3.5 h-3.5" />
+          <span>Windows</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onSelectOs('macos')}
+          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${
+            selectedOs === 'macos'
+              ? 'bg-white text-neutral-950 shadow-2xs font-bold'
+              : 'text-neutral-600 hover:text-neutral-950 hover:bg-neutral-200/50'
+          }`}
+        >
+          <AppleIcon className="w-3.5 h-3.5" />
+          <span>macOS</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onSelectOs('linux')}
+          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${
+            selectedOs === 'linux'
+              ? 'bg-white text-neutral-950 shadow-2xs font-bold'
+              : 'text-neutral-600 hover:text-neutral-950 hover:bg-neutral-200/50'
+          }`}
+        >
+          <LinuxIcon className="w-3.5 h-3.5" />
+          <span>Linux</span>
+        </button>
+      </div>
+
+      {selectedOs === 'windows' && (
+        <div className="inline-flex items-center gap-1 p-1 bg-neutral-100/90 rounded-xl border border-neutral-200/80 text-xs">
+          <button
+            type="button"
+            onClick={() => onSelectWinShell('powershell')}
+            className={`px-2 py-0.5 rounded-md text-[11px] font-mono transition cursor-pointer ${
+              selectedWinShell === 'powershell'
+                ? 'bg-neutral-900 text-white font-bold shadow-2xs'
+                : 'text-neutral-600 hover:text-neutral-950 hover:bg-neutral-200/40 font-medium'
+            }`}
+          >
+            PowerShell
+          </button>
+          <button
+            type="button"
+            onClick={() => onSelectWinShell('cmd')}
+            className={`px-2 py-0.5 rounded-md text-[11px] font-mono transition cursor-pointer ${
+              selectedWinShell === 'cmd'
+                ? 'bg-neutral-900 text-white font-bold shadow-2xs'
+                : 'text-neutral-600 hover:text-neutral-950 hover:bg-neutral-200/40 font-medium'
+            }`}
+          >
+            CMD
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function CopyButton({ text, label }: { text: string; label?: string }) {
   const [copied, setCopied] = useState(false);
@@ -109,9 +223,24 @@ export default function DocsView({ session }: DocsViewProps) {
 
   const [activeIde, setActiveIde] = useState<IdeKey>('cursor');
   const [activeSdk, setActiveSdk] = useState<SdkKey>('ts');
+  const [selectedOs, setSelectedOs] = useState<OsKey>('windows');
+  const [selectedWinShell, setSelectedWinShell] = useState<WindowsShell>('powershell');
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [copiedBaseUrl, setCopiedBaseUrl] = useState(false);
   const [activeSection, setActiveSection] = useState('overview');
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && navigator.userAgent) {
+      const ua = navigator.userAgent.toLowerCase();
+      if (ua.includes('win')) {
+        setSelectedOs('windows');
+      } else if (ua.includes('mac')) {
+        setSelectedOs('macos');
+      } else if (ua.includes('linux') || ua.includes('x11')) {
+        setSelectedOs('linux');
+      }
+    }
+  }, []);
 
   useEffect(() => {
     if (!mobileSidebarOpen) return;
@@ -191,6 +320,111 @@ export default function DocsView({ session }: DocsViewProps) {
     setTimeout(() => setCopiedBaseUrl(false), 2000);
   };
 
+  const getClaudeCodeSnippet = (os: OsKey, winShell: WindowsShell) => {
+    if (os === 'macos') {
+      return {
+        file: 'claude_macos.sh',
+        language: 'bash',
+        menuPath: 'macOS Terminal (zsh / bash)',
+        code: `# macOS (Terminal / zsh):
+export ANTHROPIC_BASE_URL="https://api.morphic.sh/v1"
+export ANTHROPIC_API_KEY="mp-live-xxxxxxxxxxxxxxxxxxxx"
+
+# Jalankan Claude Code CLI:
+claude "Analyze this repository architecture"`,
+      };
+    }
+    if (os === 'linux') {
+      return {
+        file: 'claude_linux.sh',
+        language: 'bash',
+        menuPath: 'Linux Terminal (bash)',
+        code: `# Linux (Bash):
+export ANTHROPIC_BASE_URL="https://api.morphic.sh/v1"
+export ANTHROPIC_API_KEY="mp-live-xxxxxxxxxxxxxxxxxxxx"
+
+# Jalankan Claude Code CLI:
+claude "Analyze this repository architecture"`,
+      };
+    }
+    if (winShell === 'cmd') {
+      return {
+        file: 'claude_cmd.cmd',
+        language: 'cmd',
+        menuPath: 'Windows Command Prompt (CMD)',
+        code: `REM Windows Command Prompt (CMD):
+set ANTHROPIC_BASE_URL=https://api.morphic.sh/v1
+set ANTHROPIC_API_KEY=mp-live-xxxxxxxxxxxxxxxxxxxx
+
+REM Jalankan Claude Code CLI:
+claude "Analyze this repository architecture"`,
+      };
+    }
+    return {
+      file: 'claude_powershell.ps1',
+      language: 'powershell',
+      menuPath: 'Windows PowerShell Terminal',
+      code: `# Windows PowerShell:
+$env:ANTHROPIC_BASE_URL="https://api.morphic.sh/v1"
+$env:ANTHROPIC_API_KEY="mp-live-xxxxxxxxxxxxxxxxxxxx"
+
+# Jalankan Claude Code CLI:
+claude "Analyze this repository architecture"`,
+    };
+  };
+
+  const getAiderSnippet = (os: OsKey, winShell: WindowsShell) => {
+    if (os === 'macos') {
+      return {
+        file: 'run-aider-mac.sh',
+        language: 'bash',
+        menuPath: 'macOS Terminal (zsh)',
+        code: `# macOS / zsh: Jalankan Aider dengan Morphic Gateway
+export OPENAI_API_BASE="https://api.morphic.sh/v1"
+export OPENAI_API_KEY="mp-live-xxxxxxxxxxxxxxxxxxxx"
+
+aider --model openai/deepseek-v4`,
+      };
+    }
+    if (os === 'linux') {
+      return {
+        file: 'run-aider-linux.sh',
+        language: 'bash',
+        menuPath: 'Linux Terminal (bash)',
+        code: `# Linux / bash: Jalankan Aider dengan Morphic Gateway
+export OPENAI_API_BASE="https://api.morphic.sh/v1"
+export OPENAI_API_KEY="mp-live-xxxxxxxxxxxxxxxxxxxx"
+
+aider --model openai/deepseek-v4`,
+      };
+    }
+    if (winShell === 'cmd') {
+      return {
+        file: 'run-aider.cmd',
+        language: 'cmd',
+        menuPath: 'Windows Command Prompt (CMD)',
+        code: `REM Windows CMD: Jalankan Aider dengan Morphic Gateway
+set OPENAI_API_BASE=https://api.morphic.sh/v1
+set OPENAI_API_KEY=mp-live-xxxxxxxxxxxxxxxxxxxx
+
+aider --model openai/deepseek-v4`,
+      };
+    }
+    return {
+      file: 'run-aider.ps1',
+      language: 'powershell',
+      menuPath: 'Windows PowerShell Terminal',
+      code: `# Windows PowerShell: Jalankan Aider dengan Morphic Gateway
+$env:OPENAI_API_BASE="https://api.morphic.sh/v1"
+$env:OPENAI_API_KEY="mp-live-xxxxxxxxxxxxxxxxxxxx"
+
+aider --model openai/deepseek-v4`,
+    };
+  };
+
+  const claudeSnippet = getClaudeCodeSnippet(selectedOs, selectedWinShell);
+  const aiderSnippet = getAiderSnippet(selectedOs, selectedWinShell);
+
   const ideConfigs: Record<
     IdeKey,
     {
@@ -200,6 +434,7 @@ export default function DocsView({ session }: DocsViewProps) {
       descEn: string;
       menuPath: string;
       file: string;
+      language?: string;
       code: string;
     }
   > = {
@@ -208,8 +443,12 @@ export default function DocsView({ session }: DocsViewProps) {
       title: 'Cursor IDE (Composer & Inline)',
       desc: 'Gunakan seluruh model AI langsung di Cursor Composer & Inline Edit melalui protokol resmi OpenAI API.',
       descEn: 'Use all AI models directly in Cursor Composer & Inline Edit via the official OpenAI API protocol.',
-      menuPath: 'Settings (Ctrl+Shift+J / Cmd+Shift+J) > Models > OpenAI API',
+      menuPath:
+        selectedOs === 'macos'
+          ? 'Settings (Cmd+Shift+J) > Models > OpenAI API'
+          : 'Settings (Ctrl+Shift+J) > Models > OpenAI API',
       file: 'cursor.settings.json',
+      language: 'json',
       code: `// Cursor Settings > Models > OpenAI API:
 Base URL: https://api.morphic.sh/v1
 API Key:  mp-live-xxxxxxxxxxxxxxxxxxxx
@@ -224,8 +463,12 @@ API Key:  mp-live-xxxxxxxxxxxxxxxxxxxx
       title: 'Cline & Roo Code (VS Code Extension)',
       desc: 'Konfigurasi ekstensi autonomous coding agent di VS Code dengan Morphic Gateway.',
       descEn: 'Configure autonomous coding agents in VS Code with Morphic Gateway.',
-      menuPath: 'Cline Extension > Settings (Gear icon) > API Provider: OpenAI Compatible',
+      menuPath:
+        selectedOs === 'macos'
+          ? 'Cline (Cmd+Shift+P) > Settings > API Provider: OpenAI Compatible'
+          : 'Cline (Ctrl+Shift+P) > Settings > API Provider: OpenAI Compatible',
       file: 'cline_settings.json',
+      language: 'json',
       code: `{
   "apiProvider": "openai",
   "openAiBaseUrl": "https://api.morphic.sh/v1",
@@ -240,6 +483,7 @@ API Key:  mp-live-xxxxxxxxxxxxxxxxxxxx
       descEn: 'Run Cascade AI features in Windsurf by connecting a custom OpenAI provider.',
       menuPath: 'Windsurf Settings > AI Providers > Custom OpenAI-Compatible Provider',
       file: 'windsurf_config.json',
+      language: 'json',
       code: `{
   "provider": "openai-compatible",
   "endpoint": "https://api.morphic.sh/v1",
@@ -252,32 +496,161 @@ API Key:  mp-live-xxxxxxxxxxxxxxxxxxxx
       title: 'Claude Code CLI (Terminal)',
       desc: 'Jalankan CLI Claude Code resmi di terminal dengan mengarahkan basis endpoint proxy ke Morphic.',
       descEn: 'Run the official Claude Code CLI in your terminal by routing base endpoints to Morphic.',
-      menuPath: 'Terminal Environment Variable Configuration',
-      file: 'terminal_session.sh',
-      code: `# Linux / macOS / Bash:
-export ANTHROPIC_BASE_URL="https://api.morphic.sh/v1"
-export ANTHROPIC_API_KEY="mp-live-xxxxxxxxxxxxxxxxxxxx"
-claude "Analyze this repository architecture"
-
-# Windows PowerShell:
-$env:ANTHROPIC_BASE_URL="https://api.morphic.sh/v1"
-$env:ANTHROPIC_API_KEY="mp-live-xxxxxxxxxxxxxxxxxxxx"
-claude "Analyze this repository architecture"`,
+      menuPath: claudeSnippet.menuPath,
+      file: claudeSnippet.file,
+      language: claudeSnippet.language,
+      code: claudeSnippet.code,
     },
     aider: {
       name: 'Aider',
       title: 'Aider (Command-line Pair Programming)',
       desc: 'Pair programming di command line dengan Aider menggunakan satu baris perintah.',
       descEn: 'Pair program in the command line with Aider using a single terminal command.',
-      menuPath: 'Terminal CLI Flags',
-      file: 'run-aider.sh',
-      code: `# Jalankan Aider dengan Morphic Gateway
-export OPENAI_API_BASE="https://api.morphic.sh/v1"
-export OPENAI_API_KEY="mp-live-xxxxxxxxxxxxxxxxxxxx"
-
-aider --model openai/deepseek-v4`,
+      menuPath: aiderSnippet.menuPath,
+      file: aiderSnippet.file,
+      language: aiderSnippet.language,
+      code: aiderSnippet.code,
     },
   };
+
+  const getQuickstartSnippet = (os: OsKey, winShell: WindowsShell) => {
+    if (os === 'macos') {
+      return {
+        filename: 'curl_quickstart.sh',
+        language: 'bash',
+        code: `curl https://api.morphic.sh/v1/chat/completions \\
+  -H "Authorization: Bearer mp-live-xxxxxxxxxxxxxxxxxxxx" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "model": "deepseek-v4",
+    "messages": [
+      { "role": "system", "content": "You are an expert developer." },
+      { "role": "user", "content": "Hello Morphic Gateway!" }
+    ],
+    "temperature": 0.2
+  }'`,
+      };
+    }
+    if (os === 'linux') {
+      return {
+        filename: 'curl_quickstart.sh',
+        language: 'bash',
+        code: `curl https://api.morphic.sh/v1/chat/completions \\
+  -H "Authorization: Bearer mp-live-xxxxxxxxxxxxxxxxxxxx" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "model": "deepseek-v4",
+    "messages": [
+      { "role": "system", "content": "You are an expert developer." },
+      { "role": "user", "content": "Hello Morphic Gateway!" }
+    ],
+    "temperature": 0.2
+  }'`,
+      };
+    }
+    if (winShell === 'cmd') {
+      return {
+        filename: 'quickstart.cmd',
+        language: 'cmd',
+        code: `curl.exe https://api.morphic.sh/v1/chat/completions ^
+  -H "Authorization: Bearer mp-live-xxxxxxxxxxxxxxxxxxxx" ^
+  -H "Content-Type: application/json" ^
+  -d "{\\"model\\":\\"deepseek-v4\\",\\"messages\\":[{\\"role\\":\\"system\\",\\"content\\":\\"You are an expert developer.\\"},{\\"role\\":\\"user\\",\\"content\\":\\"Hello Morphic Gateway!\\"}],\\"temperature\\":0.2}"`,
+      };
+    }
+    return {
+      filename: 'quickstart.ps1',
+      language: 'powershell',
+      code: `# Opsi 1: Menggunakan curl.exe bawaan Windows (PowerShell)
+curl.exe https://api.morphic.sh/v1/chat/completions \`
+  -H "Authorization: Bearer mp-live-xxxxxxxxxxxxxxxxxxxx" \`
+  -H "Content-Type: application/json" \`
+  -d '{"model":"deepseek-v4","messages":[{"role":"system","content":"You are an expert developer."},{"role":"user","content":"Hello Morphic Gateway!"}],"temperature":0.2}'
+
+# Opsi 2: Menggunakan cmdlet native PowerShell (Invoke-RestMethod)
+$headers = @{
+  "Authorization" = "Bearer mp-live-xxxxxxxxxxxxxxxxxxxx"
+  "Content-Type"  = "application/json"
+}
+$body = @{
+  model = "deepseek-v4"
+  messages = @(
+    @{ role = "system"; content = "You are an expert developer." }
+    @{ role = "user"; content = "Hello Morphic Gateway!" }
+  )
+  temperature = 0.2
+} | ConvertTo-Json -Depth 5
+
+Invoke-RestMethod -Uri "https://api.morphic.sh/v1/chat/completions" -Method Post -Headers $headers -Body $body`,
+    };
+  };
+
+  const getCurlSdkSnippet = (os: OsKey, winShell: WindowsShell) => {
+    if (os === 'macos' || os === 'linux') {
+      return {
+        filename: 'curl_example.sh',
+        language: 'bash',
+        code: `# 1. Chat Completion Standar (JSON):
+curl https://api.morphic.sh/v1/chat/completions \\
+  -H "Authorization: Bearer mp-live-xxxxxxxxxxxxxxxxxxxx" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "model": "deepseek-v4",
+    "messages": [
+      { "role": "user", "content": "Halo Morphic! Buatkan fungsi validasi email." }
+    ],
+    "temperature": 0.5,
+    "max_tokens": 512
+  }'
+
+# 2. Server-Sent Events (SSE Streaming):
+curl https://api.morphic.sh/v1/chat/completions \\
+  -N \\
+  -H "Authorization: Bearer mp-live-xxxxxxxxxxxxxxxxxxxx" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "model": "deepseek-v4",
+    "messages": [{ "role": "user", "content": "Hitung 1 sampai 5 perlahan." }],
+    "stream": true
+  }'`,
+      };
+    }
+    if (winShell === 'cmd') {
+      return {
+        filename: 'curl_example.cmd',
+        language: 'cmd',
+        code: `REM 1. Chat Completion Standar (curl.exe di Command Prompt):
+curl.exe https://api.morphic.sh/v1/chat/completions ^
+  -H "Authorization: Bearer mp-live-xxxxxxxxxxxxxxxxxxxx" ^
+  -H "Content-Type: application/json" ^
+  -d "{\\"model\\":\\"deepseek-v4\\",\\"messages\\":[{\\"role\\":\\"user\\",\\"content\\":\\"Halo Morphic! Buatkan fungsi validasi email.\\"}],\\"temperature\\":0.5,\\"max_tokens\\":512}"
+
+REM 2. Server-Sent Events (SSE Streaming via curl.exe):
+curl.exe https://api.morphic.sh/v1/chat/completions -N ^
+  -H "Authorization: Bearer mp-live-xxxxxxxxxxxxxxxxxxxx" ^
+  -H "Content-Type: application/json" ^
+  -d "{\\"model\\":\\"deepseek-v4\\",\\"messages\\":[{\\"role\\":\\"user\\",\\"content\\":\\"Hitung 1 sampai 5 perlahan.\\"}],\\"stream\\":true}"`,
+      };
+    }
+    return {
+      filename: 'curl_example.ps1',
+      language: 'powershell',
+      code: `# 1. Chat Completion Standar (curl.exe bawaan Windows PowerShell):
+curl.exe https://api.morphic.sh/v1/chat/completions \`
+  -H "Authorization: Bearer mp-live-xxxxxxxxxxxxxxxxxxxx" \`
+  -H "Content-Type: application/json" \`
+  -d '{"model":"deepseek-v4","messages":[{"role":"user","content":"Halo Morphic! Buatkan fungsi validasi email."}],"temperature":0.5,"max_tokens":512}'
+
+# 2. Server-Sent Events (SSE Streaming via curl.exe):
+curl.exe https://api.morphic.sh/v1/chat/completions -N \`
+  -H "Authorization: Bearer mp-live-xxxxxxxxxxxxxxxxxxxx" \`
+  -H "Content-Type: application/json" \`
+  -d '{"model":"deepseek-v4","messages":[{"role":"user","content":"Hitung 1 sampai 5 perlahan."}],"stream":true}'`,
+    };
+  };
+
+  const quickstartSnippet = getQuickstartSnippet(selectedOs, selectedWinShell);
+  const curlSdkSnippet = getCurlSdkSnippet(selectedOs, selectedWinShell);
 
   const tsCode = `import OpenAI from "openai";
 
@@ -750,27 +1123,44 @@ curl https://api.morphic.sh/v1/chat/completions \\
             </div>
 
             {/* Step 2 */}
-            <div id="qs-curl" className="scroll-mt-36 space-y-2 pt-2">
-              <div className="flex items-center gap-2 text-sm font-bold text-neutral-950">
-                <span className="w-5 h-5 rounded-full bg-neutral-900 text-white flex items-center justify-center text-xs font-mono">2</span>
-                <span>{isId ? 'Kirim Permintaan Pertama via cURL' : 'Execute First cURL Request'}</span>
-              </div>
-              <div className="pl-7 space-y-3">
-                <CodeBlock
-                  filename="curl_quickstart.sh"
-                  language="bash"
-                  code={`curl https://api.morphic.sh/v1/chat/completions \\
-  -H "Authorization: Bearer mp-live-xxxxxxxxxxxxxxxxxxxx" \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "model": "deepseek-v4",
-    "messages": [
-      { "role": "system", "content": "You are an expert developer." },
-      { "role": "user", "content": "Hello Morphic Gateway!" }
-    ],
-    "temperature": 0.2
-  }'`}
+            <div id="qs-curl" className="scroll-mt-36 space-y-3 pt-2">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-2 text-sm font-bold text-neutral-950">
+                  <span className="w-5 h-5 rounded-full bg-neutral-900 text-white flex items-center justify-center text-xs font-mono">2</span>
+                  <span>{isId ? 'Kirim Permintaan Pertama via Terminal' : 'Execute First Terminal Request'}</span>
+                </div>
+                <OsSelector
+                  selectedOs={selectedOs}
+                  onSelectOs={setSelectedOs}
+                  selectedWinShell={selectedWinShell}
+                  onSelectWinShell={setSelectedWinShell}
+                  isId={isId}
                 />
+              </div>
+
+              <div className="pl-0 sm:pl-7 space-y-3">
+                <CodeBlock
+                  filename={quickstartSnippet.filename}
+                  language={quickstartSnippet.language}
+                  code={quickstartSnippet.code}
+                />
+
+                {selectedOs === 'windows' && (
+                  <div className="p-2.5 rounded-lg bg-neutral-50 border border-neutral-200/80 text-[11px] text-neutral-600 space-y-1">
+                    <p className="font-semibold text-neutral-900">
+                      {isId ? 'Catatan Pengguna Windows:' : 'Windows Usage Note:'}
+                    </p>
+                    <p>
+                      {selectedWinShell === 'powershell'
+                        ? (isId
+                            ? 'Pada Windows 10/11, gunakan curl.exe (dengan .exe eksplisit) agar tidak bertabrakan dengan alias PowerShell bawaan, atau jalankan skrip Invoke-RestMethod native di atas.'
+                            : 'On Windows 10/11, run curl.exe explicitly to bypass the PowerShell alias, or run the native Invoke-RestMethod script above.')
+                        : (isId
+                            ? 'Pada Command Prompt (CMD), sambungan baris menggunakan simbol caret (^) dan tanda petik ganda JSON di-escape dengan backslash (\").'
+                            : 'In Command Prompt (CMD), multi-line breaks use caret (^) and JSON double-quotes are escaped with backslash (\").')}
+                    </p>
+                  </div>
+                )}
 
                 <div id="qs-response" className="scroll-mt-36 text-[11px] font-semibold text-neutral-500 uppercase tracking-wider pt-1">
                   {isId ? 'Contoh Respon Server (HTTP 200 OK):' : 'Expected Server Response (HTTP 200 OK):'}
@@ -893,9 +1283,20 @@ curl https://api.morphic.sh/v1/chat/completions \\
 
               <div className="p-5 space-y-3">
                 <div className="space-y-1">
-                  <h3 className="font-bold text-sm sm:text-base text-neutral-950">
-                    {ideConfigs[activeIde].title}
-                  </h3>
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                    <h3 className="font-bold text-sm sm:text-base text-neutral-950">
+                      {ideConfigs[activeIde].title}
+                    </h3>
+                    {(activeIde === 'claudecode' || activeIde === 'aider') && (
+                      <OsSelector
+                        selectedOs={selectedOs}
+                        onSelectOs={setSelectedOs}
+                        selectedWinShell={selectedWinShell}
+                        onSelectWinShell={setSelectedWinShell}
+                        isId={isId}
+                      />
+                    )}
+                  </div>
                   <p className="text-xs text-neutral-600">
                     {isId ? ideConfigs[activeIde].desc : ideConfigs[activeIde].descEn}
                   </p>
@@ -908,7 +1309,7 @@ curl https://api.morphic.sh/v1/chat/completions \\
 
                 <CodeBlock
                   filename={ideConfigs[activeIde].file}
-                  language="json"
+                  language={ideConfigs[activeIde].language || 'json'}
                   code={ideConfigs[activeIde].code}
                 />
               </div>
@@ -980,8 +1381,9 @@ curl https://api.morphic.sh/v1/chat/completions \\
 
                 {activeSdk === 'python' && (
                   <div className="space-y-2">
-                    <div className="p-2 rounded-lg bg-neutral-100 font-mono text-xs text-neutral-800">
-                      pip install openai
+                    <div className="p-2 rounded-lg bg-neutral-100 font-mono text-xs text-neutral-800 flex items-center justify-between">
+                      <span>{selectedOs === 'windows' ? 'pip install openai' : 'pip3 install openai'}</span>
+                      <span className="text-[10px] text-neutral-400 font-sans">{selectedOs === 'windows' ? 'Windows' : 'macOS / Linux'}</span>
                     </div>
                     <CodeBlock
                       filename="quickstart.py"
@@ -992,11 +1394,23 @@ curl https://api.morphic.sh/v1/chat/completions \\
                 )}
 
                 {activeSdk === 'curl' && (
-                  <div className="space-y-2">
+                  <div className="space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                      <span className="text-xs text-neutral-600 font-medium">
+                        {isId ? 'Format terminal sesuai sistem operasi Anda:' : 'Select terminal syntax for your OS:'}
+                      </span>
+                      <OsSelector
+                        selectedOs={selectedOs}
+                        onSelectOs={setSelectedOs}
+                        selectedWinShell={selectedWinShell}
+                        onSelectWinShell={setSelectedWinShell}
+                        isId={isId}
+                      />
+                    </div>
                     <CodeBlock
-                      filename="curl_example.sh"
-                      language="bash"
-                      code={curlCode}
+                      filename={curlSdkSnippet.filename}
+                      language={curlSdkSnippet.language}
+                      code={curlSdkSnippet.code}
                     />
                   </div>
                 )}

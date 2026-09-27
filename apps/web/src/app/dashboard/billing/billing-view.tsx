@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useTranslation } from '@/lib/i18n';
 import { formatCredits, cn } from '@/lib/utils';
 import { Zap, CreditCard, Clock, Wallet, QrCode, Coins, Sparkles } from 'lucide-react';
@@ -34,17 +34,13 @@ export function BillingView({
   const [balance, setBalance] = useState(initialBalance);
   const [selectedPkg, setSelectedPkg] = useState<any>(null);
   const [resumePayment, setResumePayment] = useState<any>(null);
-  const [selectedCurrency, setSelectedCurrency] = useState<'IDR' | 'USD'>(locale === 'id' ? 'IDR' : 'USD');
   const paymentsList = payments ?? [];
 
-  // Keep currency tab synced when user toggles website language
-  useEffect(() => {
-    setSelectedCurrency(locale === 'id' ? 'IDR' : 'USD');
-  }, [locale]);
+  const currentCurrency = locale === 'id' ? 'IDR' : 'USD';
 
   const displayedPackages = initialPackages.filter((p) => {
     const pkgCurr = p.currency === 'USD' ? 'USD' : 'IDR';
-    return pkgCurr === selectedCurrency;
+    return pkgCurr === currentCurrency;
   });
 
   const handleSuccess = (creditsAdded: number) => {
@@ -90,36 +86,11 @@ export function BillingView({
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Currency Selector Tab */}
-            <div className="inline-flex p-1 bg-neutral-100 rounded-xl border border-neutral-200/90 text-xs font-mono font-bold">
-              <button
-                type="button"
-                onClick={() => setSelectedCurrency('IDR')}
-                className={cn(
-                  "px-3 py-1 rounded-lg transition-all cursor-pointer",
-                  selectedCurrency === 'IDR'
-                    ? "bg-white text-neutral-950 shadow-2xs font-extrabold"
-                    : "text-neutral-500 hover:text-neutral-900"
-                )}
-              >
-                🇮🇩 IDR (Rp)
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelectedCurrency('USD')}
-                className={cn(
-                  "px-3 py-1 rounded-lg transition-all cursor-pointer",
-                  selectedCurrency === 'USD'
-                    ? "bg-white text-neutral-950 shadow-2xs font-extrabold"
-                    : "text-neutral-500 hover:text-neutral-900"
-                )}
-              >
-                🌐 USD ($)
-              </button>
-            </div>
-
-            <span className="hidden sm:inline-block text-[11px] font-mono font-bold text-neutral-700 bg-neutral-100 px-2.5 py-1 rounded-md border border-neutral-200">
-              {selectedCurrency === 'IDR' ? 'QRIS & Duitku' : 'PayPal & Cards'}
+            <span className="inline-flex items-center gap-2 text-xs font-mono font-bold text-neutral-800 bg-neutral-100/90 px-3 py-1.5 rounded-xl border border-neutral-200/90 shadow-2xs">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              <span>
+                {currentCurrency === 'IDR' ? '🇮🇩 IDR · QRIS & Duitku' : '🌐 USD · PayPal & Cards'}
+              </span>
             </span>
           </div>
         </div>
@@ -128,13 +99,13 @@ export function BillingView({
           <div className="rounded-2xl border border-dashed border-neutral-300 bg-white/60 p-8 text-center">
             <p className="text-sm font-semibold text-neutral-800">
               {locale === 'en'
-                ? `No ${selectedCurrency} packages available right now.`
-                : `Paket dalam mata uang ${selectedCurrency} sedang tidak tersedia.`}
+                ? `No ${currentCurrency} packages available right now.`
+                : `Paket dalam mata uang ${currentCurrency} sedang tidak tersedia.`}
             </p>
             <p className="mt-1.5 text-xs text-neutral-500 max-w-sm mx-auto leading-relaxed">
               {locale === 'en'
-                ? 'Try switching to the other currency tab above or check back shortly.'
-                : 'Coba pilih tab mata uang lainnya di atas atau coba lagi nanti.'}
+                ? 'Check back shortly or change language in the sidebar to view other currency plans.'
+                : 'Silakan periksa kembali nanti atau ganti bahasa di sidebar untuk melihat paket lainnya.'}
             </p>
           </div>
         )}
