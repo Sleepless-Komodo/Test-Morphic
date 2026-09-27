@@ -230,16 +230,18 @@ export default function DocsView({ session }: DocsViewProps) {
   const [activeSection, setActiveSection] = useState('overview');
 
   useEffect(() => {
-    if (typeof window !== 'undefined' && navigator.userAgent) {
-      const ua = navigator.userAgent.toLowerCase();
-      if (ua.includes('win')) {
-        setSelectedOs('windows');
-      } else if (ua.includes('mac')) {
-        setSelectedOs('macos');
-      } else if (ua.includes('linux') || ua.includes('x11')) {
-        setSelectedOs('linux');
-      }
-    }
+    const ua = typeof navigator !== 'undefined' ? navigator.userAgent.toLowerCase() : '';
+    const detected: OsKey | null = ua.includes('win')
+      ? 'windows'
+      : ua.includes('mac')
+        ? 'macos'
+        : ua.includes('linux') || ua.includes('x11')
+          ? 'linux'
+          : null;
+    // The OS tab is seeded from the user agent, which does not exist until after mount, so
+    // this one-shot sync has no render-time equivalent.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (detected) setSelectedOs(detected);
   }, []);
 
   useEffect(() => {
