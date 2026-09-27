@@ -329,11 +329,9 @@ export default function DocsView({ session }: DocsViewProps) {
         file: 'claude_macos.sh',
         language: 'bash',
         menuPath: 'macOS Terminal (zsh / bash)',
-        code: `# macOS (Terminal / zsh):
-export ANTHROPIC_BASE_URL="${BASE_URL}"
+        code: `export ANTHROPIC_BASE_URL="${BASE_URL}"
 export ANTHROPIC_API_KEY="mp-live-xxxxxxxxxxxxxxxxxxxx"
 
-# Jalankan Claude Code CLI:
 claude "Analyze this repository architecture"`,
       };
     }
@@ -342,11 +340,9 @@ claude "Analyze this repository architecture"`,
         file: 'claude_linux.sh',
         language: 'bash',
         menuPath: 'Linux Terminal (bash)',
-        code: `# Linux (Bash):
-export ANTHROPIC_BASE_URL="${BASE_URL}"
+        code: `export ANTHROPIC_BASE_URL="${BASE_URL}"
 export ANTHROPIC_API_KEY="mp-live-xxxxxxxxxxxxxxxxxxxx"
 
-# Jalankan Claude Code CLI:
 claude "Analyze this repository architecture"`,
       };
     }
@@ -355,11 +351,9 @@ claude "Analyze this repository architecture"`,
         file: 'claude_cmd.cmd',
         language: 'cmd',
         menuPath: 'Windows Command Prompt (CMD)',
-        code: `REM Windows Command Prompt (CMD):
-set ANTHROPIC_BASE_URL=${BASE_URL}
+        code: `set ANTHROPIC_BASE_URL=${BASE_URL}
 set ANTHROPIC_API_KEY=mp-live-xxxxxxxxxxxxxxxxxxxx
 
-REM Jalankan Claude Code CLI:
 claude "Analyze this repository architecture"`,
       };
     }
@@ -367,116 +361,71 @@ claude "Analyze this repository architecture"`,
       file: 'claude_powershell.ps1',
       language: 'powershell',
       menuPath: 'Windows PowerShell Terminal',
-      code: `# Windows PowerShell:
-$env:ANTHROPIC_BASE_URL="${BASE_URL}"
+      code: `$env:ANTHROPIC_BASE_URL="${BASE_URL}"
 $env:ANTHROPIC_API_KEY="mp-live-xxxxxxxxxxxxxxxxxxxx"
 
-# Jalankan Claude Code CLI:
 claude "Analyze this repository architecture"`,
     };
   };
 
-  // opencode reads a JSON config; every OS block below writes that file and exports the key
-  // in one paste, so the agent connects without opening an editor.
-  // Config path and provider schema: https://opencode.ai/docs/config
+  // opencode takes its provider from a JSON file, so the first block is that file verbatim
+  // (paste it, nothing to edit but the key) and the second is the one command that exports
+  // the key it refers to. Schema: https://opencode.ai/docs/config
   const getOpencodeSnippet = (os: OsKey, winShell: WindowsShell) => {
-    const configJson = `{
+    const config = `{
   "$schema": "https://opencode.ai/config.json",
+
   "provider": {
     "morphic": {
       "npm": "@ai-sdk/openai-compatible",
-      "name": "Morphic AI Gateway",
+      "name": "Morphic AI",
       "options": {
         "baseURL": "${BASE_URL}",
         "apiKey": "{env:MORPHIC_API_KEY}"
       },
       "models": {
-        "deepseek-v4": { "name": "DeepSeek V4" },
-        "kimi-coding": { "name": "Kimi Coding" },
-        "qwen-max": { "name": "Qwen Max" }
+        "MiniMaxAI/MiniMax-M2.7": {
+          "name": "MiniMax M2.7"
+        }
       }
     }
   },
-  "model": "morphic/deepseek-v4"
+
+  "plugin": []
 }`;
 
-    if (os === 'macos') {
+    if (os === 'windows' && winShell === 'cmd') {
       return {
-        file: 'setup-opencode-macos.sh',
-        language: 'bash',
-        menuPath: '~/.config/opencode/opencode.json (macOS Terminal / zsh)',
-        code: `# macOS: tulis config opencode lalu langsung jalan
-mkdir -p ~/.config/opencode
-cat > ~/.config/opencode/opencode.json <<'JSON'
-${configJson}
-JSON
-
-# API key dibaca dari environment, bukan disimpan di file config
-export MORPHIC_API_KEY="mp-live-xxxxxxxxxxxxxxxxxxxx"
-echo 'export MORPHIC_API_KEY="mp-live-xxxxxxxxxxxxxxxxxxxx"' >> ~/.zshrc
-
-opencode`,
+        file: 'opencode.json',
+        language: 'json',
+        menuPath: '%USERPROFILE%\\.config\\opencode\\opencode.json',
+        code: config,
+        extraFile: 'Command Prompt',
+        extraLanguage: 'cmd',
+        extraCode: 'setx MORPHIC_API_KEY "API_KEY_MORPHIC_LU"',
       };
     }
 
-    if (os === 'linux') {
+    if (os === 'windows') {
       return {
-        file: 'setup-opencode-linux.sh',
-        language: 'bash',
-        menuPath: '~/.config/opencode/opencode.json (Linux Terminal / bash)',
-        code: `# Linux: tulis config opencode lalu langsung jalan
-mkdir -p ~/.config/opencode
-cat > ~/.config/opencode/opencode.json <<'JSON'
-${configJson}
-JSON
-
-# API key dibaca dari environment, bukan disimpan di file config
-export MORPHIC_API_KEY="mp-live-xxxxxxxxxxxxxxxxxxxx"
-echo 'export MORPHIC_API_KEY="mp-live-xxxxxxxxxxxxxxxxxxxx"' >> ~/.bashrc
-
-opencode`,
-      };
-    }
-
-    if (winShell === 'cmd') {
-      const cmdEchoLines = configJson
-        .split('\n')
-        .map((line) => `  echo ${line}`)
-        .join('\n');
-      return {
-        file: 'setup-opencode.cmd',
-        language: 'cmd',
-        menuPath: '%USERPROFILE%\\.config\\opencode\\opencode.json (Command Prompt)',
-        code: `REM Windows CMD: tulis config opencode lalu langsung jalan
-mkdir "%USERPROFILE%\\.config\\opencode" 2>nul
-> "%USERPROFILE%\\.config\\opencode\\opencode.json" (
-${cmdEchoLines}
-)
-
-REM API key dibaca dari environment; setx menyimpannya permanen
-set MORPHIC_API_KEY=mp-live-xxxxxxxxxxxxxxxxxxxx
-setx MORPHIC_API_KEY mp-live-xxxxxxxxxxxxxxxxxxxx
-
-opencode`,
+        file: 'opencode.json',
+        language: 'json',
+        menuPath: '%USERPROFILE%\\.config\\opencode\\opencode.json',
+        code: config,
+        extraFile: 'PowerShell',
+        extraLanguage: 'powershell',
+        extraCode: '$env:MORPHIC_API_KEY="API_KEY_MORPHIC_LU"',
       };
     }
 
     return {
-      file: 'setup-opencode.ps1',
-      language: 'powershell',
-      menuPath: '%USERPROFILE%\\.config\\opencode\\opencode.json (PowerShell)',
-      code: `# Windows PowerShell: tulis config opencode lalu langsung jalan
-$dir = "$env:USERPROFILE\\.config\\opencode"
-New-Item -ItemType Directory -Force -Path $dir | Out-Null
-@'
-${configJson}
-'@ | Set-Content -Encoding utf8 (Join-Path $dir 'opencode.json')
-
-# API key dibaca dari environment; setx menyimpannya permanen
-$env:MORPHIC_API_KEY="mp-live-xxxxxxxxxxxxxxxxxxxx"
-setx MORPHIC_API_KEY "mp-live-xxxxxxxxxxxxxxxxxxxx" | Out-Null
-
-opencode`,
+      file: 'opencode.json',
+      language: 'json',
+      menuPath: '~/.config/opencode/opencode.json',
+      code: config,
+      extraFile: os === 'macos' ? 'Terminal (zsh)' : 'Terminal (bash)',
+      extraLanguage: 'bash',
+      extraCode: 'export MORPHIC_API_KEY="API_KEY_MORPHIC_LU"',
     };
   };
 
@@ -486,8 +435,7 @@ opencode`,
         file: 'run-aider-mac.sh',
         language: 'bash',
         menuPath: 'macOS Terminal (zsh)',
-        code: `# macOS / zsh: Jalankan Aider dengan Morphic Gateway
-export OPENAI_API_BASE="${BASE_URL}"
+        code: `export OPENAI_API_BASE="${BASE_URL}"
 export OPENAI_API_KEY="mp-live-xxxxxxxxxxxxxxxxxxxx"
 
 aider --model openai/deepseek-v4`,
@@ -498,8 +446,7 @@ aider --model openai/deepseek-v4`,
         file: 'run-aider-linux.sh',
         language: 'bash',
         menuPath: 'Linux Terminal (bash)',
-        code: `# Linux / bash: Jalankan Aider dengan Morphic Gateway
-export OPENAI_API_BASE="${BASE_URL}"
+        code: `export OPENAI_API_BASE="${BASE_URL}"
 export OPENAI_API_KEY="mp-live-xxxxxxxxxxxxxxxxxxxx"
 
 aider --model openai/deepseek-v4`,
@@ -510,8 +457,7 @@ aider --model openai/deepseek-v4`,
         file: 'run-aider.cmd',
         language: 'cmd',
         menuPath: 'Windows Command Prompt (CMD)',
-        code: `REM Windows CMD: Jalankan Aider dengan Morphic Gateway
-set OPENAI_API_BASE=${BASE_URL}
+        code: `set OPENAI_API_BASE=${BASE_URL}
 set OPENAI_API_KEY=mp-live-xxxxxxxxxxxxxxxxxxxx
 
 aider --model openai/deepseek-v4`,
@@ -521,8 +467,7 @@ aider --model openai/deepseek-v4`,
       file: 'run-aider.ps1',
       language: 'powershell',
       menuPath: 'Windows PowerShell Terminal',
-      code: `# Windows PowerShell: Jalankan Aider dengan Morphic Gateway
-$env:OPENAI_API_BASE="${BASE_URL}"
+      code: `$env:OPENAI_API_BASE="${BASE_URL}"
 $env:OPENAI_API_KEY="mp-live-xxxxxxxxxxxxxxxxxxxx"
 
 aider --model openai/deepseek-v4`,
@@ -544,6 +489,10 @@ aider --model openai/deepseek-v4`,
       file: string;
       language?: string;
       code: string;
+      // A second block for setups that need a file AND a command (opencode).
+      extraCode?: string;
+      extraFile?: string;
+      extraLanguage?: string;
     }
   > = {
     cursor: {
@@ -618,6 +567,9 @@ API Key:  mp-live-xxxxxxxxxxxxxxxxxxxx
       file: opencodeSnippet.file,
       language: opencodeSnippet.language,
       code: opencodeSnippet.code,
+      extraCode: opencodeSnippet.extraCode,
+      extraFile: opencodeSnippet.extraFile,
+      extraLanguage: opencodeSnippet.extraLanguage,
     },
     aider: {
       name: 'Aider',
@@ -1438,6 +1390,14 @@ curl ${CHAT_URL} \\
                   language={ideConfigs[activeIde].language || 'json'}
                   code={ideConfigs[activeIde].code}
                 />
+
+                {ideConfigs[activeIde].extraCode && (
+                  <CodeBlock
+                    filename={ideConfigs[activeIde].extraFile}
+                    language={ideConfigs[activeIde].extraLanguage}
+                    code={ideConfigs[activeIde].extraCode!}
+                  />
+                )}
               </div>
             </div>
           </section>
