@@ -7,7 +7,7 @@ import { API_BASE_URL } from '@/lib/utils';
 
 const BASE_URL = API_BASE_URL;
 
-type TabId = 'ide' | 'curl' | 'sdk';
+type TabId = 'ide' | 'opencode' | 'curl' | 'sdk';
 
 function CopyButton({ text, locale }: { text: string; locale: string }) {
   const [copied, setCopied] = useState(false);
@@ -45,9 +45,13 @@ export default function QuickstartHub() {
 
   const tabs: Array<{ id: TabId; label: string }> = [
     { id: 'ide', label: t.dashboard.quickstartTabIde },
+    { id: 'opencode', label: t.dashboard.quickstartTabOpencode },
     { id: 'curl', label: t.dashboard.quickstartTabCurl },
     { id: 'sdk', label: t.dashboard.quickstartTabSdk },
   ];
+
+  const opencodeRootUrl = BASE_URL.replace(/\/v1\/?$/, '');
+  const opencodeSnippet = `curl -fsSL "${opencodeRootUrl}/quickstart/opencode.sh" | bash`;
 
   const curlSnippet = `curl ${BASE_URL}/chat/completions \\
   -H "Authorization: Bearer $MORPHIC_API_KEY" \\
@@ -109,6 +113,7 @@ res = client.chat.completions.create(
       <div className="px-6 pb-6">
         <p suppressHydrationWarning className="text-xs text-neutral-500 mb-4">
           {activeTab === 'ide' && t.dashboard.quickstartIdeDesc}
+          {activeTab === 'opencode' && t.dashboard.quickstartOpencodeDesc}
           {activeTab === 'curl' && t.dashboard.quickstartCurlDesc}
           {activeTab === 'sdk' && t.dashboard.quickstartSdkDesc}
         </p>
@@ -143,6 +148,17 @@ res = client.chat.completions.create(
             <p suppressHydrationWarning className="text-[11px] text-neutral-500 mt-3">
               {t.dashboard.quickstartIdeKeyHint}
             </p>
+          </div>
+        )}
+
+        {activeTab === 'opencode' && (
+          <div className="rounded-2xl bg-neutral-950 border border-neutral-800 p-4 sm:p-5">
+            <div className="flex justify-end mb-2">
+              <CopyButton text={opencodeSnippet} locale={locale} />
+            </div>
+            <pre className="text-xs font-mono text-neutral-200 leading-relaxed overflow-x-auto">
+              {opencodeSnippet}
+            </pre>
           </div>
         )}
 

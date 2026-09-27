@@ -288,9 +288,11 @@ export const id = {
 
       quickstartHubTitle: 'Panduan Mulai Cepat',
       quickstartTabIde: 'Cursor & Cline',
+      quickstartTabOpencode: 'OpenCode CLI',
       quickstartTabCurl: 'cURL',
       quickstartTabSdk: 'OpenAI SDK',
       quickstartIdeDesc: 'Salin konfigurasi berikut ke pengaturan AI di IDE Anda.',
+      quickstartOpencodeDesc: 'Jalankan perintah ini di terminal untuk langsung menghubungkan OpenCode ke Morphic API.',
       quickstartCurlDesc: 'Uji endpoint langsung dari terminal dengan satu perintah.',
       quickstartSdkDesc: 'Inisialisasi client resmi OpenAI dengan Base URL Morphic.',
       quickstartIdeKeyHint: 'Buat kunci API baru di halaman Kunci API.',
