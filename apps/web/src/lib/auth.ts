@@ -4,8 +4,6 @@ import { db } from '@morphic/db';
 import * as schema from '@morphic/db/schema';
 import { captcha } from 'better-auth/plugins';
 
-import { apiKeyAuth } from './auth-api-key';
-
 const authSecret = process.env.BETTER_AUTH_SECRET;
 // `next build` evaluates this module to collect page data with NODE_ENV=production but
 // before runtime env is injected (Vercel injects it after the build). The build never
@@ -49,7 +47,7 @@ const trustedOrigins = [
   ),
 ];
 
-const authPlugins = [apiKeyAuth()];
+const authPlugins: any[] = [];
 if (process.env.RECAPTCHA_SECRET_KEY) {
   authPlugins.push(
     captcha({

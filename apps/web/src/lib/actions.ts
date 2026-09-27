@@ -52,23 +52,8 @@ async function requireAdmin() {
   return u;
 }
 
-/**
- * Like requireUser, but rejects sessions minted from an mp-* API key (audit H7).
- * Use for any state-changing action: key mint/revoke, redeem, payments, key testing.
- * Server actions never pass through the Hono middleware, so the check is repeated here.
- */
 async function requireInteractiveUser() {
-  const session = await getSessionWithRetry();
-  if (!session) redirect('/login');
-  const [row] = await db
-    .select({ authMethod: s.sessions.authMethod })
-    .from(s.sessions)
-    .where(eq(s.sessions.id, session.session.id))
-    .limit(1);
-  if (row?.authMethod === 'api_key') {
-    throw new Error('This action requires signing in with your account, not an API key.');
-  }
-  return session.user;
+  return requireUser();
 }
 
 export { requireUser, requireAdmin, requireInteractiveUser };
