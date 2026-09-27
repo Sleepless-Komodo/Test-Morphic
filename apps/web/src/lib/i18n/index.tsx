@@ -44,6 +44,29 @@ export function LanguageProvider({
           setLocaleState(saved);
         }
         document.cookie = `morphic_locale=${saved}; path=/; max-age=31536000; SameSite=Lax`;
+      } else {
+        // First-time visitor: use server-provided initialLocale (from Geo IP headers),
+        // with client timezone detection as fallback (useful for localhost/VPS without edge headers)
+        let resolved: Locale = initialLocale;
+        if (typeof Intl !== 'undefined') {
+          const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+          const isIndoTz =
+            tz.startsWith('Asia/Jakarta') ||
+            tz.startsWith('Asia/Pontianak') ||
+            tz.startsWith('Asia/Makassar') ||
+            tz.startsWith('Asia/Jayapura');
+          const navLang = (navigator.language || '').toLowerCase();
+          if (isIndoTz || navLang.startsWith('id')) {
+            resolved = 'id';
+          }
+        }
+
+        if (resolved !== locale) {
+          // eslint-disable-next-line react-hooks/set-state-in-effect
+          setLocaleState(resolved);
+        }
+        localStorage.setItem('morphic_locale', resolved);
+        document.cookie = `morphic_locale=${resolved}; path=/; max-age=31536000; SameSite=Lax`;
       }
     } catch {
       // LocalStorage unavailable

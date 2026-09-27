@@ -11,11 +11,21 @@ export function ModelsView({ initialModels }: { initialModels: any[] }) {
   const [search, setSearch] = useState('');
   const [selectedCap, setSelectedCap] = useState('All');
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [selectedModelId, setSelectedModelId] = useState<string>(
+    initialModels[0]?.publicModelId || 'deepseek-v4'
+  );
+  const [copiedCurl, setCopiedCurl] = useState(false);
 
   const copyId = (id: string) => {
     navigator.clipboard.writeText(id);
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const copyCurl = (text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedCurl(true);
+    setTimeout(() => setCopiedCurl(false), 2000);
   };
 
   const filtered = useMemo(() => {
@@ -32,6 +42,22 @@ export function ModelsView({ initialModels }: { initialModels: any[] }) {
       return matchSearch && matchCap;
     });
   }, [initialModels, search, selectedCap]);
+
+  const activeModel =
+    filtered.find((m: any) => m.publicModelId === selectedModelId) ||
+    filtered[0] ||
+    initialModels[0] || { publicModelId: 'deepseek-v4', displayName: 'DeepSeek V4' };
+
+  const curlCommand = `curl https://api.morphic.sh/v1/chat/completions \\
+  -H "Authorization: Bearer mp-live-xxxxxxxxxxxx" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "model": "${activeModel.publicModelId}",
+    "messages": [
+      { "role": "system", "content": "You are an expert developer." },
+      { "role": "user", "content": "Hello Morphic Gateway!" }
+    ]
+  }'`;
 
   return (
     <div className="w-full space-y-8">
@@ -88,121 +114,167 @@ export function ModelsView({ initialModels }: { initialModels: any[] }) {
         </div>
       </div>
 
-      {/* Grid of Models (High-density compact square cards) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-[repeat(auto-fill,minmax(195px,225px))] gap-3">
-        {filtered.map((m: any) => {
-          const dailyRateFormatted =
-            locale === 'en'
-              ? (m.dailyRateEn ?? (m.dailyRate ?? 'From Rp 2,500 / day')).replace('/ hari', '/ day')
-              : (m.dailyRate ?? 'Mulai Rp 2.500 / hari');
-          const descriptionText = (locale === 'en' && m.descriptionEn) ? m.descriptionEn : m.description;
+      {/* Table of Models (Optimized High-Density Layout) */}
+      <div className="rounded-2xl bg-white border border-neutral-200/90 shadow-2xs overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="border-b border-neutral-200 bg-neutral-50/80 text-[11px] font-mono uppercase text-neutral-500 tracking-wider select-none">
+                <th className="py-3.5 px-4 sm:px-5 font-semibold">{locale === 'en' ? 'Model & Provider' : 'Model & Provider'}</th>
+                <th className="py-3.5 px-4 font-semibold">{locale === 'en' ? 'Capabilities' : 'Kemampuan'}</th>
+                <th className="py-3.5 px-4 font-semibold">{locale === 'en' ? 'Status' : 'Status'}</th>
+                <th className="py-3.5 px-4 font-semibold">{locale === 'en' ? 'Context' : 'Konteks'}</th>
+                <th className="py-3.5 px-4 font-semibold">{locale === 'en' ? 'Token Pricing (1M)' : 'Tarif Token (1M)'}</th>
+                <th className="py-3.5 px-4 font-semibold">{locale === 'en' ? 'Daily Estimate' : 'Tarif Harian'}</th>
+                <th className="py-3.5 px-4 sm:px-5 text-right font-semibold">{locale === 'en' ? 'Action' : 'Aksi'}</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-neutral-100 text-xs">
+              {filtered.map((m: any) => {
+                const isSelected = activeModel.publicModelId === m.publicModelId;
+                const dailyRateFormatted =
+                  locale === 'en'
+                    ? (m.dailyRateEn ?? (m.dailyRate ?? 'From Rp 2,500 / day')).replace('/ hari', '/ day')
+                    : (m.dailyRate ?? 'Mulai Rp 2.500 / hari');
+                const descriptionText = locale === 'en' && m.descriptionEn ? m.descriptionEn : m.description;
 
-          return (
-            <div
-              key={m.publicModelId}
-              className="p-3.5 rounded-2xl bg-white border border-neutral-200/90 shadow-2xs flex flex-col justify-between hover:border-neutral-900/30 hover:shadow-xs transition-all group min-w-0 min-h-[215px]"
-            >
-              <div>
-                {/* Header with Provider Logo, Name & Circuit Breaker Status */}
-                <div className="flex items-start justify-between gap-2 mb-2">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <div className="w-8 h-8 rounded-xl bg-neutral-100/80 border border-neutral-200/80 flex items-center justify-center shrink-0">
-                      <ModelProviderLogo provider={m.publicModelId || m.providerName} className="w-4 h-4" />
-                    </div>
-                    <div className="min-w-0">
-                      <span className="text-[10px] text-neutral-500 font-mono uppercase tracking-wider font-semibold truncate block leading-none mb-1">
-                        {m.providerName ?? (locale === 'en' ? 'Official' : 'Resmi')}
+                return (
+                  <tr
+                    key={m.publicModelId}
+                    onClick={() => setSelectedModelId(m.publicModelId)}
+                    className={`transition-colors cursor-pointer group hover:bg-neutral-50/90 ${
+                      isSelected ? 'bg-neutral-50/80 ring-1 ring-inset ring-neutral-900/10' : ''
+                    }`}
+                  >
+                    {/* Model & Provider */}
+                    <td className="py-3 px-4 sm:px-5">
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-xl bg-neutral-100/90 border border-neutral-200/90 flex items-center justify-center shrink-0 shadow-2xs group-hover:border-neutral-300 transition-colors">
+                          <ModelProviderLogo provider={m.publicModelId || m.providerName} className="w-5 h-5" />
+                        </div>
+                        <div className="min-w-0 max-w-xs">
+                          <div className="flex items-center gap-2">
+                            <span className="font-heading font-bold text-sm text-neutral-950 truncate" title={m.displayName}>
+                              {m.displayName}
+                            </span>
+                            <span className="text-[10px] text-neutral-500 font-mono uppercase tracking-wider font-semibold">
+                              ({m.providerName ?? (locale === 'en' ? 'Official' : 'Resmi')})
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            <code className="text-[11px] font-mono text-neutral-600 bg-neutral-100/80 px-1.5 py-0.5 rounded border border-neutral-200/60 select-all">
+                              {m.publicModelId}
+                            </code>
+                          </div>
+                          {descriptionText && (
+                            <p className="text-[11px] text-neutral-500 truncate mt-0.5 max-w-sm" title={descriptionText}>
+                              {descriptionText}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </td>
+
+                    {/* Capabilities */}
+                    <td className="py-3 px-4 whitespace-nowrap">
+                      <div className="flex items-center gap-1 flex-wrap max-w-[200px]">
+                        {(m.capabilities ?? []).map((cap: string) => (
+                          <span
+                            key={cap}
+                            className="px-2 py-0.5 rounded-md text-[10px] font-mono font-medium bg-neutral-100/90 text-neutral-600 border border-neutral-200/70 capitalize"
+                          >
+                            {cap.replace('-', ' ')}
+                          </span>
+                        ))}
+                      </div>
+                    </td>
+
+                    {/* Status */}
+                    <td className="py-3 px-4 whitespace-nowrap">
+                      {m.circuitBreakerState?.state === 'open' ? (
+                        <span
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-mono font-bold bg-amber-50 text-amber-800 border border-amber-200/80 shadow-2xs"
+                          title={locale === 'en' ? 'Upstream degraded, automatically routed via fallback provider' : 'Upstream terganggu, otomatis dialihkan via rute cadangan'}
+                        >
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                          <span>{locale === 'en' ? 'Fallback' : 'Cadangan'}</span>
+                        </span>
+                      ) : m.circuitBreakerState?.state === 'half-open' ? (
+                        <span
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-mono font-bold bg-neutral-100 text-neutral-700 border border-neutral-200/80 shadow-2xs"
+                          title={locale === 'en' ? 'Upstream recovering, testing trial queries' : 'Upstream dalam pemulihan'}
+                        >
+                          <span className="w-1.5 h-1.5 rounded-full bg-neutral-400" />
+                          <span>{locale === 'en' ? 'Testing' : 'Pemulihan'}</span>
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-mono font-bold bg-emerald-50 text-emerald-800 border border-emerald-200/80 shadow-2xs">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                          <span>{t.dashboard.modelStatusReady}</span>
+                        </span>
+                      )}
+                    </td>
+
+                    {/* Context Window */}
+                    <td className="py-3 px-4 whitespace-nowrap">
+                      <span className="font-mono text-xs font-bold text-neutral-900 bg-neutral-100/70 px-2 py-0.5 rounded-md border border-neutral-200/60">
+                        {formatCredits(m.contextLength)} ctx
                       </span>
-                      <h3 className="font-heading font-bold text-xs sm:text-[13px] text-neutral-950 truncate leading-tight" title={m.displayName}>
-                        {m.displayName}
-                      </h3>
-                    </div>
-                  </div>
+                    </td>
 
-                  {m.circuitBreakerState?.state === 'open' ? (
-                    <span
-                      className="inline-flex items-center gap-1.5 text-[10px] font-mono font-medium text-amber-700 shrink-0 pt-0.5"
-                      title={locale === 'en' ? 'Upstream degraded, automatically routed via fallback provider' : 'Upstream terganggu, otomatis dialihkan via rute cadangan'}
-                    >
-                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
-                      <span>{locale === 'en' ? 'Fallback' : 'Cadangan'}</span>
-                    </span>
-                  ) : m.circuitBreakerState?.state === 'half-open' ? (
-                    <span
-                      className="inline-flex items-center gap-1.5 text-[10px] font-mono font-medium text-neutral-600 shrink-0 pt-0.5"
-                      title={locale === 'en' ? 'Upstream recovering, testing trial queries' : 'Upstream dalam pemulihan'}
-                    >
-                      <span className="w-1.5 h-1.5 rounded-full bg-neutral-400 shrink-0" />
-                      <span>{locale === 'en' ? 'Testing' : 'Pemulihan'}</span>
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1.5 text-[10px] font-mono font-medium text-neutral-700 shrink-0 pt-0.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
-                      <span>{t.dashboard.modelStatusReady}</span>
-                    </span>
-                  )}
-                </div>
+                    {/* Token Pricing (per 1M) */}
+                    <td className="py-3 px-4 whitespace-nowrap font-mono text-[11px]">
+                      <div className="space-y-0.5">
+                        <div className="text-neutral-600">
+                          <span className="text-neutral-400 text-[10px]">{locale === 'en' ? 'Input: ' : 'Masuk: '}</span>
+                          <span className="font-semibold text-neutral-900">{formatCredits(m.inputCreditsPer1m)}</span>
+                          <span className="text-neutral-400 text-[10px] ml-1">kredit</span>
+                        </div>
+                        <div className="text-neutral-600">
+                          <span className="text-neutral-400 text-[10px]">{locale === 'en' ? 'Output: ' : 'Keluar: '}</span>
+                          <span className="font-semibold text-neutral-900">{formatCredits(m.outputCreditsPer1m)}</span>
+                          <span className="text-neutral-400 text-[10px] ml-1">kredit</span>
+                        </div>
+                      </div>
+                    </td>
 
-                {/* Model ID Pill with 1-click copy */}
-                <div
-                  onClick={() => copyId(m.publicModelId)}
-                  title={t.dashboard.copy}
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={(e) => e.key === 'Enter' && copyId(m.publicModelId)}
-                  className="group/id my-1.5 flex items-center justify-between gap-1 px-2 py-1 rounded-lg bg-neutral-50 hover:bg-neutral-100/90 border border-neutral-200/70 cursor-pointer transition-colors"
-                >
-                  <code className="text-[10px] font-mono text-neutral-700 truncate select-all">
-                    {m.publicModelId}
-                  </code>
-                  <span className="shrink-0 text-neutral-500 group-hover/id:text-neutral-900 transition-colors">
-                    {copiedId === m.publicModelId ? (
-                      <Check className="h-3 w-3 text-emerald-600" />
-                    ) : (
-                      <Copy className="h-3 w-3" />
-                    )}
-                  </span>
-                </div>
+                    {/* Daily Rate */}
+                    <td className="py-3 px-4 whitespace-nowrap">
+                      <span className="font-heading font-extrabold text-xs text-neutral-950 font-mono">
+                        {dailyRateFormatted}
+                      </span>
+                    </td>
 
-                {/* Description (Single line to keep card height clean and square) */}
-                <p className="text-[10px] text-neutral-500 leading-snug line-clamp-1 mb-2" title={descriptionText}>
-                  {descriptionText}
-                </p>
-
-                {/* Capabilities (Top 2 tags) */}
-                <div className="flex gap-1 flex-wrap mb-2">
-                  {(m.capabilities ?? []).slice(0, 2).map((cap: string) => (
-                    <span
-                      key={cap}
-                      className="px-1.5 py-0.5 rounded text-[9px] font-mono font-medium bg-neutral-100/80 text-neutral-600 border border-neutral-200/60 capitalize"
-                    >
-                      {cap.replace('-', ' ')}
-                    </span>
-                  ))}
-                  {(m.capabilities?.length ?? 0) > 2 && (
-                    <span className="px-1 py-0.5 rounded text-[9px] font-mono text-neutral-500">
-                      +{(m.capabilities?.length ?? 0) - 2}
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              {/* Pricing & Context Specs Footer */}
-              <div className="pt-2 border-t border-neutral-100 mt-auto space-y-0.5">
-                <div className="flex items-baseline justify-between gap-1 text-[10.5px]">
-                  <span className="text-neutral-500 truncate text-[10px]">{t.dashboard.dailyRateLabel}</span>
-                  <span className="font-bold font-mono text-neutral-950 text-[11px] shrink-0">{dailyRateFormatted}</span>
-                </div>
-                <div className="flex items-center justify-between text-[9.5px] text-neutral-500 font-mono">
-                  <span>{formatCredits(m.contextLength)} ctx</span>
-                  <span className="truncate">
-                    {locale === 'en' ? 'in' : 'msk'} {formatCredits(m.inputCreditsPer1m)} / {locale === 'en' ? 'out' : 'klr'} {formatCredits(m.outputCreditsPer1m)}
-                  </span>
-                </div>
-              </div>
-            </div>
-          );
-        })}
+                    {/* Action */}
+                    <td className="py-3 px-4 sm:px-5 text-right whitespace-nowrap">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          copyId(m.publicModelId);
+                        }}
+                        className="px-2.5 py-1.5 rounded-lg border border-neutral-200 bg-white hover:bg-neutral-100 text-neutral-700 text-xs font-semibold transition cursor-pointer shadow-2xs inline-flex items-center gap-1.5 group-hover:border-neutral-300"
+                        title={t.dashboard.copy}
+                      >
+                        {copiedId === m.publicModelId ? (
+                          <>
+                            <Check className="h-3 w-3 text-emerald-600" />
+                            <span className="text-emerald-700 font-bold">{locale === 'en' ? 'Copied' : 'Tersalin'}</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="h-3 w-3 text-neutral-500" />
+                            <span>{locale === 'en' ? 'Copy ID' : 'Salin ID'}</span>
+                          </>
+                        )}
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {filtered.length === 0 && (
@@ -218,16 +290,38 @@ export function ModelsView({ initialModels }: { initialModels: any[] }) {
         </div>
       )}
 
-      {/* Terminal cURL Guide */}
-      <div className="p-6 rounded-3xl bg-neutral-950 text-white border border-neutral-800 shadow-md space-y-2">
-        <div className="text-xs font-bold text-neutral-200 flex items-center gap-1.5">
-          <Terminal className="h-4 w-4 text-neutral-500" />
-          <span>{t.dashboard.curlSampleTitle}</span>
+      {/* Terminal cURL Guide (Dynamic for active/selected model) */}
+      <div className="p-6 rounded-3xl bg-neutral-950 text-white border border-neutral-800 shadow-md space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-xs font-bold text-neutral-200 flex items-center gap-2">
+            <Terminal className="h-4 w-4 text-neutral-400" />
+            <span>{t.dashboard.curlSampleTitle}</span>
+            <span className="text-[11px] font-mono text-neutral-400 font-normal hidden sm:inline">
+              ({locale === 'en' ? 'Target: ' : 'Model terpilih: '}
+              <strong className="text-white">{activeModel.displayName || activeModel.publicModelId}</strong>)
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => copyCurl(curlCommand)}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-neutral-700/80 bg-neutral-800 hover:bg-neutral-700 text-xs text-neutral-200 font-semibold transition cursor-pointer shadow-2xs"
+          >
+            {copiedCurl ? (
+              <>
+                <Check className="h-3 w-3 text-emerald-400" />
+                <span className="text-emerald-400">{locale === 'en' ? 'Copied' : 'Tersalin'}</span>
+              </>
+            ) : (
+              <>
+                <Copy className="h-3 w-3 text-neutral-400" />
+                <span>{locale === 'en' ? 'Copy cURL' : 'Salin cURL'}</span>
+              </>
+            )}
+          </button>
         </div>
-        <pre className="p-4 rounded-2xl bg-neutral-900 border border-neutral-800 text-neutral-200 text-xs overflow-x-auto font-mono leading-relaxed">{`curl https://api.morphic.sh/v1/chat/completions \\
-  -H "Authorization: Bearer mp-live-xxxxxxxxxxxx" \\
-  -H "Content-Type: application/json" \\
-  -d '{"model": "deepseek-v4", "messages": [{"role": "user", "content": "Hello Morphic"}]}'`}</pre>
+        <pre className="p-4 rounded-2xl bg-neutral-900/90 border border-neutral-800/90 text-neutral-200 text-xs overflow-x-auto font-mono leading-relaxed select-all">
+          {curlCommand}
+        </pre>
       </div>
     </div>
   );
