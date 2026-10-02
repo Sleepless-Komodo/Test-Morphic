@@ -28,16 +28,36 @@ export function ModelsView({ initialModels }: { initialModels: any[] }) {
     setTimeout(() => setCopiedCurl(false), 2000);
   };
 
+  // Filter tabs come from the capability tags the catalog actually has, so no tab can be empty by design.
+  const capTabs = useMemo(() => {
+    const labels: Record<string, { en: string; id: string }> = {
+      coding: { en: 'Code', id: 'Coding' },
+      reasoning: { en: 'Reasoning', id: 'Penalaran' },
+      general: { en: 'General', id: 'Umum' },
+      'long-context': { en: 'Long context', id: 'Konteks panjang' },
+      chat: { en: 'Chat', id: 'Percakapan' },
+      multimodal: { en: 'Multimodal', id: 'Multimodal' },
+    };
+    const caps = new Set<string>();
+    initialModels.forEach((m) => (m.capabilities ?? []).forEach((c: string) => caps.add(c.toLowerCase())));
+    return [
+      { id: 'All', label: t.dashboard.filterAllCap },
+      ...[...caps].sort().map((c) => ({ id: c, label: labels[c]?.[locale === 'en' ? 'en' : 'id'] ?? c })),
+    ];
+  }, [initialModels, locale, t.dashboard.filterAllCap]);
+
   const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
     return initialModels.filter((m) => {
-      const matchSearch =
-        m.displayName?.toLowerCase().includes(search.toLowerCase()) ||
-        m.publicModelId?.toLowerCase().includes(search.toLowerCase()) ||
-        m.providerName?.toLowerCase().includes(search.toLowerCase());
+      const haystack = [m.displayName, m.publicModelId, m.providerName, m.description, ...(m.capabilities ?? [])]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      const matchSearch = !q || haystack.includes(q);
 
       const matchCap =
         selectedCap === 'All' ||
-        (m.capabilities && m.capabilities.some((c: string) => c.toLowerCase() === selectedCap.toLowerCase()));
+        (m.capabilities && m.capabilities.some((c: string) => c.toLowerCase() === selectedCap));
 
       return matchSearch && matchCap;
     });
@@ -89,15 +109,11 @@ export function ModelsView({ initialModels }: { initialModels: any[] }) {
       {/* Filter Tabs */}
       <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-2xl bg-white border border-neutral-200/90 shadow-2xs">
         <div className="flex items-center gap-1.5 overflow-x-auto text-xs py-0.5">
-          {[
-            { id: 'All', label: t.dashboard.filterAllCap },
-            { id: 'coding', label: locale === 'en' ? 'Code' : 'Coding' },
-            { id: 'reasoning', label: locale === 'en' ? 'Reasoning' : 'Penalaran' },
-            { id: 'chat', label: locale === 'en' ? 'Chat' : 'Percakapan' },
-            { id: 'multimodal', label: 'Multimodal' },
-          ].map((cap) => (
+          {capTabs.map((cap) => (
             <button
               key={cap.id}
+              type="button"
+              aria-pressed={selectedCap === cap.id}
               onClick={() => setSelectedCap(cap.id)}
               className={`px-3 py-1.5 rounded-xl font-semibold transition-all active:scale-95 cursor-pointer ${
                 selectedCap === cap.id
@@ -277,7 +293,25 @@ export function ModelsView({ initialModels }: { initialModels: any[] }) {
         </div>
       </div>
 
-      {filtered.length === 0 && (
+      {filtered.length === 0 && initialModels.length > 0 && (
+        <div className="rounded-2xl border border-dashed border-neutral-300 bg-white/60 p-10 text-center">
+          <p className="text-sm font-semibold text-neutral-800">
+            {locale === 'en' ? `No models match "${search.trim() || selectedCap}".` : `Tidak ada model yang cocok dengan "${search.trim() || selectedCap}".`}
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              setSearch('');
+              setSelectedCap('All');
+            }}
+            className="mt-3 rounded-lg border border-neutral-300 px-3 py-1.5 text-xs font-semibold text-neutral-800 hover:border-neutral-950 cursor-pointer"
+          >
+            {locale === 'en' ? 'Clear search & filter' : 'Hapus pencarian & filter'}
+          </button>
+        </div>
+      )}
+
+      {initialModels.length === 0 && (
         <div className="rounded-2xl border border-dashed border-neutral-300 bg-white/60 p-10 text-center">
           <p className="text-sm font-semibold text-neutral-800">
             {locale === 'en' ? 'No models available right now.' : 'Belum ada model yang tersedia saat ini.'}

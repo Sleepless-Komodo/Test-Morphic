@@ -3,7 +3,7 @@
 import { useRef, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useTranslation } from '@/lib/i18n';
-import { revokeApiKey } from '@/lib/actions';
+import { deleteApiKey } from '@/lib/actions';
 import { timeAgo } from '@/lib/utils';
 import {
   ArrowUpRight,
@@ -13,12 +13,10 @@ import {
   ShieldAlert,
   ShieldCheck,
   Trash2,
-  Activity,
   Zap,
   Eye,
   EyeOff,
 } from 'lucide-react';
-import { ApiKeyPingModal } from '@/components/ApiKeyPingModal';
 
 const maskedKey = (prefix: string) => `${(prefix || 'mp-live-').slice(0, 10)}••••••••••••••••`;
 
@@ -35,10 +33,9 @@ interface KeyItem {
 
 interface KeysViewProps {
   initialKeys: KeyItem[];
-  availableModels?: Array<{ id: string; name: string }>;
 }
 
-export function KeysView({ initialKeys, availableModels }: KeysViewProps) {
+export function KeysView({ initialKeys }: KeysViewProps) {
   const { t, locale } = useTranslation();
   const isId = locale === 'id';
   const [keys, setKeys] = useState<KeyItem[]>(initialKeys);
@@ -49,16 +46,17 @@ export function KeysView({ initialKeys, availableModels }: KeysViewProps) {
   const [isCreating, setIsCreating] = useState(false);
   const nameInputRef = useRef<HTMLInputElement>(null);
   const [copiedKey, setCopiedKey] = useState(false);
-  const [confirmRevokeId, setConfirmRevokeId] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [revealedKeys, setRevealedKeys] = useState<Record<string, boolean>>({});
   const [copiedKeyId, setCopiedKeyId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
-  // Test API Key / Quick Ping modal state
-  const [isPingModalOpen, setIsPingModalOpen] = useState(false);
-  const [testKey, setTestKey] = useState('');
 
   const getFullKey = (k: KeyItem): string | null => k.rawKey ?? null;
+  const unavailableHint = isId
+    ? 'Key lama: nilai lengkapnya tidak pernah disimpan. Hapus lalu buat key baru.'
+    : 'Old key: its full value was never stored. Delete it and create a new one.';
 
   const toggleReveal = (id: string) => {
     setRevealedKeys((prev) => ({
@@ -69,16 +67,7 @@ export function KeysView({ initialKeys, availableModels }: KeysViewProps) {
 
   const handleCopyKey = (k: KeyItem) => {
     const fullKey = getFullKey(k);
-    // Copying the prefix when the secret is unavailable handed out a truncated key that
-    // authenticates nowhere, and the copy tick made it look complete. Say so instead.
-    if (!fullKey) {
-      setCreateError(
-        isId
-          ? 'Key ini tidak bisa ditampilkan lagi. Cabut lalu buat key baru untuk dapat nilai lengkapnya.'
-          : 'This key can no longer be shown. Revoke it and create a new one to get the full value.',
-      );
-      return;
-    }
+    if (!fullKey) return;
     navigator.clipboard.writeText(fullKey);
     setCopiedKeyId(k.id);
     setTimeout(() => setCopiedKeyId(null), 2000);
@@ -121,7 +110,6 @@ export function KeysView({ initialKeys, availableModels }: KeysViewProps) {
       }
 
       setCreatedRawKey(body.key);
-      setTestKey(body.key);
       setKeys((prev) => [
         {
           id: body.id,
@@ -148,12 +136,16 @@ export function KeysView({ initialKeys, availableModels }: KeysViewProps) {
     }
   };
 
-  const handleRevoke = (id: string) => {
+  // Permanent delete: the row is gone, so the gateway rejects the key on its very next request.
+  const handleDelete = (id: string) => {
+    setDeleteError(null);
     startTransition(async () => {
-      const fd = new FormData();
-      fd.set('id', id);
-      await revokeApiKey(fd);
-      setKeys((prev) => prev.filter((k) => k.id !== id));
+      const res = await deleteApiKey(id);
+      if (res.ok) {
+        setKeys((prev) => prev.filter((k) => k.id !== id));
+      } else {
+        setDeleteError(isId ? 'Gagal menghapus key. Coba lagi.' : 'Could not delete the key. Try again.');
+      }
     });
   };
 
@@ -165,7 +157,7 @@ export function KeysView({ initialKeys, availableModels }: KeysViewProps) {
 
   return (
     <div className="w-full space-y-8">
-      {/* Header with Quick Ping Button */}
+      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-neutral-200/70 pb-4">
         <div>
           <h1 suppressHydrationWarning className="text-2xl md:text-3xl font-heading font-extrabold text-neutral-950 tracking-tight">
@@ -175,18 +167,6 @@ export function KeysView({ initialKeys, availableModels }: KeysViewProps) {
             {t.dashboard.keysPageSubtitle}
           </p>
         </div>
-
-        <button
-          type="button"
-          onClick={() => {
-            setTestKey(createdRawKey || '');
-            setIsPingModalOpen(true);
-          }}
-          className="group inline-flex items-center gap-2 px-3.5 py-2 rounded-xl border border-neutral-300 hover:border-neutral-950 bg-white hover:bg-neutral-950 text-neutral-800 hover:text-white text-xs font-semibold transition-all shadow-2xs shrink-0 self-start sm:self-auto cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
-        >
-          <Activity className="h-3.5 w-3.5 text-neutral-500 group-hover:text-white transition-colors" />
-          <span>{isId ? 'Uji Koneksi Key' : 'Test API Key'}</span>
-        </button>
       </div>
 
       {/* Create Key Card */}
@@ -230,7 +210,7 @@ export function KeysView({ initialKeys, availableModels }: KeysViewProps) {
           </p>
         )}
 
-        {/* Revealed Key Banner with Instant Test Button */}
+        {/* Revealed Key Banner */}
         {createdRawKey && (
           <div className="p-4 rounded-2xl bg-neutral-900 text-white border border-neutral-800 shadow-md space-y-3 animate-in fade-in slide-in-from-top-3 duration-250 ease-out">
             <div className="flex items-center gap-2 text-xs font-mono text-emerald-400 font-bold">
@@ -242,17 +222,6 @@ export function KeysView({ initialKeys, availableModels }: KeysViewProps) {
                 {createdRawKey}
               </code>
               <div className="flex items-center gap-2 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setTestKey(createdRawKey);
-                    setIsPingModalOpen(true);
-                  }}
-                  className="px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-200 hover:text-white border border-neutral-700 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
-                >
-                  <Activity className="h-3.5 w-3.5 text-neutral-500" />
-                  <span>{isId ? 'Uji Kunci' : 'Test Key'}</span>
-                </button>
                 <button
                   onClick={() => copyToClipboard(createdRawKey)}
                   className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
@@ -278,6 +247,10 @@ export function KeysView({ initialKeys, availableModels }: KeysViewProps) {
           </div>
         )}
       </div>
+
+      {deleteError && (
+        <p role="alert" className="text-xs text-red-700">{deleteError}</p>
+      )}
 
       {/* Keys Table Card */}
       <div className="rounded-3xl bg-white border border-neutral-200/90 shadow-xs overflow-hidden">
@@ -307,17 +280,14 @@ export function KeysView({ initialKeys, availableModels }: KeysViewProps) {
               <tbody className="divide-y divide-neutral-100">
                 {keys.map((k) => {
                   const fullKey = getFullKey(k);
-                  const secretLabel = isId ? 'tidak bisa ditampilkan lagi' : 'no longer retrievable';
-                  const unavailableTitle = isId
-                    ? 'Nilai lengkap key ini tidak tersimpan. Cabut lalu buat key baru.'
-                    : 'The full value of this key is not stored. Revoke it and create a new one.';
                   return (
                   <tr key={k.id} className="hover:bg-neutral-50/50 transition-colors">
                     <td className="px-6 py-4 font-bold text-neutral-900">{k.name}</td>
                     <td className="px-6 py-4 font-mono text-neutral-600">
-                      <div className="inline-flex items-center gap-1.5">
+                      <div className="flex items-center gap-1.5 whitespace-nowrap">
                         <span
-                          className={`px-2.5 py-1 rounded-lg border text-xs font-mono select-all transition-all ${
+                          title={revealedKeys[k.id] && fullKey ? fullKey : undefined}
+                          className={`block max-w-[16rem] truncate px-2.5 py-1 rounded-lg border text-xs font-mono select-all transition-colors ${
                             revealedKeys[k.id] && fullKey
                               ? 'bg-neutral-900 text-emerald-400 border-neutral-800 font-semibold'
                               : 'bg-neutral-100 text-neutral-600 border-neutral-200'
@@ -326,62 +296,40 @@ export function KeysView({ initialKeys, availableModels }: KeysViewProps) {
                           {revealedKeys[k.id] && fullKey ? fullKey : maskedKey(k.keyPrefix)}
                         </span>
 
-                        {!getFullKey(k) && (
-                          <span
-                            title={
-                              isId
-                                ? 'Key lama dibuat sebelum enkripsi key aktif (hanya hash satu arah tersimpan). Buat key baru untuk melihat & menyalin key lengkap.'
-                                : 'Legacy key created before encrypted storage was enabled. Create a new key to reveal & copy full key.'
-                            }
-                            className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-50 border border-amber-200 text-amber-700 font-semibold cursor-help shrink-0"
-                          >
-                            Legacy
-                          </span>
-                        )}
-
-                        {/* Toggle Visibility (Eye) */}
+                        {/* Old keys only ever stored a one-way hash, so there is nothing to show; the
+                            buttons stay visible but disabled with the reason. */}
                         <button
                           type="button"
                           onClick={() => toggleReveal(k.id)}
-                          title={
-                            !getFullKey(k)
-                              ? (isId ? 'Key lama: hanya prefix yang tersedia' : 'Legacy key: only prefix available')
-                              : (revealedKeys[k.id] ? t.dashboard.keyHide : t.dashboard.keyShow)
-                          }
+                          disabled={!fullKey}
+                          title={fullKey ? (revealedKeys[k.id] ? t.dashboard.keyHide : t.dashboard.keyShow) : unavailableHint}
                           aria-label={revealedKeys[k.id] ? t.dashboard.keyHide : t.dashboard.keyShow}
-                          className="p-1.5 rounded-lg border border-neutral-200 hover:border-neutral-400 hover:bg-neutral-100 text-neutral-600 hover:text-neutral-900 transition-colors cursor-pointer shrink-0"
+                          className="p-1.5 rounded-lg border border-neutral-200 text-neutral-600 transition-colors shrink-0 enabled:hover:border-neutral-400 enabled:hover:bg-neutral-100 enabled:hover:text-neutral-900 enabled:cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                         >
-                          {revealedKeys[k.id] && fullKey ? (
-                            <EyeOff className="h-3.5 w-3.5 text-neutral-700" />
-                          ) : (
-                            <Eye className="h-3.5 w-3.5 text-neutral-600" />
-                          )}
+                          {revealedKeys[k.id] && fullKey ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
                         </button>
-
-                        {/* Copy FULL API Key */}
                         <button
                           type="button"
                           onClick={() => handleCopyKey(k)}
-                          title={
-                            getFullKey(k)
-                              ? t.dashboard.keyCopyFull
-                              : isId
-                                ? 'Salin prefix (Key lama hanya tersimpan hash. Buat key baru untuk full key)'
-                                : 'Copy prefix (Legacy key: only hash stored. Create new key for full key)'
-                          }
+                          disabled={!fullKey}
+                          title={fullKey ? t.dashboard.keyCopyFull : unavailableHint}
                           aria-label={t.dashboard.keyCopyFull}
-                          className="p-1.5 rounded-lg border border-neutral-200 hover:border-neutral-400 hover:bg-neutral-100 text-neutral-600 hover:text-neutral-900 transition-colors cursor-pointer shrink-0"
+                          className="p-1.5 rounded-lg border border-neutral-200 text-neutral-600 transition-colors shrink-0 enabled:hover:border-neutral-400 enabled:hover:bg-neutral-100 enabled:hover:text-neutral-900 enabled:cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                         >
-                          {copiedKeyId === k.id ? (
-                            <Check className="h-3.5 w-3.5 text-emerald-600" />
-                          ) : (
-                            <Copy className="h-3.5 w-3.5 text-neutral-600" />
-                          )}
+                          {copiedKeyId === k.id ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
                         </button>
                       </div>
+                      {!fullKey && (
+                        <p className="mt-1 font-sans text-[11px] text-neutral-500">{unavailableHint}</p>
+                      )}
                     </td>
                     <td className="px-6 py-4">
-                      {k.status === 'active' ? (
+                      {k.status === 'active' && k.expiresAt && new Date(k.expiresAt).getTime() < Date.now() ? (
+                        <span className="inline-flex items-center gap-1.5 text-xs font-mono font-medium text-red-600">
+                          <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />
+                          <span suppressHydrationWarning>{t.dashboard.keyStatusExpired}</span>
+                        </span>
+                      ) : k.status === 'active' ? (
                         <span className="inline-flex items-center gap-1.5 text-xs font-mono font-medium text-neutral-700">
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
                           <span suppressHydrationWarning>{t.dashboard.keyStatusActive}</span>
@@ -416,7 +364,7 @@ export function KeysView({ initialKeys, availableModels }: KeysViewProps) {
                       {new Date(k.createdAt).toLocaleDateString(locale === 'en' ? 'en-US' : 'id-ID')}
                     </td>
                     <td className="px-6 py-4 text-right">
-                      {confirmRevokeId === k.id ? (
+                      {confirmDeleteId === k.id ? (
                         <div className="inline-flex items-center gap-1.5 justify-end">
                           <span className="text-[11px] text-red-600 font-bold">
                             {t.dashboard.revokeConfirm}
@@ -424,8 +372,8 @@ export function KeysView({ initialKeys, availableModels }: KeysViewProps) {
                           <button
                             type="button"
                             onClick={() => {
-                              handleRevoke(k.id);
-                              setConfirmRevokeId(null);
+                              handleDelete(k.id);
+                              setConfirmDeleteId(null);
                             }}
                             disabled={isPending}
                             className="px-2 py-0.5 rounded-md bg-red-600 hover:bg-red-700 text-white text-[10px] font-bold transition-all active:scale-95 shadow-2xs cursor-pointer"
@@ -434,7 +382,7 @@ export function KeysView({ initialKeys, availableModels }: KeysViewProps) {
                           </button>
                           <button
                             type="button"
-                            onClick={() => setConfirmRevokeId(null)}
+                            onClick={() => setConfirmDeleteId(null)}
                             disabled={isPending}
                             className="px-2 py-0.5 rounded-md bg-neutral-100 hover:bg-neutral-200 text-neutral-700 text-[10px] font-semibold transition-all active:scale-95 cursor-pointer"
                           >
@@ -444,7 +392,7 @@ export function KeysView({ initialKeys, availableModels }: KeysViewProps) {
                       ) : (
                         <button
                           type="button"
-                          onClick={() => setConfirmRevokeId(k.id)}
+                          onClick={() => setConfirmDeleteId(k.id)}
                           className="px-2.5 py-1 rounded-lg border border-neutral-200 hover:border-red-300 hover:bg-red-50 text-neutral-600 hover:text-red-700 text-[11px] font-semibold transition-colors cursor-pointer inline-flex items-center gap-1"
                         >
                           <Trash2 className="h-3 w-3" />
@@ -485,14 +433,6 @@ export function KeysView({ initialKeys, availableModels }: KeysViewProps) {
           <ArrowUpRight className="h-3.5 w-3.5 text-neutral-500" />
         </Link>
       </div>
-
-      {/* Test API Key Modal */}
-      <ApiKeyPingModal
-        isOpen={isPingModalOpen}
-        onClose={() => setIsPingModalOpen(false)}
-        initialApiKey={testKey}
-        availableModels={availableModels}
-      />
     </div>
   );
 }

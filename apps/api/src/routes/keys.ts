@@ -33,19 +33,17 @@ keys.post('/', async (c) => {
     );
   }
 
-  let expiresAt: Date | null = null;
-  if (body.expiresIn && body.expiresIn !== 'none') {
-    if (body.expiresIn === '30d') {
-      expiresAt = new Date(Date.now() + 30 * 86_400_000);
-    } else if (body.expiresIn === '90d') {
-      expiresAt = new Date(Date.now() + 90 * 86_400_000);
-    } else {
-      const parsed = new Date(body.expiresIn);
-      if (!isNaN(parsed.getTime())) {
-        expiresAt = parsed;
-      }
-    }
+  // Only the presets the dashboard offers; a free-form date could set a past or decades-long expiry.
+  const EXPIRY_DAYS: Record<string, number | null> = { none: null, '30d': 30, '90d': 90 };
+  const expiresIn = body.expiresIn ?? 'none';
+  if (typeof expiresIn !== 'string' || !Object.hasOwn(EXPIRY_DAYS, expiresIn)) {
+    return c.json(
+      { error: { message: 'expiresIn must be one of: none, 30d, 90d', type: 'invalid_request_error', code: 'invalid_expiry' } },
+      400,
+    );
   }
+  const days = EXPIRY_DAYS[expiresIn];
+  const expiresAt = days === null ? null : new Date(Date.now() + days * 86_400_000);
 
   const rawKey = `mp-${randomBytes(32).toString('hex')}`;
   const keyPrefix = rawKey.slice(0, 10);
@@ -137,17 +135,11 @@ keys.delete('/:id', async (c) => {
     );
   }
 
-  const revokedAt = new Date();
-  await db
-    .update(s.apiKeys)
-    .set({ status: 'revoked', revokedAt })
-    .where(eq(s.apiKeys.id, keyId));
+  // Hard delete: auth looks keys up by hash, so the key stops working on its next request.
+  // Usage and request logs keep their rows (api_key_id is set null by the FK).
+  await db.delete(s.apiKeys).where(and(eq(s.apiKeys.id, keyId), eq(s.apiKeys.userId, userId)));
 
-  return c.json({
-    id: keyId,
-    status: 'revoked',
-    revoked_at: revokedAt.toISOString(),
-  });
+  return c.json({ id: keyId, deleted: true });
 });
 
 export { keys };

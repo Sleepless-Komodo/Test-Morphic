@@ -5,7 +5,7 @@ import { sweepExpiredReservations } from '@morphic/db/billing';
 import { lt } from 'drizzle-orm';
 
 import { checkProviderHealth } from './lib/alert';
-import { reconcilePaypalPayments } from './lib/paypal-reconcile';
+import { reconcilePaypalPayments, sweepStaleDuitkuPayments } from './lib/paypal-reconcile';
 import { assertDuitkuConfig } from './lib/duitku';
 
 // Validate Duitku environment config at startup
@@ -44,6 +44,14 @@ const alertInterval = setInterval(() => {
   checkProviderHealth().catch((e: unknown) => console.error('[alert] check error:', e));
 }, ALERT_CHECK_INTERVAL_MS);
 alertInterval.unref();
+
+// Duitku QR lifetime is 5 minutes: cancel (or settle, if paid) anything still pending past it, every minute
+const duitkuSweepInterval = setInterval(() => {
+  sweepStaleDuitkuPayments()
+    .then((n: number) => n > 0 && console.log(`[duitku] settled/cancelled ${n} stale payments`))
+    .catch((e: unknown) => console.error('[duitku] sweep error:', e));
+}, 60_000);
+duitkuSweepInterval.unref();
 
 // PayPal reconciliation: scan pending payments >30min, poll getOrder(), grant if COMPLETED
 const PAYPAL_RECONCILE_MS = Number(process.env.PAYPAL_RECONCILE_INTERVAL_MS ?? 15 * 60_000);

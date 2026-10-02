@@ -1,216 +1,280 @@
 'use client';
 
 import React from 'react';
-import Image from 'next/image';
 import { motion } from 'framer-motion';
 import { useTranslation } from '@/lib/i18n';
 import { useReducedMotionSafe } from '@/lib/use-reduced-motion-safe';
-import { API_BASE_URL } from '@/lib/utils';
-import { Lock } from 'lucide-react';
-import {
-  OpenAILogo,
-  ClaudeLogo,
-  DeepSeekLogo,
-  QwenLogo,
-  KimiLogo,
-  ZhipuLogo,
-  YiLogo,
-} from '@/components/ProviderLogos';
 
 const EASE = [0.16, 1, 0.3, 1] as const;
 
-/**
- * Visual 1: Raised Provider Keycaps Matrix (Row 1, Col 1)
- */
-function ProviderKeycapsVisual() {
-  const keys = [
-    { name: 'Claude', Logo: ClaudeLogo },
-    { name: 'OpenAI', Logo: OpenAILogo },
-    { name: 'DeepSeek', Logo: DeepSeekLogo },
-    { name: 'Qwen', Logo: QwenLogo },
-    { name: 'Kimi', Logo: KimiLogo },
-    { name: 'Zhipu', Logo: ZhipuLogo },
+// Palette from DESIGN.md: zinc neutrals + emerald only where something is live.
+const INK = '#09090b';
+const LINE = '#e4e4e7';
+const LINE_STRONG = '#d4d4d8';
+const MUTED = '#a1a1aa';
+const LIVE = '#10b981';
+
+function Visual({ viewBox, className, children }: { viewBox: string; className: string; children: React.ReactNode }) {
+  return (
+    <div className={`relative w-full flex items-center justify-center select-none px-4 ${className}`} aria-hidden="true">
+      <svg viewBox={viewBox} className="w-full h-full" fill="none">
+        {children}
+      </svg>
+    </div>
+  );
+}
+
+/** Logo inside a hairline circle. Brand-colored marks are desaturated to keep the section monochrome. */
+function LogoNode({ x, y, r = 18, src, dim = false }: { x: number; y: number; r?: number; src: string; dim?: boolean }) {
+  const s = r * 0.95;
+  return (
+    <g opacity={dim ? 0.4 : 1}>
+      <circle cx={x} cy={y} r={r} fill="#fff" stroke={LINE} />
+      <image href={src} x={x - s / 2} y={y - s / 2} width={s} height={s} style={{ filter: 'grayscale(1)' }} />
+    </g>
+  );
+}
+
+// Morphic symbol traced from /morphic-symbol.jpg, centered on 0,0 and 100 units wide.
+// Inset polygons + a round-joined stroke reproduce the logo's rounded corners.
+const MORPHIC_MARK = [
+  'M-14.4 -26.3L-8.2 -18.7L-38.6 25.3L-44.3 16.7Z',
+  'M19.7 -26L26.2 -18.6L-3.5 25.4L-8.8 17Z',
+  'M38 -1.5L44.1 6.3L32.3 22.3L27.2 13.9Z',
+];
+
+function GatewayMark({ x, y, size = 46 }: { x: number; y: number; size?: number }) {
+  const h = size / 2;
+  return (
+    <g>
+      <rect x={x - h - 6} y={y - h - 6} width={size + 12} height={size + 12} rx={size * 0.36} fill="#fff" stroke={LINE} />
+      <rect x={x - h} y={y - h} width={size} height={size} rx={size * 0.27} fill="#fff" stroke={LINE_STRONG} />
+      <g
+        transform={`translate(${x} ${y}) scale(${(size * 0.66) / 100})`}
+        fill={INK}
+        stroke={INK}
+        strokeWidth={9.5}
+        strokeLinejoin="round"
+      >
+        {MORPHIC_MARK.map((d) => <path key={d} d={d} />)}
+      </g>
+    </g>
+  );
+}
+
+/** Route that draws itself in once when the card scrolls into view. Dashed routes fade instead. */
+function Route({ d, stroke, width = 1, delay = 0, dash }: { d: string; stroke: string; width?: number; delay?: number; dash?: string }) {
+  const reduced = useReducedMotionSafe();
+  return (
+    <motion.path
+      d={d}
+      stroke={stroke}
+      strokeWidth={width}
+      strokeDasharray={dash}
+      initial={reduced ? false : dash ? { opacity: 0 } : { pathLength: 0, opacity: 0 }}
+      whileInView={dash ? { opacity: 1 } : { pathLength: 1, opacity: 1 }}
+      viewport={{ once: true, margin: '-40px' }}
+      transition={{ duration: 0.9, delay, ease: EASE }}
+    />
+  );
+}
+
+/** Marker that travels a route, rests, and repeats. Not rendered under reduced motion. */
+function Packet({ path, dur = 3, delay = 0, children }: { path: string; dur?: number; delay?: number; children?: React.ReactNode }) {
+  const reduced = useReducedMotionSafe();
+  if (reduced) return null;
+  const timing = { dur: `${dur}s`, begin: `${delay}s`, repeatCount: 'indefinite' };
+  return (
+    <g opacity={0}>
+      {children ?? <circle r={2.5} fill={LIVE} />}
+      <animateMotion {...timing} path={path} keyPoints="0;1;1" keyTimes="0;0.6;1" calcMode="spline" keySplines="0.45 0 0.25 1;0 0 1 1" />
+      <animate {...timing} attributeName="opacity" values="0;1;1;0;0" keyTimes="0;0.1;0.5;0.6;1" />
+    </g>
+  );
+}
+
+// Trig results can differ in the last digit between Node and the browser; rounding keeps SSR and hydration attributes identical.
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/** Visual 1: one gateway, six providers. One route is live. */
+function RoutingVisual() {
+  const cx = 180, cy = 105;
+  const nodes = [
+    '/logos/openai.svg',
+    '/logos/claude-color.svg',
+    '/logos/deepseek-color.svg',
+    '/logos/qwen-color.svg',
+    '/logos/kimi-color.svg',
+    '/logos/zhipu-color.svg',
+  ].map((src, i) => {
+    const a = (i * Math.PI) / 3;
+    return { src, x: round2(cx + 128 * Math.cos(a)), y: round2(cy + 70 * Math.sin(a)) };
+  });
+  const live = 1;
+  const routes = nodes.map(({ x, y }) => {
+    const dx = x - cx, dy = y - cy, d = Math.hypot(dx, dy);
+    const ux = dx / d, uy = dy / d;
+    return `M${round2(cx + ux * 36)} ${round2(cy + uy * 36)}L${round2(x - ux * 22)} ${round2(y - uy * 22)}`;
+  });
+  return (
+    <Visual viewBox="0 0 360 210" className={ROW1}>
+      {routes.map((d, i) => (
+        <Route key={d} d={d} delay={i * 0.07} stroke={i === live ? LIVE : LINE_STRONG} width={i === live ? 1.5 : 1} />
+      ))}
+      <Packet path={routes[live]} dur={2.8} delay={1} />
+      {nodes.map((n) => <LogoNode key={n.src} {...n} />)}
+      <GatewayMark x={cx} y={cy} size={44} />
+    </Visual>
+  );
+}
+
+/** Visual 2: requests go in, nothing comes out the other side. */
+function RetentionVisual() {
+  const cx = 180, cy = 105;
+  return (
+    <Visual viewBox="0 0 360 210" className={ROW1}>
+      <defs>
+        <linearGradient id="retention-out" gradientUnits="userSpaceOnUse" x1={234} x2={320} y1={0} y2={0}>
+          <stop offset="0" stopColor={MUTED} />
+          <stop offset="1" stopColor={LINE_STRONG} stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      {[0.3, 0.6, 1].map((o, i) => (
+        <rect key={i} x={40 + i * 22} y={cy - 4} width={14} height={8} rx={3} fill={MUTED} opacity={o} />
+      ))}
+      <line x1={110} y1={cy} x2={126} y2={cy} stroke={LINE_STRONG} />
+      <Packet path={`M117 ${cy}H158`} dur={3.2} delay={0.6}>
+        <rect x={-7} y={-4} width={14} height={8} rx={3} fill={MUTED} />
+      </Packet>
+      <rect x={cx - 54} y={cy - 54} width={108} height={108} rx={30} stroke={LINE} />
+      <rect x={cx - 43} y={cy - 43} width={86} height={86} rx={24} stroke={LINE_STRONG} />
+      <rect x={cx - 30} y={cy - 30} width={60} height={60} rx={17} fill={INK} />
+      <path d={`M${cx - 7} ${cy - 3}v-5a7 7 0 0 1 14 0v5`} stroke="#fff" strokeWidth={2} strokeLinecap="round" />
+      <rect x={cx - 11} y={cy - 3} width={22} height={17} rx={4} fill="#fff" />
+      <circle cx={cx} cy={cy + 5.5} r={2.2} fill={INK} />
+      <line x1={234} y1={cy} x2={320} y2={cy} stroke="url(#retention-out)" />
+    </Visual>
+  );
+}
+
+/** Visual 3: tokens drifting through parallel lanes; the middle lane is the live stream and moves fastest. */
+function StreamingVisual() {
+  const reduced = useReducedMotionSafe();
+  const lanes: [number, number][][] = [
+    [[30, 22], [86, 14], [128, 34], [204, 18], [262, 26], [318, 14]],
+    [[52, 30], [110, 18], [158, 22], [214, 38], [290, 20]],
+    [[24, 16], [58, 26], [100, 20], [136, 30], [182, 16], [214, 28], [256, 18], [290, 24], [328, 14]],
+    [[40, 18], [92, 36], [168, 14], [212, 22], [268, 32]],
+    [[66, 26], [140, 16], [186, 30], [248, 14], [296, 28]],
   ];
-
+  const seconds = [16, 21, 9, 18, 24];
   return (
-    <div className="relative w-full h-[190px] sm:h-[210px] flex items-center justify-center select-none overflow-hidden p-4" aria-hidden="true">
-      <div className="grid grid-cols-3 gap-2.5 sm:gap-3">
-        {keys.map(({ name, Logo }) => (
-          <div
-            key={name}
-            className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl bg-white border border-neutral-200/90 shadow-2xs flex flex-col items-center justify-center p-2 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-xs group"
-            title={name}
-          >
-            <Logo className="w-5 h-5 sm:w-6 sm:h-6 transition-transform group-hover:scale-105" />
-          </div>
-        ))}
-      </div>
-    </div>
+    <Visual viewBox="0 0 360 210" className={ROW1}>
+      <defs>
+        <linearGradient id="stream-fade" x1="0" x2="1">
+          <stop offset="0" stopColor="#fff" stopOpacity="0" />
+          <stop offset="0.18" stopColor="#fff" />
+          <stop offset="0.82" stopColor="#fff" />
+          <stop offset="1" stopColor="#fff" stopOpacity="0" />
+        </linearGradient>
+        <mask id="stream-mask">
+          <rect width="360" height="210" fill="url(#stream-fade)" />
+        </mask>
+      </defs>
+      <g mask="url(#stream-mask)">
+        {lanes.map((pills, i) => {
+          const y = 55 + i * 25;
+          const fill = i === 2 ? LIVE : i % 2 ? LINE_STRONG : MUTED;
+          return (
+            <g key={i}>
+              <line x1={0} y1={y} x2={360} y2={y} stroke={LINE} />
+              {/* Pills are drawn twice, one viewBox-width apart, so the 360-unit drift loops seamlessly. */}
+              <g>
+                {[0, -360].flatMap((off) =>
+                  pills.map(([x, w]) => <rect key={`${off}:${x}`} x={x + off} y={y - 3} width={w} height={6} rx={3} fill={fill} />),
+                )}
+                {!reduced && (
+                  <animateTransform attributeName="transform" type="translate" from="0 0" to="360 0" dur={`${seconds[i]}s`} repeatCount="indefinite" />
+                )}
+              </g>
+            </g>
+          );
+        })}
+      </g>
+    </Visual>
   );
 }
 
-/**
- * Visual 2: Zero Data Retention & AES Vault Spec (Row 1, Col 2)
- */
-function SecurityPolicyVisual({ locale }: { locale: string }) {
-  return (
-    <div className="relative w-full h-[190px] sm:h-[210px] flex items-center justify-center select-none px-4" aria-hidden="true">
-      <div className="w-full max-w-[270px] rounded-2xl bg-neutral-950 p-4 border border-neutral-800 shadow-md font-mono text-[11px] text-neutral-300 space-y-2">
-        <div className="flex items-center justify-between border-b border-neutral-800 pb-2 text-[10px] text-neutral-400 font-bold uppercase tracking-wider">
-          <span className="flex items-center gap-1.5 text-neutral-200">
-            <Lock className="w-3 h-3 text-neutral-400" />
-            Zero-Retention
-          </span>
-          <span className="text-neutral-500">AES-256</span>
-        </div>
-        <div className="space-y-1.5 pt-0.5 text-[10px] sm:text-[11px]">
-          <div className="flex justify-between">
-            <span className="text-neutral-500">payload_storage:</span>
-            <span className="text-neutral-200 font-medium">EPHEMERAL</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-neutral-500">model_training:</span>
-            <span className="text-neutral-200 font-medium">OPT_OUT_100%</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-neutral-500">key_vault:</span>
-            <span className="text-neutral-200 font-medium">ISOLATED</span>
-          </div>
-        </div>
-        <div className="pt-2 border-t border-neutral-800 flex items-center gap-1.5 text-[10px] text-neutral-400">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
-          <span>{locale === 'id' ? 'Nol prompt disimpan di disk' : 'Zero prompts stored on disk'}</span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/**
- * Visual 3: Live SSE Stream Token Output (Row 1, Col 3)
- */
-function StreamTokensVisual() {
-  return (
-    <div className="relative w-full h-[190px] sm:h-[210px] flex items-center justify-center select-none px-4" aria-hidden="true">
-      <div className="w-full max-w-[270px] rounded-2xl bg-white border border-neutral-200/90 p-3.5 shadow-2xs font-mono text-[11px] space-y-2">
-        <div className="flex items-center justify-between border-b border-neutral-100 pb-2 text-[10px] text-neutral-500">
-          <span className="flex items-center gap-1.5 font-semibold text-neutral-800">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-            SSE Stream
-          </span>
-          <span className="text-neutral-400">TTFT &lt; 15ms</span>
-        </div>
-        <div className="space-y-1.5 py-0.5 text-neutral-700 leading-relaxed text-[11px]">
-          <div className="flex items-center gap-2">
-            <span className="text-neutral-400">chunk #01</span>
-            <span className="text-neutral-900 font-medium">const client =</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-neutral-400">chunk #02</span>
-            <span className="text-neutral-900 font-medium">new OpenAI(&#123;</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-neutral-400">chunk #03</span>
-            <span className="text-neutral-900 font-medium">baseURL, apiKey</span>
-          </div>
-        </div>
-        <div className="pt-2 border-t border-neutral-100 flex items-center justify-between text-[10px] text-neutral-400">
-          <span>Tokens: 142/s</span>
-          <span className="text-neutral-600 font-medium">180 RPM</span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/**
- * Visual 4: IDE Drop-In Config Window (Row 2, Col 1 - 50% wide)
- */
-function IdeDropinVisual() {
-  return (
-    <div className="relative w-full h-[180px] sm:h-[200px] flex flex-col justify-center items-center gap-3 select-none px-4" aria-hidden="true">
-      {/* IDE Logos badges */}
-      <div className="flex items-center gap-2">
-        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-neutral-200/90 shadow-2xs text-xs font-mono font-semibold text-neutral-800">
-          <Image src="/logos/cursor.svg" alt="Cursor" width={16} height={16} unoptimized className="w-4 h-4" />
-          <span>Cursor</span>
-        </div>
-        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-neutral-200/90 shadow-2xs text-xs font-mono font-semibold text-neutral-800">
-          <Image src="/logos/cline.svg" alt="Cline" width={16} height={16} unoptimized className="w-4 h-4" />
-          <span>Cline</span>
-        </div>
-        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-neutral-200/90 shadow-2xs text-xs font-mono font-semibold text-neutral-800">
-          <Image src="/logos/windsurf.svg" alt="Windsurf" width={16} height={16} unoptimized className="w-4 h-4" />
-          <span>Windsurf</span>
-        </div>
-      </div>
-      {/* Config snippet box */}
-      <div className="w-full max-w-[340px] rounded-xl bg-neutral-950 p-3.5 border border-neutral-800 shadow-inner font-mono text-[11px] text-neutral-300">
-        <div><span className="text-neutral-500">{'// Standard OpenAI Configuration'}</span></div>
-        <div className="mt-1">
-          <span className="text-neutral-400">&quot;baseURL&quot;: </span>
-          <span className="text-neutral-200">&quot;{API_BASE_URL}&quot;</span>
-        </div>
-        <div>
-          <span className="text-neutral-400">&quot;apiKey&quot;: </span>
-          <span className="text-neutral-200">&quot;mp-live-xxxxxx&quot;</span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/**
- * Visual 5: Floating Provider Mesh & Auto-Failover (Row 2, Col 2 - 50% wide)
- */
-function FailoverMeshVisual({ locale }: { locale: string }) {
-  const providers = [
-    { name: 'OpenAI', Logo: OpenAILogo },
-    { name: 'Claude', Logo: ClaudeLogo },
-    { name: 'DeepSeek', Logo: DeepSeekLogo },
-    { name: 'Qwen', Logo: QwenLogo },
-    { name: 'Kimi', Logo: KimiLogo },
-    { name: 'GLM', Logo: ZhipuLogo },
-    { name: 'Yi', Logo: YiLogo },
+/** Visual 4: one standard endpoint fanning out to the editors that already speak it. */
+function IntegrationVisual() {
+  const ides = [
+    { src: '/logos/cursor.svg', y: 44 },
+    { src: '/logos/cline.svg', y: 100 },
+    { src: '/logos/windsurf.svg', y: 156 },
   ];
-
   return (
-    <div className="relative w-full h-[180px] sm:h-[200px] flex items-center justify-center select-none overflow-hidden px-4" aria-hidden="true">
-      {/* Dotted canvas backdrop */}
-      <div
-        className="absolute inset-0 opacity-35 pointer-events-none"
-        style={{
-          backgroundImage: 'radial-gradient(circle, #cbd5e1 1px, transparent 1px)',
-          backgroundSize: '16px 16px',
-        }}
-      />
-      <div className="relative z-10 grid grid-cols-4 gap-2 sm:gap-2.5 max-w-[340px] w-full">
-        {providers.map(({ name, Logo }, i) => (
-          <div
-            key={name}
-            className={`rounded-2xl bg-white border border-neutral-200/90 p-2 sm:p-2.5 shadow-2xs flex flex-col items-center justify-center gap-1 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-xs group ${
-              i === 6 ? 'col-span-2' : ''
-            }`}
-          >
-            <Logo className="w-5 h-5 transition-transform group-hover:scale-105" />
-            <span className="font-mono text-[9px] font-bold text-neutral-600 truncate max-w-full">
-              {name}
-            </span>
-          </div>
-        ))}
-        <div className="rounded-2xl bg-neutral-50/90 border border-neutral-200/80 p-2 sm:p-2.5 shadow-2xs flex flex-col items-center justify-center gap-1">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-          <span className="font-mono text-[8px] font-bold uppercase text-neutral-500 tracking-wider text-center">
-            {locale === 'id' ? 'RUTE AKTIF' : 'ACTIVE ROUTE'}
-          </span>
-        </div>
-      </div>
-    </div>
+    <Visual viewBox="50 0 460 200" className={ROW2}>
+      <circle cx={70} cy={100} r={3} fill={MUTED} />
+      <Route d="M73 100H150" stroke={LINE_STRONG} />
+      {ides.map(({ src, y }, i) => {
+        const d = `M334 100H372C396 100 396 ${y} 420 ${y}H448`;
+        return (
+          <g key={src}>
+            <Route d={d} stroke={LINE_STRONG} delay={0.3 + i * 0.1} />
+            <Packet path={d} dur={3.2} delay={1.2 + i * 0.35}>
+              <circle r={2} fill={LIVE} />
+            </Packet>
+            <LogoNode x={470} y={y} r={20} src={src} />
+          </g>
+        );
+      })}
+      <rect x={150} y={78} width={184} height={44} rx={12} fill={INK} />
+      <circle cx={170} cy={100} r={3} fill={LIVE} />
+      <text x={184} y={104} fill="#fff" fontSize={12} fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace">
+        /v1/chat/completions
+      </text>
+    </Visual>
   );
 }
+
+/** Visual 5: the first provider drops out; traffic moves to the next one. */
+function FailoverVisual() {
+  const gx = 160;
+  const nodes = ['/logos/openai.svg', '/logos/claude-color.svg', '/logos/deepseek-color.svg', '/logos/qwen-color.svg'];
+  const failed = 0, live = 1;
+  const liveY = 40 + live * 40;
+  return (
+    <Visual viewBox="30 0 440 200" className={ROW2}>
+      <Route d={`M40 100H${gx - 30}`} stroke={LIVE} width={1.5} />
+      {nodes.map((src, i) => {
+        const y = 40 + i * 40;
+        const path = `M${gx + 30} 100C300 100 300 ${y} 422 ${y}`;
+        return (
+          <g key={src}>
+            {i === failed ? (
+              <>
+                <Route d={path} stroke={LINE_STRONG} dash="3 4" delay={0.3} />
+                <path d="M385 36l8 8M393 36l-8 8" stroke={MUTED} strokeWidth={1.5} strokeLinecap="round" />
+              </>
+            ) : (
+              <Route d={path} stroke={i === live ? LIVE : LINE} width={i === live ? 1.5 : 1} delay={0.3 + i * 0.08} />
+            )}
+            <LogoNode x={440} y={y} r={17} src={src} dim={i === failed} />
+          </g>
+        );
+      })}
+      {/* One packet rides the incoming line, passes under the gateway, and continues on the live route. */}
+      <Packet path={`M40 100H${gx + 30}C300 100 300 ${liveY} 422 ${liveY}`} dur={3.6} delay={1.2} />
+      <GatewayMark x={gx} y={100} size={46} />
+    </Visual>
+  );
+}
+
+const ROW1 = 'h-[190px] sm:h-[210px]';
+const ROW2 = 'h-[180px] sm:h-[200px]';
 
 export default function FeatureShowcase() {
-  const { t, locale } = useTranslation();
+  const { t } = useTranslation();
   const reduced = useReducedMotionSafe();
 
   const stats = [
@@ -249,7 +313,7 @@ export default function FeatureShowcase() {
             {/* Col 1: Multi-Provider Routing */}
             <div className="flex flex-col justify-between">
               <div className="border-b border-neutral-100 bg-neutral-50/50 flex items-center justify-center">
-                <ProviderKeycapsVisual />
+                <RoutingVisual />
               </div>
               <div className="p-7 sm:p-8 flex flex-col justify-start">
                 <h3 className="text-lg font-bold text-neutral-950 font-heading mb-2 leading-snug">
@@ -264,7 +328,7 @@ export default function FeatureShowcase() {
             {/* Col 2: Zero Retention & Encryption */}
             <div className="flex flex-col justify-between">
               <div className="border-b border-neutral-100 bg-neutral-50/50 flex items-center justify-center">
-                <SecurityPolicyVisual locale={locale} />
+                <RetentionVisual />
               </div>
               <div className="p-7 sm:p-8 flex flex-col justify-start">
                 <h3 className="text-lg font-bold text-neutral-950 font-heading mb-2 leading-snug">
@@ -279,7 +343,7 @@ export default function FeatureShowcase() {
             {/* Col 3: SSE Streaming & Concurrency */}
             <div className="flex flex-col justify-between">
               <div className="border-b border-neutral-100 bg-neutral-50/50 flex items-center justify-center">
-                <StreamTokensVisual />
+                <StreamingVisual />
               </div>
               <div className="p-7 sm:p-8 flex flex-col justify-start">
                 <h3 className="text-lg font-bold text-neutral-950 font-heading mb-2 leading-snug">
@@ -313,7 +377,7 @@ export default function FeatureShowcase() {
                 </p>
               </div>
               <div className="border-t border-neutral-100 bg-neutral-50/40 flex items-center justify-center">
-                <IdeDropinVisual />
+                <IntegrationVisual />
               </div>
             </div>
 
@@ -328,7 +392,7 @@ export default function FeatureShowcase() {
                 </p>
               </div>
               <div className="border-t border-neutral-100 bg-neutral-50/40 flex items-center justify-center">
-                <FailoverMeshVisual locale={locale} />
+                <FailoverVisual />
               </div>
             </div>
           </div>

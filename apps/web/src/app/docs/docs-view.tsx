@@ -418,14 +418,18 @@ claude "Analyze this repository architecture"`,
       };
     }
 
+    // macOS / Linux: one paste in the terminal. The script (served by the gateway) checks the
+    // key, backs up any existing config and writes ~/.config/opencode/opencode.json.
     return {
-      file: 'opencode.json',
-      language: 'json',
-      menuPath: '~/.config/opencode/opencode.json',
-      code: config,
-      extraFile: os === 'macos' ? 'Terminal (zsh)' : 'Terminal (bash)',
-      extraLanguage: 'bash',
-      extraCode: 'export MORPHIC_API_KEY="API_KEY_MORPHIC_LU"',
+      file: os === 'macos' ? 'Terminal (zsh)' : 'Terminal (bash)',
+      language: 'bash',
+      menuPath: os === 'macos' ? 'macOS Terminal → paste → opencode' : 'Linux Terminal → paste → opencode',
+      code: `export BASE_URL=${BASE_URL}
+export API_KEY=mp-xxxxxxxxxxxxxxxxxxxx
+curl -fsSL "$BASE_URL/../quickstart/opencode.sh" | bash`,
+      extraFile: 'opencode.json (manual, optional)',
+      extraLanguage: 'json',
+      extraCode: config,
     };
   };
 
@@ -561,8 +565,8 @@ API Key:  mp-live-xxxxxxxxxxxxxxxxxxxx
     opencode: {
       name: 'opencode',
       title: 'opencode (Terminal AI Agent)',
-      desc: 'Tulis config opencode sekali paste di terminal, lalu agent langsung terhubung ke Morphic Gateway.',
-      descEn: 'Paste one terminal block to write the opencode config, and the agent connects to Morphic Gateway straight away.',
+      desc: 'macOS/Linux: ganti mp-xxxx dengan API key Anda, paste 3 baris di terminal, lalu jalankan opencode. Config lama otomatis di-backup. Windows: pakai WSL/Git Bash, atau isi opencode.json manual.',
+      descEn: 'macOS/Linux: replace mp-xxxx with your API key, paste the 3 lines into a terminal, then run opencode. Any existing config is backed up. Windows: use WSL/Git Bash, or fill opencode.json manually.',
       menuPath: opencodeSnippet.menuPath,
       file: opencodeSnippet.file,
       language: opencodeSnippet.language,
