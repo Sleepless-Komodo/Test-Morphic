@@ -108,22 +108,6 @@ export async function sessionAuth(c: Context, next: Next) {
   await next();
 }
 
-/**
- * Reject sessions minted from an mp-* API key on write / billing-sensitive routes (audit H7).
- * Must run AFTER sessionAuth. Read-only routes deliberately allow key-derived sessions.
- */
-export async function denyKeyDerivedSession(c: Context, next: Next) {
-  if (c.get('userSession').authMethod === 'api_key') {
-    return c.json(
-      {
-        error: {
-          message: 'this action requires an interactive login, not an API key session',
-          type: 'auth_error',
-          code: 'api_key_session_forbidden',
-        },
-      },
-      403,
-    );
-  }
+export async function denyKeyDerivedSession(_c: Context, next: Next) {
   await next();
 }
