@@ -42,6 +42,7 @@ function CopyButton({ text, locale }: { text: string; locale: string }) {
 export default function QuickstartHub() {
   const { t, locale } = useTranslation();
   const [activeTab, setActiveTab] = useState<TabId>('ide');
+  const [sdkLang, setSdkLang] = useState<'node' | 'python'>('node');
 
   const tabs: Array<{ id: TabId; label: string }> = [
     { id: 'ide', label: t.dashboard.quickstartTabIde },
@@ -80,7 +81,7 @@ res = client.chat.completions.create(
 )`;
 
   return (
-    <div className="rounded-3xl border border-neutral-200/90 bg-white shadow-xs overflow-hidden">
+    <div className="rounded-3xl border border-neutral-200/90 bg-white shadow-xs overflow-hidden h-full flex flex-col">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-6 pt-6 pb-4">
         <div className="flex items-center gap-2">
           <Terminal className="h-4 w-4 text-neutral-500" />
@@ -106,7 +107,7 @@ res = client.chat.completions.create(
         </div>
       </div>
 
-      <div className="px-6 pb-6">
+      <div className="px-6 pb-6 flex-1 flex flex-col justify-between">
         <p suppressHydrationWarning className="text-xs text-neutral-500 mb-4">
           {activeTab === 'ide' && t.dashboard.quickstartIdeDesc}
           {activeTab === 'curl' && t.dashboard.quickstartCurlDesc}
@@ -158,25 +159,37 @@ res = client.chat.completions.create(
         )}
 
         {activeTab === 'sdk' && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <div className="rounded-2xl bg-neutral-950 border border-neutral-800 p-4 sm:p-5">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-[11px] font-mono text-neutral-500">Node.js / TypeScript</span>
-                <CopyButton text={nodeSnippet} locale={locale} />
+          <div className="rounded-2xl bg-neutral-950 border border-neutral-800 p-4 sm:p-5">
+            <div className="flex items-center justify-between mb-3 gap-2">
+              <div className="inline-flex items-center gap-1 bg-neutral-900 border border-neutral-800 p-1 rounded-lg">
+                <button
+                  type="button"
+                  onClick={() => setSdkLang('node')}
+                  className={`px-2.5 py-1 rounded-md text-[11px] font-mono transition-colors cursor-pointer ${
+                    sdkLang === 'node'
+                      ? 'bg-neutral-800 text-white font-semibold shadow-xs'
+                      : 'text-neutral-400 hover:text-neutral-200'
+                  }`}
+                >
+                  Node.js / TS
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSdkLang('python')}
+                  className={`px-2.5 py-1 rounded-md text-[11px] font-mono transition-colors cursor-pointer ${
+                    sdkLang === 'python'
+                      ? 'bg-neutral-800 text-white font-semibold shadow-xs'
+                      : 'text-neutral-400 hover:text-neutral-200'
+                  }`}
+                >
+                  Python
+                </button>
               </div>
-              <pre className="text-xs font-mono text-neutral-200 leading-relaxed overflow-x-auto">
-                {nodeSnippet}
-              </pre>
+              <CopyButton text={sdkLang === 'node' ? nodeSnippet : pythonSnippet} locale={locale} />
             </div>
-            <div className="rounded-2xl bg-neutral-950 border border-neutral-800 p-4 sm:p-5">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-[11px] font-mono text-neutral-500">Python</span>
-                <CopyButton text={pythonSnippet} locale={locale} />
-              </div>
-              <pre className="text-xs font-mono text-neutral-200 leading-relaxed overflow-x-auto">
-                {pythonSnippet}
-              </pre>
-            </div>
+            <pre className="text-xs font-mono text-neutral-200 leading-relaxed overflow-x-auto max-h-[220px]">
+              {sdkLang === 'node' ? nodeSnippet : pythonSnippet}
+            </pre>
           </div>
         )}
       </div>
