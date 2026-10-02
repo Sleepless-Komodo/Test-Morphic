@@ -410,8 +410,8 @@ export default function HowItWorksSteps({ isLoggedIn = false }: HowItWorksStepsP
           <div className="max-w-5xl mx-auto w-full">
             {/* Desktop Section Header with Micro Blur-Fade Up */}
             <motion.div
-              initial={reduced ? false : { opacity: 0, y: 14, filter: 'blur(4px)' }}
-              whileInView={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+              initial={reduced ? false : { opacity: 0, y: 14 }}
+              whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true, margin: '-50px' }}
               transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
               className="text-center max-w-3xl mx-auto mb-5"
@@ -624,8 +624,8 @@ export default function HowItWorksSteps({ isLoggedIn = false }: HowItWorksStepsP
         <div className="max-w-xl mx-auto">
           {/* Mobile Section Header with Micro Blur-Fade Up */}
           <motion.div
-            initial={reduced ? false : { opacity: 0, y: 14, filter: 'blur(4px)' }}
-            whileInView={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+            initial={reduced ? false : { opacity: 0, y: 14 }}
+            whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true, margin: '-50px' }}
             transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
             className="text-center max-w-xl mx-auto mb-10"

@@ -26,6 +26,8 @@ export default function GatewayStatusPopover() {
   const rootRef = useRef<HTMLDivElement>(null);
 
   const ping = useCallback(async () => {
+    // No background polling while the tab is hidden.
+    if (typeof document !== 'undefined' && document.hidden) return;
     const started = performance.now();
     try {
       const res = await fetch(HEALTH_ENDPOINT, { cache: 'no-store' });

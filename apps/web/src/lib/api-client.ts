@@ -16,6 +16,8 @@
 export interface ApiResponse<T> {
   data: T | null;
   error: string | null;
+  /** Machine-readable error code from the API (`error.code`), when it sent one. */
+  errorCode?: string | null;
   status: number;
 }
 
@@ -104,7 +106,7 @@ export async function fetchBackendApi<T = any>(
         json?.error?.message ??
         json?.message ??
         `Backend API error (${res.status})`;
-      return { data: null, error: errorMsg, status: res.status };
+      return { data: null, error: errorMsg, errorCode: json?.error?.code ?? null, status: res.status };
     }
 
     return { data: json as T, error: null, status: res.status };

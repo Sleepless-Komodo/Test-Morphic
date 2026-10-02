@@ -317,7 +317,13 @@ export function BillingView({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-neutral-100">
-                    {payments.map((p) => (
+                    {payments.map((p) => {
+                      // QRIS invoices live 5 minutes; the API cancels them right after, so never offer to pay a stale one.
+                      const status =
+                        p.provider === 'duitku' && p.status === 'pending' && Date.now() - new Date(p.createdAt).getTime() > 5.5 * 60_000
+                          ? 'expired'
+                          : p.status;
+                      return (
                       <tr key={p.id}>
                         <td className="px-5 py-3 text-neutral-500">
                           {new Date(p.createdAt).toLocaleDateString(locale === 'en' ? 'en-US' : 'id-ID')}
@@ -332,23 +338,27 @@ export function BillingView({
                           <div className="flex items-center gap-2">
                             <span
                               suppressHydrationWarning
-                              className={`px-2 py-0.5 rounded-md text-[10px] font-mono font-bold ${p.status === 'paid' || p.status === 'success' || p.status === 'settlement'
+                              className={`px-2 py-0.5 rounded-md text-[10px] font-mono font-bold ${status === 'paid' || status === 'success' || status === 'settlement'
                                   ? 'bg-emerald-100 text-emerald-800'
-                                  : p.status === 'pending' || p.status === 'pending_paypal'
+                                  : status === 'pending' || status === 'pending_paypal'
                                     ? 'bg-amber-100 text-amber-800 border border-amber-200'
                                     : 'bg-neutral-100 text-neutral-800'
                                 }`}
                             >
-                              {p.status === 'success' || p.status === 'settlement' || p.status === 'paid'
+                              {status === 'success' || status === 'settlement' || status === 'paid'
                                 ? (locale === 'en' ? 'Success' : 'Berhasil')
-                                : p.status === 'pending_paypal'
+                                : status === 'pending_paypal'
                                   ? (locale === 'en' ? 'Under Review' : 'Sedang Ditinjau')
-                                  : p.status === 'pending'
+                                  : status === 'pending'
                                     ? (locale === 'en' ? 'Pending' : 'Menunggu')
-                                    : p.status}
+                                    : status === 'expired'
+                                      ? (locale === 'en' ? 'Cancelled' : 'Dibatalkan')
+                                      : status === 'failed'
+                                        ? (locale === 'en' ? 'Failed' : 'Gagal')
+                                        : status}
                             </span>
 
-                            {(p.status === 'pending' || p.status === 'pending_paypal') && (
+                            {(status === 'pending' || status === 'pending_paypal') && (
                               <button
                                 id={`continue-pay-btn-${p.id}`}
                                 onClick={() => {
@@ -364,7 +374,7 @@ export function BillingView({
                                     id: p.id,
                                     externalId: p.externalId,
                                     provider: p.provider,
-                                    status: p.status,
+                                    status: status,
                                   });
                                 }}
                                 className="px-2.5 py-1 rounded-lg bg-neutral-950 hover:bg-neutral-800 text-white text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1 shadow-2xs"
@@ -376,7 +386,8 @@ export function BillingView({
                           </div>
                         </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

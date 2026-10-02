@@ -20,6 +20,13 @@ export default function PricingPlans({
 }: PricingPlansProps) {
   const { t, locale } = useTranslation();
   const [activeTab, setActiveTab] = useState<'credits' | 'daily'>('credits');
+  // Card the user clicked or tabbed into; null falls back to the tier marked popular.
+  const [selected, setSelected] = useState<string | null>(null);
+  const isSelected = (name: string, popular: boolean) => (selected === null ? popular : selected === name);
+  const switchTab = (tab: 'credits' | 'daily') => {
+    setActiveTab(tab);
+    setSelected(null);
+  };
   const reduced = useReducedMotionSafe();
 
   const targetUrl = isLoggedIn ? '/dashboard/billing' : '/login';
@@ -39,8 +46,8 @@ export default function PricingPlans({
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <motion.div
-          initial={reduced ? false : { opacity: 0, y: 14, filter: 'blur(4px)' }}
-          whileInView={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+          initial={reduced ? false : { opacity: 0, y: 14 }}
+          whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, margin: '-50px' }}
           transition={{ duration: 0.5, ease: EASE }}
           className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-12"
@@ -74,8 +81,8 @@ export default function PricingPlans({
 
         {/* Purchase Mode Tab Switcher & Cards */}
         <motion.div
-          initial={reduced ? false : { opacity: 0, y: 16, filter: 'blur(4px)' }}
-          whileInView={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+          initial={reduced ? false : { opacity: 0, y: 16 }}
+          whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, margin: '-40px' }}
           transition={{ duration: 0.55, delay: 0.1, ease: EASE }}
         >
@@ -87,7 +94,7 @@ export default function PricingPlans({
               id="pricing-tab-credits"
               aria-selected={activeTab === 'credits'}
               aria-controls="pricing-panel-credits"
-              onClick={() => setActiveTab('credits')}
+              onClick={() => switchTab('credits')}
               className={`flex items-center gap-2 px-4 sm:px-5 py-2 rounded-full transition-all cursor-pointer font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 focus-visible:ring-offset-2 ${
                 activeTab === 'credits'
                   ? 'bg-white text-neutral-950 shadow-sm font-bold'
@@ -103,7 +110,7 @@ export default function PricingPlans({
               id="pricing-tab-daily"
               aria-selected={activeTab === 'daily'}
               aria-controls="pricing-panel-daily"
-              onClick={() => setActiveTab('daily')}
+              onClick={() => switchTab('daily')}
               className={`flex items-center gap-2 px-4 sm:px-5 py-2 rounded-full transition-all cursor-pointer font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 focus-visible:ring-offset-2 ${
                 activeTab === 'daily'
                   ? 'bg-white text-neutral-950 shadow-sm font-bold'
@@ -128,10 +135,10 @@ export default function PricingPlans({
             {t.pricing.tiers.map((tier) => (
               <div
                 key={tier.name}
-                className={`group relative rounded-2xl p-7 flex flex-col bg-white transition-all duration-300 hover:-translate-y-0.5 ${
-                  tier.popular
-                    ? 'border border-neutral-950 shadow-[0_8px_30px_-12px_rgba(9,9,11,0.25)]'
-                    : 'border border-neutral-200 shadow-xs hover:border-neutral-400'
+                onClick={() => setSelected(tier.name)}
+                onFocusCapture={() => setSelected(tier.name)}
+                className={`group relative rounded-2xl p-7 flex flex-col bg-white border cursor-pointer transition-[border-color,box-shadow,transform] duration-300 ease-out hover:-translate-y-0.5 ${
+                  isSelected(tier.name, tier.popular) ? 'border-neutral-950 ring-1 ring-neutral-950 shadow-[0_8px_30px_-12px_rgba(9,9,11,0.25)]' : 'border-neutral-200 shadow-xs hover:border-neutral-400'
                 }`}
               >
                 {/* Card Header: name + inline badge chip (no floating badge) */}
@@ -186,7 +193,7 @@ export default function PricingPlans({
                 <Link
                   href={targetUrl}
                   className={`mt-auto w-full text-center py-3 px-6 rounded-full text-xs font-bold transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer ${
-                    tier.popular
+                    isSelected(tier.name, tier.popular)
                       ? 'bg-neutral-950 text-white hover:bg-neutral-800 shadow-md hover:shadow-lg hover:-translate-y-0.5'
                       : 'border border-neutral-950 text-neutral-950 hover:bg-neutral-950 hover:text-white hover:-translate-y-0.5'
                   }`}
@@ -208,10 +215,10 @@ export default function PricingPlans({
               {t.pricing.dailyTiers.map((pass) => (
                 <div
                   key={pass.name}
-                  className={`group relative rounded-2xl p-6 flex flex-col bg-white transition-all duration-300 hover:-translate-y-0.5 ${
-                    pass.popular
-                      ? 'border border-neutral-950 shadow-[0_8px_30px_-12px_rgba(9,9,11,0.25)]'
-                      : 'border border-neutral-200 shadow-xs hover:border-neutral-400'
+                  onClick={() => setSelected(pass.name)}
+                  onFocusCapture={() => setSelected(pass.name)}
+                  className={`group relative rounded-2xl p-6 flex flex-col bg-white border cursor-pointer transition-[border-color,box-shadow,transform] duration-300 ease-out hover:-translate-y-0.5 ${
+                    isSelected(pass.name, pass.popular) ? 'border-neutral-950 ring-1 ring-neutral-950 shadow-[0_8px_30px_-12px_rgba(9,9,11,0.25)]' : 'border-neutral-200 shadow-xs hover:border-neutral-400'
                   }`}
                 >
                   <div className="flex items-center justify-between gap-2 mb-4">
@@ -255,7 +262,7 @@ export default function PricingPlans({
                   <Link
                     href={targetUrl}
                     className={`mt-auto w-full text-center py-2.5 px-4 rounded-full text-xs font-bold transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer ${
-                      pass.popular
+                      isSelected(pass.name, pass.popular)
                         ? 'bg-neutral-950 text-white hover:bg-neutral-800 shadow-md hover:shadow-lg hover:-translate-y-0.5'
                         : 'border border-neutral-950 text-neutral-950 hover:bg-neutral-950 hover:text-white hover:-translate-y-0.5'
                     }`}
@@ -293,8 +300,8 @@ export default function PricingPlans({
 
         {/* Trust & Security Strip — integrated, monochrome */}
         <motion.div
-          initial={reduced ? false : { opacity: 0, y: 12, filter: 'blur(4px)' }}
-          whileInView={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+          initial={reduced ? false : { opacity: 0, y: 12 }}
+          whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, margin: '-20px' }}
           transition={{ duration: 0.45, delay: 0.15, ease: EASE }}
           className="mt-16 pt-8 border-t border-neutral-200"

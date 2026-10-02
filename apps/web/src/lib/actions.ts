@@ -2,10 +2,9 @@
 
 import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { eq, and, desc, sql, gt, gte, lte } from 'drizzle-orm';
+import { eq, and, or, isNull, desc, sql, gt, gte, lte } from 'drizzle-orm';
 import { db, schema as s } from '@morphic/db';
 import { generateApiKey, maskedKey, hashApiKey, encryptApiKey, decryptApiKey } from '@morphic/shared/keys';
-import { grantCredits, grantEntitlement } from '@morphic/db/billing';
 import { auth } from '@/lib/auth';
 import { fetchBackendApi } from './api-client';
 
@@ -44,12 +43,37 @@ async function requireUser() {
   return session.user;
 }
 
+/**
+ * The signed-in admin row, or null for guests, non-admins, suspended admins and API-key sessions.
+ * One joined query (user role + session auth method), memoised per request so the admin layout
+ * and page share it.
+ */
+const currentAdmin = cache(async () => {
+  const session = await getSessionWithRetry();
+  if (!session) return null;
+  // Role comes from the DB on every request (never from the session payload), and admin power is
+  // refused to suspended accounts and to sessions minted from an mp-* API key, so a leaked key
+  // can never reach admin actions.
+  const [row] = await db
+    .select({ user: s.users, authMethod: s.sessions.authMethod })
+    .from(s.users)
+    .innerJoin(s.sessions, eq(s.sessions.userId, s.users.id))
+    .where(and(eq(s.users.id, session.user.id), eq(s.sessions.id, session.session.id)))
+    .limit(1);
+  if (!row || row.user.role !== 'admin' || row.user.suspended || row.authMethod === 'api_key') return null;
+  return row.user;
+});
+
 async function requireAdmin() {
   const session = await getSessionWithRetry();
   if (!session) redirect('/login');
-  const [u] = await db.select().from(s.users).where(eq(s.users.id, session.user.id)).limit(1);
-  if (!u || u.role !== 'admin') redirect('/dashboard');
-  return u;
+  const admin = await currentAdmin();
+  if (!admin) redirect('/dashboard');
+  return admin;
+}
+
+async function isCurrentUserAdmin(): Promise<boolean> {
+  return (await currentAdmin()) !== null;
 }
 
 /**
@@ -71,7 +95,7 @@ async function requireInteractiveUser() {
   return session.user;
 }
 
-export { requireUser, requireAdmin, requireInteractiveUser };
+export { requireUser, requireAdmin, requireInteractiveUser, isCurrentUserAdmin };
 
 
 let hasEnsuredKeyCol = false;
@@ -262,126 +286,47 @@ export async function revokeApiKey(formData: FormData) {
 export { maskedKey };
 
 
-export async function redeemCodeDirect(code: string): Promise<{ ok: boolean; message: string; reward?: any }> {
+export async function redeemCodeDirect(
+  code: string,
+): Promise<{ ok: boolean; message: string; code?: string; reward?: any }> {
   const cleanCode = code.trim().toUpperCase();
-  if (!cleanCode) return { ok: false, message: 'Enter a code', reward: undefined };
+  if (!cleanCode || cleanCode.length > 64) return { ok: false, message: 'Enter a valid code', code: 'missing_code' };
 
   const user = await requireInteractiveUser();
 
   const now = Date.now();
   const attempt = failedRedeemAttempts.get(user.id);
   if (attempt && attempt.lockUntil > now) {
-    const mins = Math.ceil((attempt.lockUntil - now) / 60_000);
-    return { ok: false, message: `Terlalu banyak percobaan kode salah. Silakan coba lagi dalam ${mins} menit.`, reward: undefined };
+    return { ok: false, message: 'Too many wrong codes', code: 'locked', reward: { retryInMinutes: Math.ceil((attempt.lockUntil - now) / 60_000) } };
   }
 
-  const recordFailure = () => {
+  // The API is the only writer: it holds the atomic cap/double-spend checks and the rate limit.
+  // No direct-DB fallback; if the gateway is down the user is told so and nothing is granted.
+  const apiRes = await fetchBackendApi<{ ok: boolean; message: string; reward?: any }>('/v1/redeem', {
+    method: 'POST',
+    body: JSON.stringify({ code: cleanCode }),
+  });
+
+  if (apiRes.status === 200 && apiRes.data?.ok) {
+    failedRedeemAttempts.delete(user.id);
+    return { ok: true, message: apiRes.data.message, reward: apiRes.data.reward };
+  }
+
+  if (apiRes.status === 0 || apiRes.status >= 500) {
+    return { ok: false, message: apiRes.error ?? 'Service unavailable', code: 'service_unavailable' };
+  }
+
+  // Only guesses at unknown codes count toward the lockout.
+  if (apiRes.errorCode === 'invalid_code') {
     const cur = failedRedeemAttempts.get(user.id) || { count: 0, lockUntil: 0 };
     cur.count += 1;
     if (cur.count >= 5) {
       cur.lockUntil = Date.now() + 10 * 60_000;
+      cur.count = 0;
     }
     failedRedeemAttempts.set(user.id, cur);
-  };
-
-  try {
-    const apiRes = await fetchBackendApi<{
-      ok: boolean;
-      message: string;
-      reward?: any;
-    }>('/v1/redeem', {
-      method: 'POST',
-      body: JSON.stringify({ code: cleanCode }),
-    });
-
-    if (apiRes.status === 200 && apiRes.data?.ok) {
-      failedRedeemAttempts.delete(user.id);
-      return {
-        ok: true,
-        message: apiRes.data.message || 'Code redeemed successfully',
-        reward: apiRes.data.reward,
-      };
-    }
-
-    if (apiRes.error && apiRes.status !== 0) {
-      recordFailure();
-      return { ok: false, message: apiRes.error, reward: undefined };
-    }
-  } catch (err) {
-    console.warn('[redeemCodeDirect] Backend API unavailable, falling back to direct DB:', err);
   }
-
-  try {
-    return await db.transaction(async (tx) => {
-      const [rc] = await tx.select().from(s.redeemCodes).where(eq(s.redeemCodes.code, cleanCode)).for('update');
-      if (!rc || !rc.active) return { ok: false, message: 'Invalid or inactive code', reward: undefined };
-      if (rc.expiresAt && rc.expiresAt < new Date()) return { ok: false, message: 'Code expired', reward: undefined };
-      if (rc.maxRedemptions !== null && rc.redeemedCount >= rc.maxRedemptions) {
-        return { ok: false, message: 'Code fully redeemed', reward: undefined };
-      }
-      const [dup] = await tx
-        .select()
-        .from(s.redemptions)
-        .where(and(eq(s.redemptions.codeId, rc.id), eq(s.redemptions.userId, user.id)))
-        .limit(1);
-      if (dup) return { ok: false, message: 'Already redeemed this code', reward: undefined };
-
-      await tx.insert(s.redemptions).values({ codeId: rc.id, userId: user.id });
-      await tx
-        .update(s.redeemCodes)
-        .set({ redeemedCount: sql`${s.redeemCodes.redeemedCount} + 1` })
-        .where(eq(s.redeemCodes.id, rc.id));
-
-      if (rc.rewardType === 'credits' && rc.creditAmount) {
-        await tx.insert(s.creditLedger).values({
-          userId: user.id,
-          entryType: 'redeem',
-          amount: rc.creditAmount,
-          reference: `code:${rc.code}`,
-        });
-        await tx
-          .insert(s.balances)
-          .values({ userId: user.id, credits: rc.creditAmount })
-          .onConflictDoUpdate({
-            target: s.balances.userId,
-            set: { credits: sql`${s.balances.credits} + ${rc.creditAmount}`, updatedAt: new Date() },
-          });
-        return {
-          ok: true,
-          message: `+${rc.creditAmount.toLocaleString()} credits`,
-          reward: { type: 'credits', credits: rc.creditAmount },
-        };
-      }
-
-      if (rc.rewardType === 'package') {
-        await tx
-          .insert(s.entitlements)
-          .values({
-            userId: user.id,
-            modelId: rc.modelId,
-            allowance: rc.creditAmount ?? 100_000,
-            remaining: rc.creditAmount ?? 100_000,
-            source: 'redeem',
-            expiresAt: new Date(Date.now() + (rc.durationHours ?? 24) * 3_600_000),
-          });
-        const [model] = rc.modelId
-          ? await tx.select().from(s.models).where(eq(s.models.id, rc.modelId)).limit(1)
-          : [];
-        return {
-          ok: true,
-          message: `Package activated: ${model?.displayName ?? 'Custom'} (${rc.durationHours ?? 24}h)`,
-          reward: { type: 'package', package: { name: model?.displayName ?? 'Custom Package' } },
-        };
-      }
-
-      return { ok: true, message: 'Code redeemed', reward: { type: 'credits', credits: 0 } };
-    });
-  } catch (err: any) {
-    // Never fabricate a success: a redemption that did not write to the ledger must
-    // report failure (audit H1 — removed the "Preview Mode" fake grant).
-    console.warn('[redeemCodeDirect] Error executing transaction:', err);
-    return { ok: false, message: err.message || 'Invalid or expired code', reward: undefined };
-  }
+  return { ok: false, message: apiRes.error ?? 'Failed to redeem code', code: apiRes.errorCode ?? 'redeem_failed' };
 }
 
 export async function redeemCode(_prev: { ok: boolean; message: string }, formData: FormData) {
@@ -657,6 +602,7 @@ export async function testApiKeyPingAction(params: {
           eq(s.apiKeys.keyHash, hashApiKey(apiKey)),
           eq(s.apiKeys.userId, user.id),
           eq(s.apiKeys.status, 'active'),
+          or(isNull(s.apiKeys.expiresAt), gt(s.apiKeys.expiresAt, new Date())),
         ),
       )
       .limit(1);

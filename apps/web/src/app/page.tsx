@@ -7,7 +7,6 @@ import HeroOpening from '@/components/HeroOpening';
 import HowItWorksSteps from '@/components/HowItWorksSteps';
 import FeatureShowcase from '@/components/FeatureShowcase';
 import MagicTerminal from '@/components/MagicTerminal';
-import ModelCatalogTeaser from '@/components/ModelCatalogTeaser';
 import PricingPlans from '@/components/PricingPlans';
 import LandingApiCta from '@/components/LandingApiCta';
 import MarketingFaq from '@/components/MarketingFaq';
@@ -37,9 +36,6 @@ export default async function Home() {
 
       {/* 4. Interactive Multi-IDE Terminal (Separate Section) */}
       <MagicTerminal />
-
-      {/* 5. Master-Detail Model Showcase */}
-      <ModelCatalogTeaser isLoggedIn={!!session} />
 
       {/* 5.5 Transparent Pricing & Token Packs */}
       <PricingPlans isLoggedIn={!!session} />

@@ -56,17 +56,17 @@ export default function LandingApiCta({ isLoggedIn = false }: LandingApiCtaProps
         <h2 className="relative z-10 font-heading text-3xl sm:text-4xl lg:text-5xl xl:text-[3.25rem] font-extrabold tracking-tight leading-[1.08] text-balance text-white max-w-2xl">
           {locale === 'id' ? (
             <>
-              Coding dengan semua model,<span className="block text-neutral-500">cukup satu API key.</span>
+              Semua model, satu key.<span className="block text-neutral-500">Mulai coding hari ini.</span>
             </>
           ) : (
             <>
-              Ship with every model,<span className="block text-neutral-500">on one single key.</span>
+              Every model, one key.<span className="block text-neutral-500">Start shipping today.</span>
             </>
           )}
         </h2>
 
         {/* Subtitle */}
-        <p className="relative z-10 mt-5 max-w-lg text-sm sm:text-base leading-relaxed text-neutral-500 font-body">
+        <p className="relative z-10 mt-5 max-w-lg text-sm sm:text-base leading-relaxed text-neutral-400 font-body">
           {t.cta.desc}
         </p>
 

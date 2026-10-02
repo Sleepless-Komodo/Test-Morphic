@@ -4,8 +4,9 @@ import { db, schema as s } from '@morphic/db';
 import { markPaymentIfOpen, processPaymentSuccess } from '@morphic/db/billing';
 import { eq, and, inArray, sql, gt } from 'drizzle-orm';
 import { sessionAuth, denyKeyDerivedSession } from '../middleware/session-auth';
-import { createTransaction, checkTransactionStatus } from '../lib/duitku';
+import { createTransaction } from '../lib/duitku';
 import * as paypal from '../lib/paypal';
+import { DUITKU_PAYMENT_TTL_MINUTES, DUITKU_EXPIRE_AFTER_MS, settleDuitkuPayment } from '../lib/paypal-reconcile';
 
 /**
  * Payments API Router
@@ -63,7 +64,7 @@ payments.post('/create', async (c) => {
     }
   }
 
-  // Step 4: Rate limit active pending payments per user (max 5 pending rows created in the last 1 hour)
+  // Step 4: Rate limit: max 5 unpaid payment attempts per user in the last hour
   const oneHourAgo = new Date(Date.now() - 60 * 60_000);
   const [pendingRow] = await db
     .select({ count: sql<number>`count(*)::int` })
@@ -71,7 +72,9 @@ payments.post('/create', async (c) => {
     .where(
       and(
         eq(s.payments.userId, userId),
-        inArray(s.payments.status, ['pending', 'pending_paypal']),
+        // Counts cancelled/failed attempts too: with 5-minute expiry, counting only open rows
+        // would let someone spin up unlimited gateway invoices.
+        inArray(s.payments.status, ['pending', 'pending_paypal', 'capturing', 'failed', 'expired']),
         gt(s.payments.createdAt, oneHourAgo),
       ),
     );
@@ -125,6 +128,21 @@ payments.post('/create', async (c) => {
     );
   }
 
+  // Step 8b: Only one live QR per user. Close out earlier open Duitku invoices (granting any that
+  // were actually paid) before opening a new one.
+  const openDuitku = await db
+    .select()
+    .from(s.payments)
+    .where(and(eq(s.payments.userId, userId), eq(s.payments.provider, 'duitku'), eq(s.payments.status, 'pending')));
+  for (const prev of openDuitku) {
+    try {
+      await settleDuitkuPayment(prev, { expireIfUnpaid: true });
+    } catch (err) {
+      console.error(`[payments/create] could not settle previous payment ${prev.id}:`, err);
+      await markPaymentIfOpen(prev.id, 'expired');
+    }
+  }
+
   // Step 9: Generate unique merchantOrderId (morphic-${UUID}) under Duitku's 50-character limit
   const merchantOrderId = `morphic-${randomUUID()}`;
 
@@ -159,7 +177,7 @@ payments.post('/create', async (c) => {
       customerVaName,
       callbackUrl: `${apiUrl}/webhooks/duitku`,
       returnUrl: `${appUrl}/dashboard/billing?ref=${payment.id}`,
-      expiryPeriod: 60,
+      expiryPeriod: DUITKU_PAYMENT_TTL_MINUTES,
     });
   } catch (err: any) {
     console.error('[payments/create] Duitku createTransaction error:', err?.message);
@@ -172,7 +190,7 @@ payments.post('/create', async (c) => {
   }
 
   // Step 12: Return checkout session response to client
-  const expiresAt = new Date(Date.now() + 60 * 60_000).toISOString();
+  const expiresAt = new Date(payment.createdAt.getTime() + DUITKU_PAYMENT_TTL_MINUTES * 60_000).toISOString();
 
   return c.json({
     paymentId: payment.id,
@@ -216,15 +234,14 @@ payments.get('/:id', async (c) => {
     if (now - (lastPollMap.get(paymentId) ?? 0) > 10_000) {
       lastPollMap.set(paymentId, now);
       try {
-        const status = await checkTransactionStatus(payment.externalId);
-        if (status.statusCode === '00') {
-          // Verify nominal amount against stored amountCents
-          if (Number(status.amount) !== payment.amountCents) {
-            console.error(`[payments/${paymentId}] NEEDS REVIEW: amount mismatch got=${status.amount} expected=${payment.amountCents}`);
-          } else if ((await processPaymentSuccess(paymentId)).success) {
-            payment.status = 'paid';
-            payment.paidAt = new Date();
-          }
+        // Past the 5-minute window an unpaid invoice is cancelled right here, not left pending.
+        const pastTtl = now - payment.createdAt.getTime() > DUITKU_EXPIRE_AFTER_MS;
+        const next = await settleDuitkuPayment(payment, { expireIfUnpaid: pastTtl });
+        if (next === 'paid') {
+          payment.status = 'paid';
+          payment.paidAt = new Date();
+        } else if (next === 'expired') {
+          payment.status = 'expired';
         }
       } catch (err) {
         console.error(`[payments/${paymentId}] duitku poll error:`, err);
@@ -242,6 +259,10 @@ payments.get('/:id', async (c) => {
     credits: payment.credits,
     paidAt: payment.paidAt?.toISOString() ?? null,
     createdAt: payment.createdAt.toISOString(),
+    expiresAt:
+      payment.provider === 'duitku'
+        ? new Date(payment.createdAt.getTime() + DUITKU_PAYMENT_TTL_MINUTES * 60_000).toISOString()
+        : null,
   });
 });
 
@@ -277,7 +298,9 @@ payments.post('/paypal/create-order', async (c) => {
     .where(
       and(
         eq(s.payments.userId, userId),
-        inArray(s.payments.status, ['pending', 'pending_paypal']),
+        // Counts cancelled/failed attempts too: with 5-minute expiry, counting only open rows
+        // would let someone spin up unlimited gateway invoices.
+        inArray(s.payments.status, ['pending', 'pending_paypal', 'capturing', 'failed', 'expired']),
         gt(s.payments.createdAt, oneHourAgo),
       ),
     );
