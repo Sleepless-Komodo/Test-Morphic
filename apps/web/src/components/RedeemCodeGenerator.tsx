@@ -43,7 +43,7 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-export function CopyChip({ text, label }: { text: string; label?: string }) {
+function CopyChip({ text, label }: { text: string; label?: string }) {
   const [copied, setCopied] = useState(false);
   return (
     <button

@@ -335,7 +335,7 @@ export const id = {
       expiryNever: 'Tanpa Kadaluwarsa',
       expiry30Days: '30 Hari',
       expiry90Days: '90 Hari',
-      revokeBtn: 'Cabut',
+      revokeBtn: 'Hapus',
       revealKeyPrompt: 'API Key baru Anda (hanya tampil sekali):',
       revealKeyWarning: 'Simpan kunci ini sekarang. Kunci ini tidak dapat ditampilkan kembali setelah Anda meninggalkan halaman.',
 
@@ -429,7 +429,7 @@ export const id = {
       keyCopyFull: 'Salin Seluruh Kunci API',
       keyShow: 'Tampilkan Kunci API',
       keyHide: 'Sembunyikan Kunci API',
-      revokeConfirm: 'Cabut?',
+      revokeConfirm: 'Hapus permanen?',
       revokeYes: 'Ya',
       revokeCancel: 'Batal',
       keySecurityLabel: 'Keamanan Kunci API:',
@@ -467,6 +467,7 @@ export const id = {
         usage: 'Usage',
         codes: 'Redeem Codes',
         audit: 'Audit Log',
+        leaderboard: 'Leaderboard',
       },
       status: {
         active: 'Aktif',

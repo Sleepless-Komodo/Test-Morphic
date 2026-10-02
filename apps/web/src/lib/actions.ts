@@ -2,9 +2,9 @@
 
 import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { eq, and, or, isNull, desc, sql, gt, gte, lte } from 'drizzle-orm';
+import { eq, and, desc, sql, gt, gte, lte } from 'drizzle-orm';
 import { db, schema as s } from '@morphic/db';
-import { generateApiKey, maskedKey, hashApiKey, encryptApiKey, decryptApiKey } from '@morphic/shared/keys';
+import { generateApiKey, maskedKey, encryptApiKey, decryptApiKey } from '@morphic/shared/keys';
 import { auth } from '@/lib/auth';
 import { fetchBackendApi } from './api-client';
 
@@ -247,25 +247,12 @@ export async function revokeOtherSessions(): Promise<{ ok: boolean; error?: stri
   }
 }
 
-export async function revokeApiKey(formData: FormData) {
-  const user = await requireInteractiveUser();
-  const id = String(formData.get('id'));
-
+/** Permanently deletes one of the caller's API keys through the gateway (the only writer). */
+export async function deleteApiKey(id: string): Promise<{ ok: boolean }> {
+  await requireInteractiveUser();
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return { ok: false };
   const apiRes = await fetchBackendApi(`/v1/keys/${id}`, { method: 'DELETE' });
-  if (apiRes.status === 200) return;
-  // The API answered but not with success (e.g. 404 not-found / not-owned): trust it,
-  // do not retry the write against the DB.
-  if (apiRes.status !== 0) return;
-
-  // status 0 = could not reach the API at all → DB fallback for availability.
-  try {
-    await db
-      .update(s.apiKeys)
-      .set({ status: 'revoked', revokedAt: new Date() })
-      .where(and(eq(s.apiKeys.id, id), eq(s.apiKeys.userId, user.id)));
-  } catch (err) {
-    console.warn('[revokeApiKey] Database offline:', err);
-  }
+  return { ok: apiRes.status === 200 };
 }
 
 export { maskedKey };
@@ -510,168 +497,6 @@ export async function getUsageLogsAction(params: {
   } catch (err) {
     console.warn('[getUsageLogsAction] Database fallback failed:', err);
     return { data: [], total: 0, page: 1, limit };
-  }
-}
-
-export interface TestPingResult {
-  ok: boolean;
-  status: number;
-  latencyMs: number;
-  reply?: string;
-  model?: string;
-  usage?: {
-    promptTokens: number;
-    completionTokens: number;
-    totalTokens: number;
-  };
-  error?: string;
-  code?: string;
-  rawJson?: any;
-}
-
-export async function getActiveModelsForTesting(): Promise<Array<{ id: string; name: string }>> {
-  try {
-    const rows = await db
-      .select({
-        id: s.models.publicModelId,
-        name: s.models.displayName,
-      })
-      .from(s.models)
-      .where(eq(s.models.status, 'active'));
-
-    return rows ?? [];
-  } catch (err) {
-    // No fabricated catalog (audit R-38): return an empty list so the UI shows a real
-    // empty state instead of models the gateway may not actually serve.
-    console.warn('[getActiveModelsForTesting] Failed to load active models:', err);
-    return [];
-  }
-}
-
-export async function testApiKeyPingAction(params: {
-  apiKey: string;
-  model?: string;
-  prompt?: string;
-}): Promise<TestPingResult> {
-  const user = await requireInteractiveUser();
-
-  if (!checkActionCooldown(user.id, 'test-ping', 2500)) {
-    return {
-      ok: false,
-      status: 429,
-      latencyMs: 0,
-      error: 'Terlalu cepat. Harap tunggu beberapa detik sebelum menguji kembali.',
-      code: 'action_cooldown',
-    };
-  }
-
-  const apiKey = params.apiKey?.trim();
-  if (!apiKey || !apiKey.startsWith('mp-')) {
-    return {
-      ok: false,
-      status: 400,
-      latencyMs: 0,
-      error: 'Format API Key tidak valid. Kunci harus diawali dengan mp-',
-      code: 'invalid_api_key_format',
-    };
-  }
-
-  // Ownership gate (audit H5): only let a user test a key they own. Without this the
-  // action bills an arbitrary user's credits and doubles as a key-validity oracle.
-  try {
-    const [owned] = await db
-      .select({ id: s.apiKeys.id })
-      .from(s.apiKeys)
-      .where(
-        and(
-          eq(s.apiKeys.keyHash, hashApiKey(apiKey)),
-          eq(s.apiKeys.userId, user.id),
-          eq(s.apiKeys.status, 'active'),
-          or(isNull(s.apiKeys.expiresAt), gt(s.apiKeys.expiresAt, new Date())),
-        ),
-      )
-      .limit(1);
-    if (!owned) {
-      return {
-        ok: false,
-        status: 403,
-        latencyMs: 0,
-        error: 'API Key tidak ditemukan pada akun Anda.',
-        code: 'api_key_not_owned',
-      };
-    }
-  } catch (err) {
-    console.error('[testApiKeyPingAction] ownership check failed:', err);
-    return { ok: false, status: 503, latencyMs: 0, error: 'Tidak dapat memverifikasi API Key saat ini.', code: 'verification_unavailable' };
-  }
-
-  const model = params.model?.trim() || 'deepseek-v4';
-  const prompt = params.prompt?.trim() || 'Halo! Test koneksi API gateway Morphic.';
-
-  const apiUrl = (
-    process.env.INTERNAL_API_URL ||
-    process.env.NEXT_PUBLIC_API_URL ||
-    'http://localhost:8787'
-  ).replace(/\/+$/, '');
-
-  const startTime = Date.now();
-
-  try {
-    const res = await fetch(`${apiUrl}/v1/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model,
-        messages: [{ role: 'user', content: prompt }],
-        max_tokens: 60,
-        stream: false,
-      }),
-      signal: AbortSignal.timeout(15_000),
-    });
-
-    const latencyMs = Date.now() - startTime;
-    const json = await res.json().catch(() => null);
-
-    if (!res.ok) {
-      return {
-        ok: false,
-        status: res.status,
-        latencyMs,
-        error: json?.error?.message || json?.message || `Gateway returned status ${res.status}`,
-        code: json?.error?.code || 'gateway_error',
-        rawJson: json,
-      };
-    }
-
-    const reply = json?.choices?.[0]?.message?.content || '(No response text)';
-    return {
-      ok: true,
-      status: res.status,
-      latencyMs,
-      reply,
-      model: json?.model || model,
-      usage: {
-        promptTokens: json?.usage?.prompt_tokens ?? 0,
-        completionTokens: json?.usage?.completion_tokens ?? 0,
-        totalTokens: json?.usage?.total_tokens ?? 0,
-      },
-      rawJson: json,
-    };
-  } catch (err: any) {
-    const latencyMs = Date.now() - startTime;
-    const isTimeout = err?.name === 'TimeoutError' || String(err).includes('timeout');
-    return {
-      ok: false,
-      status: 0,
-      latencyMs,
-      error: isTimeout
-        ? 'Koneksi ke Gateway API timeout (melebihi 15 detik).'
-        : `Gagal menghubungi Gateway API (${err?.message || 'Network error'})`,
-      code: isTimeout ? 'timeout' : 'network_error',
-    };
   }
 }
 

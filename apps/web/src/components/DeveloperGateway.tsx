@@ -17,7 +17,6 @@ import { useTranslation } from '@/lib/i18n';
 import { formatCredits, formatTokenEstimate, timeAgo, API_BASE_URL } from '@/lib/utils';
 import GatewayStatusPopover from '@/components/GatewayStatusPopover';
 import QuickstartHub from '@/components/QuickstartHub';
-import { ApiKeyPingModal } from '@/components/ApiKeyPingModal';
 import { ModelItem } from '@/lib/models-data';
 export type { ModelItem } from '@/lib/models-data';
 
@@ -77,7 +76,6 @@ export default function DeveloperGateway({
   const { t, locale } = useTranslation();
   const isId = locale === 'id';
   const [baseUrlCopied, setBaseUrlCopied] = useState(false);
-  const [isPingModalOpen, setIsPingModalOpen] = useState(false);
 
   const balance = userBalance;
   const balanceUpdatedAtState = balanceUpdatedAt;
@@ -150,15 +148,6 @@ export default function DeveloperGateway({
                 {BASE_URL}
               </code>
               <div className="flex items-center gap-2 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setIsPingModalOpen(true)}
-                  className="group px-2.5 py-2 rounded-xl bg-white border border-neutral-200 hover:border-neutral-950 hover:bg-neutral-950 text-neutral-700 hover:text-white transition-all shrink-0 shadow-2xs cursor-pointer flex items-center gap-1.5 text-xs font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
-                  title={locale === 'en' ? 'Test API Key Connectivity' : 'Uji Koneksi API Key'}
-                >
-                  <Activity className="h-3.5 w-3.5 text-neutral-600 group-hover:text-white transition-colors" />
-                  <span className="text-xs font-medium">{locale === 'en' ? 'Test Ping' : 'Uji Ping'}</span>
-                </button>
                 <button
                   type="button"
                   onClick={copyBaseUrl}
@@ -449,13 +438,6 @@ export default function DeveloperGateway({
           <QuickstartHub />
         </div>
       </div>
-
-      {/* Test Ping Modal */}
-      <ApiKeyPingModal
-        isOpen={isPingModalOpen}
-        onClose={() => setIsPingModalOpen(false)}
-        availableModels={activeModelList.map((m) => ({ id: m.id, name: m.name }))}
-      />
     </div>
   );
 }

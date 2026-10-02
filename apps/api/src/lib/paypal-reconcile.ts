@@ -136,6 +136,11 @@ export async function reconcilePaypalPayments(): Promise<number> {
       }
     } catch (err) {
       console.error(`[payment-reconcile] error processing payment ${payment.id}:`, err);
+      // A plain 'pending' row the gateway can no longer answer for (order gone, sandbox purged)
+      // would otherwise sit open forever. Past 24h, cancel it; a late webhook can still rescue it.
+      if (payment.status === 'pending' && payment.createdAt < cutoff24h) {
+        await markPaymentIfOpen(payment.id, 'expired').catch(() => {});
+      }
     }
   }
 

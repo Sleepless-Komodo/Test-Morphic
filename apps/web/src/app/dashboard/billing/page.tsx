@@ -1,4 +1,4 @@
-import { eq, desc, and, gt } from 'drizzle-orm';
+import { eq, desc, and, gt, sql } from 'drizzle-orm';
 import { db, schema as s } from '@morphic/db';
 import { requireUser } from '@/lib/actions';
 import { getBalance } from '@morphic/db/billing';
@@ -78,8 +78,14 @@ export default async function BillingPage() {
         sourceType: s.creditLedger.sourceType,
         reference: s.creditLedger.reference,
         createdAt: s.creditLedger.createdAt,
+        // Human-readable source, resolved in the same query: the redeem code or the package bought.
+        redeemCode: s.redeemCodes.code,
+        packageName: s.packages.name,
       })
       .from(s.creditLedger)
+      .leftJoin(s.redeemCodes, sql`${s.creditLedger.reference} = 'code:' || ${s.redeemCodes.id}::text`)
+      .leftJoin(s.payments, sql`${s.creditLedger.reference} = 'payment:' || ${s.payments.id}::text`)
+      .leftJoin(s.packages, eq(s.payments.packageId, s.packages.id))
       .where(eq(s.creditLedger.userId, user.id))
       .orderBy(desc(s.creditLedger.createdAt))
       .limit(50)

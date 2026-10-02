@@ -15,6 +15,7 @@ import {
   Activity,
   Ticket,
   History,
+  Trophy,
   ArrowLeft,
   Menu,
   X,
@@ -44,6 +45,7 @@ export function AdminShell({ user, children }: AdminShellProps) {
     { href: '/admin/transactions', label: t.admin.nav.transactions, icon: CreditCard },
     { href: '/admin/usage', label: t.admin.nav.usage, icon: Activity },
     { href: '/admin/codes', label: t.admin.nav.codes, icon: Ticket },
+    { href: '/admin/leaderboard', label: t.admin.nav.leaderboard, icon: Trophy },
     { href: '/admin/audit', label: t.admin.nav.audit, icon: History },
   ];
 
