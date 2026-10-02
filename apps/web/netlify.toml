@@ -1,13 +1,14 @@
-# Netlify deploys the Next.js dashboard (apps/web) only. The Hono API (apps/api) runs
-# background jobs (payment sweeps, webhooks) and must be hosted on a long-running server;
-# point NEXT_PUBLIC_API_URL at it. Set secrets in Netlify → Site settings → Environment variables.
+# Netlify reads this file from the site's base directory (apps/web).
+# Only the Next.js dashboard deploys here. The Hono API (apps/api) runs background jobs
+# (payment sweeps, webhooks) and needs a long-running server; point NEXT_PUBLIC_API_URL at it.
 
 [build]
-  base = "apps/web"
-  # Run from the repo root so turbo also builds the workspace packages web depends on.
-  command = "cd ../.. && pnpm turbo run build --filter=@morphic/web"
+  # Built from the repo root so turbo also builds the workspace packages web depends on.
+  # NODE_ENV is forced for the build step only: a "development" value copied from .env makes
+  # `next build` mix React dev/prod builds and fail prerendering. Setting it here instead of in
+  # [build.environment] keeps devDependencies installed.
+  command = "cd ../.. && NODE_ENV=production pnpm turbo run build --filter=@morphic/web"
   publish = ".next"
 
 [build.environment]
-  NODE_VERSION = "22"
   NEXT_TELEMETRY_DISABLED = "1"
