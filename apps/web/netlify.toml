@@ -1,14 +1,15 @@
-# Netlify reads this file from the site's base directory (apps/web).
+# Netlify site settings: Base directory = (empty, repo root), Package directory = apps/web.
 # Only the Next.js dashboard deploys here. The Hono API (apps/api) runs background jobs
 # (payment sweeps, webhooks) and needs a long-running server; point NEXT_PUBLIC_API_URL at it.
 
 [build]
-  # Built from the repo root so turbo also builds the workspace packages web depends on.
+  # `pnpm --filter` finds the workspace root on its own, so this works from any directory.
   # NODE_ENV is forced for the build step only: a "development" value copied from .env makes
   # `next build` mix React dev/prod builds and fail prerendering. Setting it here instead of in
   # [build.environment] keeps devDependencies installed.
-  command = "cd ../.. && NODE_ENV=production pnpm turbo run build --filter=@morphic/web"
-  publish = ".next"
+  command = "NODE_ENV=production pnpm --filter @morphic/web run build"
+  # Resolved from the repo root (the base directory).
+  publish = "apps/web/.next"
 
 [build.environment]
   NEXT_TELEMETRY_DISABLED = "1"
