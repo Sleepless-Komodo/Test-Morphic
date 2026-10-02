@@ -1,7 +1,8 @@
-import { desc } from 'drizzle-orm';
+import { desc, eq } from 'drizzle-orm';
 import { db, schema as s } from '@morphic/db';
 import { requireAdmin } from '@/lib/actions';
-import { generateRedeemCodes, toggleRedeemCode } from '@/lib/admin-actions';
+import { toggleRedeemCode } from '@/lib/admin-actions';
+import { RedeemCodeGenerator } from '@/components/RedeemCodeGenerator';
 import { getServerTranslation } from '@/lib/i18n/server';
 import { formatCredits } from '@/lib/utils';
 import { Ticket, Plus } from 'lucide-react';
@@ -10,9 +11,28 @@ export default async function AdminCodes() {
   await requireAdmin();
   const { t } = await getServerTranslation();
 
-  const [codes, models] = await Promise.all([
-    db.select().from(s.redeemCodes).orderBy(desc(s.redeemCodes.createdAt)).limit(100),
-    db.select({ id: s.models.id, displayName: s.models.displayName }).from(s.models),
+  const [codes, packages] = await Promise.all([
+    db
+      .select({
+        id: s.redeemCodes.id,
+        code: s.redeemCodes.code,
+        rewardType: s.redeemCodes.rewardType,
+        creditAmount: s.redeemCodes.creditAmount,
+        durationHours: s.redeemCodes.durationHours,
+        packageName: s.packages.name,
+        redeemedCount: s.redeemCodes.redeemedCount,
+        maxRedemptions: s.redeemCodes.maxRedemptions,
+        expiresAt: s.redeemCodes.expiresAt,
+        active: s.redeemCodes.active,
+      })
+      .from(s.redeemCodes)
+      .leftJoin(s.packages, eq(s.redeemCodes.packageId, s.packages.id))
+      .orderBy(desc(s.redeemCodes.createdAt))
+      .limit(100),
+    db
+      .select({ id: s.packages.id, name: s.packages.name, creditAllowance: s.packages.creditAllowance })
+      .from(s.packages)
+      .where(eq(s.packages.status, 'active')),
   ]);
 
   return (
@@ -36,132 +56,7 @@ export default async function AdminCodes() {
           <Plus className="w-4 h-4 text-neutral-700" />
           <h2 className="text-sm font-heading font-bold text-neutral-950">{t.admin.codes.generateTitle}</h2>
         </div>
-        <form action={generateRedeemCodes} className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
-          <div>
-            <label htmlFor="code-prefix" className="block text-[11px] font-mono font-semibold uppercase tracking-wider text-neutral-500 mb-1">
-              {t.admin.codes.prefixLabel}
-            </label>
-            <input
-              id="code-prefix"
-              name="prefix"
-              aria-label={t.admin.codes.prefixLabel}
-              className="w-full px-3 py-2 text-xs rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 placeholder:text-neutral-500 font-mono uppercase focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
-              placeholder="MORPHIC-HACK"
-              required
-            />
-          </div>
-
-          <div>
-            <label htmlFor="code-count" className="block text-[11px] font-mono font-semibold uppercase tracking-wider text-neutral-500 mb-1">
-              {t.admin.codes.countLabel}
-            </label>
-            <input
-              id="code-count"
-              name="count"
-              aria-label={t.admin.codes.countLabel}
-              className="w-full px-3 py-2 text-xs rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
-              type="number"
-              min={1}
-              max={500}
-              defaultValue={1}
-            />
-          </div>
-
-          <div>
-            <label htmlFor="code-type" className="block text-[11px] font-mono font-semibold uppercase tracking-wider text-neutral-500 mb-1">
-              {t.admin.codes.rewardTypeLabel}
-            </label>
-            <select
-              id="code-type"
-              name="rewardType"
-              aria-label={t.admin.codes.rewardTypeLabel}
-              className="w-full px-3 py-2 text-xs rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
-            >
-              <option value="credits">{t.admin.codes.creditsReward}</option>
-              <option value="package">{t.admin.codes.packageReward}</option>
-            </select>
-          </div>
-
-          <div>
-            <label htmlFor="code-credits" className="block text-[11px] font-mono font-semibold uppercase tracking-wider text-neutral-500 mb-1">
-              {t.admin.codes.creditAmountLabel}
-            </label>
-            <input
-              id="code-credits"
-              name="creditAmount"
-              aria-label={t.admin.codes.creditAmountLabel}
-              className="w-full px-3 py-2 text-xs rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
-              type="number"
-              defaultValue={100000}
-            />
-          </div>
-
-          <div>
-            <label htmlFor="code-model" className="block text-[11px] font-mono font-semibold uppercase tracking-wider text-neutral-500 mb-1">
-              {t.admin.codes.modelRestrictionLabel}
-            </label>
-            <select
-              id="code-model"
-              name="modelId"
-              aria-label={t.admin.codes.modelRestrictionLabel}
-              className="w-full px-3 py-2 text-xs rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
-            >
-              <option value="">{t.admin.codes.noModelRestriction}</option>
-              {models.map((m) => (
-                <option key={m.id} value={m.id}>{m.displayName}</option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label htmlFor="code-duration" className="block text-[11px] font-mono font-semibold uppercase tracking-wider text-neutral-500 mb-1">
-              {t.admin.codes.durationHoursLabel}
-            </label>
-            <input
-              id="code-duration"
-              name="durationHours"
-              aria-label={t.admin.codes.durationHoursLabel}
-              className="w-full px-3 py-2 text-xs rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 font-mono placeholder:text-neutral-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
-              type="number"
-              placeholder="e.g. 24"
-            />
-          </div>
-
-          <div>
-            <label htmlFor="code-max-redemptions" className="block text-[11px] font-mono font-semibold uppercase tracking-wider text-neutral-500 mb-1">
-              {t.admin.codes.maxRedemptionsLabel}
-            </label>
-            <input
-              id="code-max-redemptions"
-              name="maxRedemptions"
-              aria-label={t.admin.codes.maxRedemptionsLabel}
-              className="w-full px-3 py-2 text-xs rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 font-mono placeholder:text-neutral-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
-              type="number"
-              placeholder="e.g. 100"
-            />
-          </div>
-
-          <div>
-            <label htmlFor="code-expires" className="block text-[11px] font-mono font-semibold uppercase tracking-wider text-neutral-500 mb-1">
-              {t.admin.codes.expiresAtLabel}
-            </label>
-            <div className="flex gap-2">
-              <input
-                id="code-expires"
-                name="expiresAt"
-                aria-label={t.admin.codes.expiresAtLabel}
-                className="w-full px-3 py-2 text-xs rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
-                type="date"
-              />
-              <button
-                type="submit"
-                className="px-4 py-2 text-xs font-semibold rounded-xl bg-neutral-950 text-white hover:bg-neutral-800 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 cursor-pointer shadow-xs whitespace-nowrap"
-              >
-                {t.admin.codes.generateBtn}
-              </button>
-            </div>
-          </div>
-        </form>
+        <RedeemCodeGenerator packages={packages} />
       </div>
 
       {/* Codes Table Card */}
@@ -189,7 +84,9 @@ export default async function AdminCodes() {
                       <span className="font-medium text-neutral-900">
                         {c.rewardType === 'credits'
                           ? `${formatCredits(c.creditAmount ?? 0)} ${t.admin.codes.creditsReward}`
-                          : `${formatCredits(c.creditAmount ?? 0)} cr · ${c.durationHours ?? 24}h`}
+                          : c.packageName
+                            ? c.packageName
+                            : `${formatCredits(c.creditAmount ?? 0)} cr · ${c.durationHours ?? 24}h`}
                       </span>
                     </td>
                     <td className="py-3 px-3 text-right font-mono text-neutral-700">

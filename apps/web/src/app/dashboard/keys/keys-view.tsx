@@ -381,7 +381,12 @@ export function KeysView({ initialKeys, availableModels }: KeysViewProps) {
                       </div>
                     </td>
                     <td className="px-6 py-4">
-                      {k.status === 'active' ? (
+                      {k.status === 'active' && k.expiresAt && new Date(k.expiresAt).getTime() < Date.now() ? (
+                        <span className="inline-flex items-center gap-1.5 text-xs font-mono font-medium text-red-600">
+                          <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />
+                          <span suppressHydrationWarning>{t.dashboard.keyStatusExpired}</span>
+                        </span>
+                      ) : k.status === 'active' ? (
                         <span className="inline-flex items-center gap-1.5 text-xs font-mono font-medium text-neutral-700">
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
                           <span suppressHydrationWarning>{t.dashboard.keyStatusActive}</span>

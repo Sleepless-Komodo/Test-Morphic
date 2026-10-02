@@ -37,6 +37,15 @@ export default function ParallaxBackground({ sectionRef }: ParallaxBackgroundPro
     let rafId = 0;
     let isRunning = true;
     let isVisible = true;
+    // The loop only runs while something is easing; it parks itself once settled and is
+    // woken by mouse/scroll input, so an idle page costs zero frames.
+    let looping = false;
+    const wake = () => {
+      if (!looping && isRunning && isVisible) {
+        looping = true;
+        rafId = requestAnimationFrame(loop);
+      }
+    };
 
     let observer: IntersectionObserver | null = null;
     if (typeof IntersectionObserver !== 'undefined') {
@@ -45,6 +54,7 @@ export default function ParallaxBackground({ sectionRef }: ParallaxBackgroundPro
           for (const entry of entries) {
             isVisible = entry.isIntersecting;
           }
+          wake();
         },
         { threshold: 0 }
       );
@@ -53,6 +63,7 @@ export default function ParallaxBackground({ sectionRef }: ParallaxBackgroundPro
 
     const onVisibilityChange = () => {
       isVisible = !document.hidden;
+      wake();
     };
     document.addEventListener('visibilitychange', onVisibilityChange);
 
@@ -61,6 +72,7 @@ export default function ParallaxBackground({ sectionRef }: ParallaxBackgroundPro
       const { innerWidth, innerHeight } = window;
       mouseTargetX = (e.clientX / innerWidth - 0.5) * 2;
       mouseTargetY = (e.clientY / innerHeight - 0.5) * 2;
+      wake();
     };
 
     const handleScroll = () => {
@@ -71,12 +83,16 @@ export default function ParallaxBackground({ sectionRef }: ParallaxBackgroundPro
       }
       isVisible = true;
       scrollTarget = Math.max(0, -rect.top);
+      wake();
     };
 
-    const loop = () => {
-      if (!isRunning) return;
+    function loop() {
+      if (!isRunning || !isVisible) {
+        looping = false;
+        return;
+      }
 
-      if (isVisible) {
+      {
         mouseCurrentX += (mouseTargetX - mouseCurrentX) * 0.05;
         mouseCurrentY += (mouseTargetY - mouseCurrentY) * 0.05;
         scrollCurrent += (scrollTarget - scrollCurrent) * 0.08;
@@ -88,15 +104,22 @@ export default function ParallaxBackground({ sectionRef }: ParallaxBackgroundPro
         }
       }
 
+      const settled =
+        Math.abs(mouseTargetX - mouseCurrentX) < 0.001 &&
+        Math.abs(mouseTargetY - mouseCurrentY) < 0.001 &&
+        Math.abs(scrollTarget - scrollCurrent) < 0.1;
+      if (settled) {
+        looping = false;
+        return;
+      }
       rafId = requestAnimationFrame(loop);
-    };
+    }
 
     window.addEventListener('mousemove', handleMouseMove, { passive: true });
     window.addEventListener('scroll', handleScroll, { passive: true });
     window.addEventListener('resize', handleScroll, { passive: true });
 
     handleScroll();
-    rafId = requestAnimationFrame(loop);
 
     return () => {
       isRunning = false;

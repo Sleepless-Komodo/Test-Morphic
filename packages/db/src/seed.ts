@@ -104,6 +104,26 @@ async function seed() {
         status: 'active',
       },
       {
+        name: '5M Token Starter',
+        description: '5.000.000 token AI untuk semua model, cukup Rp 5.000. Berlaku 1 tahun.',
+        creditAllowance: 5_000_000,
+        modelId: null,
+        durationHours: 24 * 365,
+        priceCents: 5_000, // IDR rows store whole rupiah
+        currency: 'IDR',
+        status: 'active',
+      },
+      {
+        name: '5M Token Starter USD',
+        description: '5,000,000 AI tokens for every model, just $0.40. Valid for 1 year.',
+        creditAllowance: 5_000_000,
+        modelId: null,
+        durationHours: 24 * 365,
+        priceCents: 40, // same ~Rp 12.500/USD ratio as the other token packs
+        currency: 'USD',
+        status: 'active',
+      },
+      {
         name: 'Starter USD',
         description: '5,000 credits',
         creditAllowance: 5_000,

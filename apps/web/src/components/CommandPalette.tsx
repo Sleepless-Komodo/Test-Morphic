@@ -20,7 +20,6 @@ import {
   X,
   ArrowRight,
 } from 'lucide-react';
-import { ALL_MODELS } from '@/lib/models-data';
 import { useTranslation } from '@/lib/i18n';
 import { API_BASE_URL } from '@/lib/utils';
 
@@ -52,6 +51,22 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
   const mounted = React.useSyncExternalStore(emptySubscribe, () => true, () => false);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const [models, setModels] = useState<
+    Array<{ id: string; name: string; provider: string; contextLength: number | null; capabilities: string[] | null }>
+  >([]);
+  const modelsRequested = useRef(false);
+
+  // Live catalog, fetched once on first open.
+  useEffect(() => {
+    if (!isOpen || modelsRequested.current) return;
+    modelsRequested.current = true;
+    fetch('/api/models')
+      .then((r) => r.json())
+      .then((body) => setModels(Array.isArray(body?.data) ? body.data : []))
+      .catch(() => {
+        modelsRequested.current = false; // allow a retry on next open
+      });
+  }, [isOpen]);
 
   useEffect(() => {
     if (isOpen) {
@@ -95,16 +110,17 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
   const items: PaletteItem[] = useMemo(() => {
     const list: PaletteItem[] = [];
 
-    ALL_MODELS.forEach((m) => {
+    models.forEach((m) => {
+      const ctx = m.contextLength ? `${Math.round(m.contextLength / 1024)}K context` : null;
       list.push({
         id: `model-${m.id}`,
         section: 'models',
         sectionLabel: locale === 'en' ? 'AI Models' : 'Model AI',
         title: m.name,
-        subtitle: `${m.provider} · ${m.contextWindow} · ${m.estimatedLatency}`,
+        subtitle: [m.provider, ctx].filter(Boolean).join(' · '),
         badge: m.id,
         icon: Bot,
-        keywords: `${m.name} ${m.provider} ${m.id} ${m.category}`,
+        keywords: `${m.name} ${m.provider} ${m.id} ${(m.capabilities ?? []).join(' ')}`,
         onSelect: () => {
           copyToClipboard(m.id, `model-${m.id}`);
         },
@@ -198,7 +214,7 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
     });
 
     return list;
-  }, [locale, router, onClose, copyToClipboard, setLocale]);
+  }, [models, locale, router, onClose, copyToClipboard, setLocale]);
 
   const filteredItems = useMemo(() => {
     if (!query.trim()) return items;

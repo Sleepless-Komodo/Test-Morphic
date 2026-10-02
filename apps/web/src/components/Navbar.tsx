@@ -15,11 +15,10 @@ interface NavbarProps {
 }
 
 const NAVBAR_ENTRANCE = {
-  hidden: { opacity: 0, y: -18, filter: 'blur(6px)' },
+  hidden: { opacity: 0, y: -18 },
   visible: {
     opacity: 1,
     y: 0,
-    filter: 'blur(0px)',
     transition: {
       duration: 0.65,
       ease: [0.16, 1, 0.3, 1] as const,
@@ -55,7 +54,16 @@ export default function Navbar({ session }: NavbarProps) {
   React.useEffect(() => {
     if (!isHome) return;
 
-    const sectionIds = ['integration', 'terminal', 'models', 'pricing', 'faq'];
+    const sectionIds = ['integration', 'terminal', 'pricing', 'faq'];
+    // Layout reads are batched to one per frame instead of one per scroll event.
+    let frame = 0;
+    const onScroll = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        handleScroll();
+      });
+    };
     const handleScroll = () => {
       let currentSection = '';
 
@@ -71,16 +79,19 @@ export default function Navbar({ session }: NavbarProps) {
       setActiveSection(currentSection);
     };
 
-    window.addEventListener('scroll', handleScroll, { passive: true });
+    window.addEventListener('scroll', onScroll, { passive: true });
     handleScroll();
 
-    return () => window.removeEventListener('scroll', handleScroll);
+    return () => {
+      window.removeEventListener('scroll', onScroll);
+      cancelAnimationFrame(frame);
+    };
   }, [isHome]);
 
   const navLinks = [
     { href: '/#integration', label: locale === 'id' ? 'Cara Kerja' : 'How it Works', isRoute: false },
     { href: '/#terminal', label: 'API', isRoute: false },
-    { href: '/#models', label: locale === 'id' ? 'Model' : 'Models', isRoute: false },
+    { href: '/models', label: locale === 'id' ? 'Model' : 'Models', isRoute: true },
     { href: '/pricing', label: t.nav.price, isRoute: true },
     { href: '/docs', label: t.nav.docs || 'Docs', isRoute: true },
     { href: '/#faq', label: t.nav.faq, isRoute: false },

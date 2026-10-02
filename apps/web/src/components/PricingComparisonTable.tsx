@@ -202,8 +202,8 @@ export default function PricingComparisonTable({ isLoggedIn = false }: { isLogge
       <div className="max-w-6xl mx-auto">
         {/* Section Header */}
         <motion.div
-          initial={reduced ? false : { opacity: 0, y: 14, filter: 'blur(4px)' }}
-          whileInView={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+          initial={reduced ? false : { opacity: 0, y: 14 }}
+          whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, margin: '-50px' }}
           transition={{ duration: 0.5, ease: EASE }}
           className="text-center max-w-3xl mx-auto mb-12 sm:mb-16"
@@ -226,8 +226,8 @@ export default function PricingComparisonTable({ isLoggedIn = false }: { isLogge
 
         {/* The Matrix Table Container */}
         <motion.div
-          initial={reduced ? false : { opacity: 0, y: 16, filter: 'blur(4px)' }}
-          whileInView={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+          initial={reduced ? false : { opacity: 0, y: 16 }}
+          whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, margin: '-40px' }}
           transition={{ duration: 0.55, delay: 0.1, ease: EASE }}
           className="rounded-3xl border border-neutral-200/90 bg-white shadow-xs overflow-hidden"

@@ -1,4 +1,4 @@
-import { eq, sql, desc, and } from 'drizzle-orm';
+import { eq, sql, desc, and, or, gt, isNull } from 'drizzle-orm';
 import { getSessionWithRetry } from '@/lib/actions';
 import { db, schema as s } from '@morphic/db';
 import DeveloperGateway, { ModelItem } from '@/components/DeveloperGateway';
@@ -99,7 +99,7 @@ async function loadActiveKeyCount(userId: string): Promise<number> {
     const [row] = await db
       .select({ count: sql<number>`count(*)::int` })
       .from(s.apiKeys)
-      .where(and(eq(s.apiKeys.userId, userId), eq(s.apiKeys.status, 'active')));
+      .where(and(eq(s.apiKeys.userId, userId), eq(s.apiKeys.status, 'active'), or(isNull(s.apiKeys.expiresAt), gt(s.apiKeys.expiresAt, new Date()))));
     return row?.count ?? 0;
   } catch {
     return 0;

@@ -1,7 +1,7 @@
 import { createAuthEndpoint, APIError } from 'better-auth/api';
 import { setSessionCookie } from 'better-auth/cookies';
 import { db, schema as s } from '@morphic/db';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, or, gt, isNull } from 'drizzle-orm';
 import { hashApiKey } from '@morphic/shared/keys';
 import { z } from 'zod';
 import type { BetterAuthPlugin } from 'better-auth';
@@ -36,7 +36,7 @@ export const apiKeyAuth = (): BetterAuthPlugin => {
               status: s.apiKeys.status,
             })
             .from(s.apiKeys)
-            .where(and(eq(s.apiKeys.keyHash, keyHash), eq(s.apiKeys.status, 'active')))
+            .where(and(eq(s.apiKeys.keyHash, keyHash), eq(s.apiKeys.status, 'active'), or(isNull(s.apiKeys.expiresAt), gt(s.apiKeys.expiresAt, new Date()))))
             .limit(1);
 
           if (!keyRow || !keyRow.userId) {

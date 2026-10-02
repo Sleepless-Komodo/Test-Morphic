@@ -41,14 +41,9 @@ export default function HeroOpening({ isLoggedIn = false }: HeroOpeningProps) {
   const sectionRef = useRef<HTMLElement>(null);
   const reduced = useReducedMotionSafe();
 
-  const fallbackSubheadline =
-    locale === 'id'
-      ? 'Akses Claude 3.5, DeepSeek V4, Qwen, dan Kimi tanpa ribet kartu kredit internasional. Hemat biaya token hingga 70% dengan pembayaran QRIS lokal instan.'
-      : 'Access Claude 3.5, DeepSeek V4, Qwen and Kimi without international credit card friction. Save up to 70% with instant local QRIS top-up.';
-
   const headline1 = t?.hero?.headline || (locale === 'id' ? 'Satu Kunci API' : 'One Single API Key');
   const headline2 = t?.hero?.headlineSub || (locale === 'id' ? 'untuk Semua Model AI Terbaik.' : 'for the Best AI Models.');
-  const subheadline = t?.hero?.subheadline || fallbackSubheadline;
+  const subheadline = t.hero.subheadline;
 
   return (
     <section
