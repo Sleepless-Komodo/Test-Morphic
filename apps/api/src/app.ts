@@ -8,6 +8,7 @@ import { account } from './routes/account';
 import { payments } from './routes/payments';
 import { redeem } from './routes/redeem';
 import { catalog } from './routes/catalog';
+import { quickstart } from './routes/quickstart';
 
 const app = new Hono();
 
@@ -59,6 +60,7 @@ app.onError((err, c) => {
 });
 
 app.get('/health', (c) => c.json({ ok: true }));
+app.route('/quickstart', quickstart);
 app.route('/webhooks', webhooks);
 app.route('/v1/keys', keys);
 app.route('/v1/account', account);

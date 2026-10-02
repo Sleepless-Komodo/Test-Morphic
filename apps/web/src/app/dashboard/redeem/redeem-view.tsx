@@ -7,8 +7,7 @@ import { useTranslation } from '@/lib/i18n';
 import { formatCredits } from '@/lib/utils';
 import { redeemCodeDirect } from '@/lib/actions';
 
-/** `compact` drops the page header and outer spacing so the form fits a dashboard tile. */
-export function RedeemView({ compact = false }: { compact?: boolean }) {
+export function RedeemView() {
   const { t, locale } = useTranslation();
   const [code, setCode] = useState('');
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
@@ -67,8 +66,7 @@ export function RedeemView({ compact = false }: { compact?: boolean }) {
   };
 
   return (
-    <div className={compact ? 'h-full' : 'max-w-xl mx-auto py-8 sm:py-12 px-4 sm:px-6'}>
-      {!compact && (
+    <div className="max-w-xl mx-auto py-8 sm:py-12 px-4 sm:px-6">
       <div className="text-center mb-8">
         <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-neutral-100 text-neutral-900 border border-neutral-200 mb-4 shadow-2xs">
           <Gift className="w-7 h-7" />
@@ -81,9 +79,7 @@ export function RedeemView({ compact = false }: { compact?: boolean }) {
         </p>
       </div>
 
-      )}
-
-      <div className={compact ? 'space-y-5' : 'bg-white border border-neutral-200/90 rounded-3xl p-6 sm:p-8 shadow-2xs space-y-6'}>
+      <div className="bg-white border border-neutral-200/90 rounded-3xl p-6 sm:p-8 shadow-2xs space-y-6">
         <form onSubmit={handleSubmit} className="space-y-5">
           <div>
             <label htmlFor="code" suppressHydrationWarning className="block text-xs font-mono font-bold uppercase tracking-wider text-neutral-600 mb-2">

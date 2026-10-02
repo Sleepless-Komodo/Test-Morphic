@@ -335,7 +335,7 @@ export const en = {
       expiryNever: 'No Expiration',
       expiry30Days: '30 Days',
       expiry90Days: '90 Days',
-      revokeBtn: 'Revoke',
+      revokeBtn: 'Delete',
       revealKeyPrompt: 'Your new API key (only shown once):',
       revealKeyWarning: 'Store this key safely. It cannot be shown again once you leave this page.',
 
@@ -429,7 +429,7 @@ export const en = {
       keyCopyFull: 'Copy Full API Key',
       keyShow: 'Show API Key',
       keyHide: 'Hide API Key',
-      revokeConfirm: 'Revoke?',
+      revokeConfirm: 'Delete permanently?',
       revokeYes: 'Yes',
       revokeCancel: 'Cancel',
       keySecurityLabel: 'API Key Security:',
@@ -467,6 +467,7 @@ export const en = {
         usage: 'Usage',
         codes: 'Redeem Codes',
         audit: 'Audit Log',
+        leaderboard: 'Leaderboard',
       },
       status: {
         active: 'Active',

@@ -23,6 +23,18 @@ interface BillingViewProps {
   ledger: any[];
 }
 
+const LEDGER_TYPE_LABELS: Record<string, { en: string; id: string }> = {
+  purchase: { en: 'Top-up', id: 'Top up' },
+  redeem: { en: 'Redeem code', id: 'Redeem code' },
+  usage: { en: 'Usage', id: 'Pemakaian' },
+  reservation: { en: 'Reserved', id: 'Dicadangkan' },
+  settlement: { en: 'Usage', id: 'Pemakaian' },
+  release: { en: 'Released', id: 'Dikembalikan' },
+  refund: { en: 'Refund', id: 'Refund' },
+  admin_adjustment: { en: 'Adjustment', id: 'Penyesuaian' },
+  promotion: { en: 'Promo', id: 'Promo' },
+};
+
 export function BillingView({
   balance: initialBalance,
   packages: initialPackages,
@@ -318,9 +330,11 @@ export function BillingView({
                   </thead>
                   <tbody className="divide-y divide-neutral-100">
                     {payments.map((p) => {
-                      // QRIS invoices live 5 minutes; the API cancels them right after, so never offer to pay a stale one.
+                      // QRIS invoices live 5 minutes, other open payments 24 hours; the API cancels them after that,
+                      // so a stale row reads as cancelled and never offers "Pay now".
+                      const age = Date.now() - new Date(p.createdAt).getTime();
                       const status =
-                        p.provider === 'duitku' && p.status === 'pending' && Date.now() - new Date(p.createdAt).getTime() > 5.5 * 60_000
+                        p.status === 'pending' && (age > 24 * 3_600_000 || (p.provider === 'duitku' && age > 5.5 * 60_000))
                           ? 'expired'
                           : p.status;
                       return (
@@ -418,18 +432,28 @@ export function BillingView({
                   <tbody className="divide-y divide-neutral-100">
                     {ledger.map((entry) => (
                       <tr key={entry.id}>
-                        <td className="px-5 py-3 font-mono font-bold text-neutral-800">
-                          {entry.entry_type}
+                        <td className="px-5 py-3 font-bold text-neutral-800 whitespace-nowrap">
+                          {(LEDGER_TYPE_LABELS[entry.entryType] ?? { en: entry.entryType, id: entry.entryType })[locale === 'en' ? 'en' : 'id']}
                         </td>
                         <td className={`px-5 py-3 font-mono font-bold ${entry.amount >= 0 ? 'text-emerald-600' : 'text-rose-600'
                           }`}>
                           {entry.amount >= 0 ? '+' : ''}{entry.amount.toLocaleString()}
                         </td>
-                        <td className="px-5 py-3 text-neutral-500 max-w-[200px] truncate">
-                          {entry.reference ?? '—'}
+                        <td className="px-5 py-3 text-neutral-600 max-w-[260px] truncate" title={entry.reference ?? undefined}>
+                          {entry.redeemCode
+                            ? `${locale === 'en' ? 'Code' : 'Kode'} ${entry.redeemCode}`
+                            : entry.packageName
+                              ? entry.packageName
+                              : entry.reference?.startsWith('code:')
+                                ? `${locale === 'en' ? 'Code' : 'Kode'} ${entry.reference.slice(5)}`
+                                : entry.entryType === 'admin_adjustment'
+                                  ? (locale === 'en' ? 'Adjusted by admin' : 'Disesuaikan admin')
+                                  : entry.reference
+                                    ? `${locale === 'en' ? 'Request' : 'Request'} ${entry.reference.slice(0, 12)}`
+                                    : '—'}
                         </td>
                         <td className="px-5 py-3 text-neutral-500 font-mono whitespace-nowrap">
-                          {new Date(entry.created_at).toLocaleString(
+                          {new Date(entry.createdAt).toLocaleString(
                             locale === 'en' ? 'en-US' : 'id-ID',
                             { dateStyle: 'short', timeStyle: 'short' }
                           )}

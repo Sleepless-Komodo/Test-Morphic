@@ -135,17 +135,11 @@ keys.delete('/:id', async (c) => {
     );
   }
 
-  const revokedAt = new Date();
-  await db
-    .update(s.apiKeys)
-    .set({ status: 'revoked', revokedAt })
-    .where(eq(s.apiKeys.id, keyId));
+  // Hard delete: auth looks keys up by hash, so the key stops working on its next request.
+  // Usage and request logs keep their rows (api_key_id is set null by the FK).
+  await db.delete(s.apiKeys).where(and(eq(s.apiKeys.id, keyId), eq(s.apiKeys.userId, userId)));
 
-  return c.json({
-    id: keyId,
-    status: 'revoked',
-    revoked_at: revokedAt.toISOString(),
-  });
+  return c.json({ id: keyId, deleted: true });
 });
 
 export { keys };

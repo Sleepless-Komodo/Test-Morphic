@@ -15,7 +15,6 @@ import {
   Copy,
   Check,
   KeyRound,
-  Play,
   Terminal,
   Code2,
   BookOpen,
@@ -26,7 +25,6 @@ import { useTranslation } from '@/lib/i18n';
 import { formatCredits, API_BASE_URL, cn } from '@/lib/utils';
 import { PayPalButton } from '@/components/PayPalButton';
 import { provisionPostPaymentKey } from '@/lib/actions';
-import { ApiKeyPingModal } from '@/components/ApiKeyPingModal';
 import { ModelProviderLogo } from '@/components/ProviderLogos';
 
 const API_URL = '/api/backend';
@@ -165,7 +163,6 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
   const [copiedKey, setCopiedKey] = useState(false);
   const [copiedBaseUrl, setCopiedBaseUrl] = useState(false);
   const [copiedSnippet, setCopiedSnippet] = useState(false);
-  const [isPingModalOpen, setIsPingModalOpen] = useState(false);
 
   const [selectedMethod, setSelectedMethod] = useState<string>('SP');
   const [categoryFilter, setCategoryFilter] = useState<PaymentCategory>('all');
@@ -901,15 +898,6 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
 
                 {/* Direct Live Ping action & Docs link */}
                 <div className="flex flex-col sm:flex-row items-center gap-2 pt-1 border-t border-neutral-200/70">
-                  <button
-                    type="button"
-                    onClick={() => setIsPingModalOpen(true)}
-                    disabled={!provisionedToken}
-                    className="w-full sm:flex-1 py-2 px-3 rounded-xl bg-neutral-950 hover:bg-neutral-800 disabled:opacity-50 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
-                  >
-                    <Play className="h-3.5 w-3.5 fill-current text-emerald-400" />
-                    <span>{locale === 'en' ? 'Quick Ping Test (Live)' : 'Uji Coba Sekarang (Quick Ping)'}</span>
-                  </button>
 
                   <a
                     href="/docs#ide-setup"
@@ -1015,14 +1003,6 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
           )}
         </div>
       </div>
-
-      {/* Test API Key Ping Modal on top of checkout success */}
-      <ApiKeyPingModal
-        isOpen={isPingModalOpen}
-        onClose={() => setIsPingModalOpen(false)}
-        initialApiKey={provisionedToken || ''}
-        zIndex="z-[70]"
-      />
     </div>
   );
 }
