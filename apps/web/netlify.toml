@@ -13,3 +13,7 @@
 
 [build.environment]
   NEXT_TELEMETRY_DISABLED = "1"
+  # Plain configuration (ports, limits, public URLs, sandbox/production switch), not secrets.
+  # Their values also appear in .env.example and docs, which trips Netlify's secret scan.
+  # Real secrets are deliberately NOT listed here so the scan still guards them.
+  SECRETS_SCAN_OMIT_KEYS = "API_PORT,HARD_RESERVE_CAP,UPSTREAM_TIMEOUT_MS,RESERVATION_TTL_MINUTES,DUITKU_ENV,PAYPAL_ENVIRONMENT,NEXT_PUBLIC_PAYPAL_ENVIRONMENT,BETTER_AUTH_URL,NEXT_PUBLIC_APP_URL,NEXT_PUBLIC_API_URL,NEXT_PUBLIC_GATEWAY_URL"
