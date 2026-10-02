@@ -1,0 +1,13 @@
+# Netlify deploys the Next.js dashboard (apps/web) only. The Hono API (apps/api) runs
+# background jobs (payment sweeps, webhooks) and must be hosted on a long-running server;
+# point NEXT_PUBLIC_API_URL at it. Set secrets in Netlify → Site settings → Environment variables.
+
+[build]
+  base = "apps/web"
+  # Run from the repo root so turbo also builds the workspace packages web depends on.
+  command = "cd ../.. && pnpm turbo run build --filter=@morphic/web"
+  publish = ".next"
+
+[build.environment]
+  NODE_VERSION = "22"
+  NEXT_TELEMETRY_DISABLED = "1"
