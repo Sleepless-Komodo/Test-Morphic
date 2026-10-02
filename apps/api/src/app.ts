@@ -6,7 +6,7 @@ import { webhooks } from './routes/webhooks';
 import { keys } from './routes/keys';
 import { account } from './routes/account';
 import { payments } from './routes/payments';
-import { redeem } from './routes/redeem';
+import { quickstart } from './routes/quickstart';
 
 const app = new Hono();
 
@@ -53,5 +53,6 @@ app.route('/v1/account', account);
 app.route('/v1/payments', payments);
 app.route('/v1/redeem', redeem);
 app.route('/v1', v1);
+app.route('/quickstart', quickstart);
 
 export { app };
