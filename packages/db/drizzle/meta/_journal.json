@@ -36,6 +36,20 @@
       "when": 1790396540145,
       "tag": "0004_violet_praxagora",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1790500000000,
+      "tag": "0005_sweet_api_key_encrypted",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1791000000000,
+      "tag": "0006_drop_api_key_encrypted",
+      "breakpoints": true
     }
   ]
 }

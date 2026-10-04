@@ -88,7 +88,6 @@ export const apiKeys = pgTable(
     name: text('name').notNull(),
     keyHash: text('key_hash').notNull().unique(),
     keyPrefix: text('key_prefix').notNull(),
-    encryptedKey: text('encrypted_key'),
     status: text('status', { enum: ['active', 'revoked'] }).notNull().default('active'),
     expiresAt: timestamp('expires_at', { withTimezone: true }),
     lastUsedAt: timestamp('last_used_at', { withTimezone: true }),

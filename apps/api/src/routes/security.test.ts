@@ -195,3 +195,31 @@ test('mass assignment: extra fields on payment create are ignored', async () => 
     assert.equal(row.userId, attacker.user.id);
   }
 });
+
+// ── FIX-BE-P0-01: Hash-only API keys test ─────────────────────────────────────
+test('FIX-BE-P0-01: GET /v1/keys never exposes plaintext key or encrypted_key', async () => {
+  const user = await mkUser('hashonlykey');
+  const createRes = await app.request('/v1/keys', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${user.token}` },
+    body: JSON.stringify({ name: 'Security Test Key' }),
+  });
+  assert.equal(createRes.status, 201);
+  const createdBody = await createRes.json();
+  assert.ok(createdBody.key, 'POST response must contain raw key');
+  assert.ok(createdBody.key.startsWith('mp-'), 'raw key must start with mp-');
+
+  const listRes = await app.request('/v1/keys', {
+    headers: { Authorization: `Bearer ${user.token}` },
+  });
+  assert.equal(listRes.status, 200);
+  const listBody = await listRes.json();
+  assert.ok(Array.isArray(listBody.data), 'GET /v1/keys returns array data');
+  assert.ok(listBody.data.length > 0, 'GET /v1/keys contains created key');
+  
+  const fetchedKeyItem = listBody.data.find((k: any) => k.id === createdBody.id);
+  assert.ok(fetchedKeyItem, 'created key present in list');
+  assert.equal(fetchedKeyItem.key, undefined, 'GET /v1/keys must NOT include key property');
+  assert.equal(fetchedKeyItem.encryptedKey, undefined, 'GET /v1/keys must NOT include encryptedKey property');
+  assert.ok(fetchedKeyItem.prefix, 'GET /v1/keys includes prefix');
+});

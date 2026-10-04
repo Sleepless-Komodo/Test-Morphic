@@ -2,7 +2,6 @@ import { randomBytes, createHash } from 'node:crypto';
 import { Hono } from 'hono';
 import { db, schema as s } from '@morphic/db';
 import { eq, and, desc } from 'drizzle-orm';
-import { encryptApiKey, decryptApiKey } from '@morphic/shared/keys';
 import { sessionAuth, denyKeyDerivedSession } from '../middleware/session-auth';
 import { sessionRateLimit } from '../middleware/session-ratelimit';
 
@@ -50,7 +49,6 @@ keys.post('/', async (c) => {
   const rawKey = `mp-${randomBytes(32).toString('hex')}`;
   const keyPrefix = rawKey.slice(0, 10);
   const keyHash = createHash('sha256').update(rawKey).digest('hex');
-  const encryptedKey = encryptApiKey(rawKey);
 
   const [inserted] = await db
     .insert(s.apiKeys)
@@ -59,7 +57,6 @@ keys.post('/', async (c) => {
       name,
       keyHash,
       keyPrefix,
-      encryptedKey,
       status: 'active',
       expiresAt,
     })
@@ -94,7 +91,6 @@ keys.get('/', async (c) => {
       id: s.apiKeys.id,
       name: s.apiKeys.name,
       prefix: s.apiKeys.keyPrefix,
-      encryptedKey: s.apiKeys.encryptedKey,
       status: s.apiKeys.status,
       expiresAt: s.apiKeys.expiresAt,
       lastUsedAt: s.apiKeys.lastUsedAt,
@@ -110,7 +106,6 @@ keys.get('/', async (c) => {
       id: k.id,
       name: k.name,
       prefix: k.prefix,
-      key: decryptApiKey(k.encryptedKey),
       status: k.status,
       expires_at: k.expiresAt?.toISOString() ?? null,
       last_used_at: k.lastUsedAt?.toISOString() ?? null,

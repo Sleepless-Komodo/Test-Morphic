@@ -15,8 +15,6 @@ import {
   Trash2,
   Activity,
   Zap,
-  Eye,
-  EyeOff,
 } from 'lucide-react';
 import { ApiKeyPingModal } from '@/components/ApiKeyPingModal';
 
@@ -301,39 +299,16 @@ export function KeysView({ initialKeys, availableModels }: KeysViewProps) {
                     <td className="px-6 py-4 font-bold text-neutral-900">{k.name}</td>
                     <td className="px-6 py-4 font-mono text-neutral-600">
                       <div className="inline-flex items-center gap-1.5">
-                        <span
-                          className={`px-2.5 py-1 rounded-lg border text-xs font-mono select-all transition-all ${
-                            revealedKeys[k.id]
-                              ? 'bg-neutral-900 text-emerald-400 border-neutral-800 font-semibold'
-                              : 'bg-neutral-100 text-neutral-600 border-neutral-200'
-                          }`}
-                        >
-                          {revealedKeys[k.id]
-                            ? (getFullKey(k) || `${k.keyPrefix}••••••••`)
-                            : maskedKey(k.keyPrefix)}
+                        <span className="px-2.5 py-1 rounded-lg border text-xs font-mono select-all bg-neutral-100 text-neutral-600 border-neutral-200">
+                          {k.rawKey ? k.rawKey : maskedKey(k.keyPrefix)}
                         </span>
 
-                        {/* Toggle Visibility (Eye) */}
-                        <button
-                          type="button"
-                          onClick={() => toggleReveal(k.id)}
-                          title={revealedKeys[k.id] ? t.dashboard.keyHide : t.dashboard.keyShow}
-                          aria-label={revealedKeys[k.id] ? t.dashboard.keyHide : t.dashboard.keyShow}
-                          className="p-1.5 rounded-lg border border-neutral-200 hover:border-neutral-400 hover:bg-neutral-100 text-neutral-600 hover:text-neutral-900 transition-colors cursor-pointer shrink-0"
-                        >
-                          {revealedKeys[k.id] ? (
-                            <EyeOff className="h-3.5 w-3.5 text-neutral-700" />
-                          ) : (
-                            <Eye className="h-3.5 w-3.5 text-neutral-600" />
-                          )}
-                        </button>
-
-                        {/* Copy FULL API Key */}
+                        {/* Copy API Key or Prefix */}
                         <button
                           type="button"
                           onClick={() => handleCopyKey(k)}
-                          title={t.dashboard.keyCopyFull}
-                          aria-label={t.dashboard.keyCopyFull}
+                          title={k.rawKey ? t.dashboard.keyCopyFull : (isId ? 'Salin Prefix Key' : 'Copy Key Prefix')}
+                          aria-label={k.rawKey ? t.dashboard.keyCopyFull : (isId ? 'Salin Prefix Key' : 'Copy Key Prefix')}
                           className="p-1.5 rounded-lg border border-neutral-200 hover:border-neutral-400 hover:bg-neutral-100 text-neutral-600 hover:text-neutral-900 transition-colors cursor-pointer shrink-0"
                         >
                           {copiedKeyId === k.id ? (
