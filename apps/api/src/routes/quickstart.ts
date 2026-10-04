@@ -3,9 +3,9 @@ import { db, schema as s } from '@morphic/db';
 import { eq } from 'drizzle-orm';
 
 /**
- * Public install scripts, meant for `curl -fsSL <url> | bash`. They contain no secrets: the
- * API key is read from the caller's own environment ($API_KEY) and only ever written to a
- * local file on their machine.
+ * Public install scripts: `curl -fsSL <url> | bash` (macOS/Linux) and `irm <url> | iex`
+ * (Windows PowerShell). They contain no secrets: the API key is read from the caller's own
+ * environment ($API_KEY) and only ever written to a local file on their machine.
  */
 const quickstart = new Hono();
 
@@ -22,14 +22,19 @@ async function activeModels() {
   return models;
 }
 
+const gatewayBase = (reqUrl: string) =>
+  `${(process.env.NEXT_PUBLIC_GATEWAY_URL || new URL(reqUrl).origin).replace(/\/+$/, '')}/v1`;
+const modelsMap = (models: Array<{ id: string; name: string }>) =>
+  Object.fromEntries(models.map((m) => [m.id, { name: m.name }]));
+
 quickstart.get('/opencode.sh', async (c) => {
   const models = await activeModels();
-  const modelsJson = JSON.stringify(Object.fromEntries(models.map((m) => [m.id, { name: m.name }])), null, 2)
+  const modelsJson = JSON.stringify(modelsMap(models), null, 2)
     .split('\n')
     .join('\n      ')
     // Goes inside an unquoted heredoc: keep $, ` and \ literal.
     .replace(/[\\$`]/g, '\\$&');
-  const defaultBase = `${(process.env.NEXT_PUBLIC_GATEWAY_URL || new URL(c.req.url).origin).replace(/\/+$/, '')}/v1`;
+  const defaultBase = gatewayBase(c.req.url);
 
   const script = `#!/usr/bin/env bash
 # Morphic x opencode quickstart. Writes ~/.config/opencode/opencode.json for the Morphic provider.
@@ -98,6 +103,87 @@ echo "  Run: opencode   then pick a model with /models"
 
   return c.body(script, 200, {
     'Content-Type': 'text/x-shellscript; charset=utf-8',
+    'Cache-Control': 'public, max-age=60',
+  });
+});
+
+// Windows: same job as opencode.sh. Runs inside the user's own PowerShell session via
+// `irm ... | iex`, so it must never call `exit` (that would close their window): errors stop the
+// script block with `return`. Works on Windows PowerShell 5.1 and PowerShell 7.
+quickstart.get('/opencode.ps1', async (c) => {
+  const models = await activeModels();
+  // Single-quoted here-string: PowerShell expands nothing inside it. The only terminator is a
+  // line starting with '@, which JSON.stringify output can never produce.
+  const modelsJson = JSON.stringify(modelsMap(models), null, 2);
+  const defaultBase = gatewayBase(c.req.url);
+
+  const script = `# Morphic x opencode quickstart for Windows. Writes %USERPROFILE%\\.config\\opencode\\opencode.json.
+# Usage (PowerShell):
+#   $env:BASE_URL = "${defaultBase}"
+#   $env:API_KEY  = "mp-..."
+#   irm "$env:BASE_URL/../quickstart/opencode.ps1" | iex
+& {
+  $ErrorActionPreference = 'Stop'
+  # Windows PowerShell 5.1 on older builds defaults to TLS 1.0/1.1.
+  [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+
+  $BaseUrl = if ($env:BASE_URL) { $env:BASE_URL } else { '${defaultBase}' }
+  $BaseUrl = $BaseUrl.TrimEnd('/')
+  $ApiKey = if ($env:API_KEY) { $env:API_KEY } else { $env:MORPHIC_API_KEY }
+
+  if (-not $ApiKey) {
+    Write-Host 'x API_KEY is not set. Run: $env:API_KEY = "mp-your-key"' -ForegroundColor Red
+    return
+  }
+  if ($ApiKey -notmatch '^mp-[A-Za-z0-9_-]+$') {
+    Write-Host 'x API_KEY should look like mp-... Copy it from your Morphic dashboard (API Keys).' -ForegroundColor Red
+    return
+  }
+
+  Write-Host "> Checking your key against $BaseUrl ..."
+  try {
+    Invoke-RestMethod -Uri "$BaseUrl/models" -Headers @{ Authorization = "Bearer $ApiKey" } | Out-Null
+  } catch {
+    Write-Host 'x The gateway rejected this key (or is unreachable). Check the key and BASE_URL.' -ForegroundColor Red
+    return
+  }
+
+  $ConfigRoot = if ($env:XDG_CONFIG_HOME) { $env:XDG_CONFIG_HOME } else { Join-Path $HOME '.config' }
+  $ConfigDir = Join-Path $ConfigRoot 'opencode'
+  $Config = Join-Path $ConfigDir 'opencode.json'
+  New-Item -ItemType Directory -Force -Path $ConfigDir | Out-Null
+  if (Test-Path $Config) {
+    $Backup = "$Config.bak.$(Get-Date -Format yyyyMMddHHmmss)"
+    Copy-Item $Config $Backup
+    Write-Host "> Existing config saved to $Backup"
+  }
+
+  $Models = @'
+${modelsJson}
+'@ | ConvertFrom-Json
+
+  $Body = [ordered]@{
+    '$schema' = 'https://opencode.ai/config.json'
+    provider = [ordered]@{
+      morphic = [ordered]@{
+        npm = '@ai-sdk/openai-compatible'
+        name = 'Morphic AI'
+        options = [ordered]@{ baseURL = $BaseUrl; apiKey = $ApiKey }
+        models = $Models
+      }
+    }
+  }
+  # UTF-8 without BOM: Set-Content -Encoding UTF8 on 5.1 adds a BOM some JSON readers reject.
+  [IO.File]::WriteAllText($Config, ($Body | ConvertTo-Json -Depth 10), (New-Object Text.UTF8Encoding $false))
+
+  Write-Host 'OK opencode is connected to Morphic (${models.length} models).' -ForegroundColor Green
+  Write-Host "  Config: $Config"
+  Write-Host '  Run: opencode   then pick a model with /models'
+}
+`;
+
+  return c.body(script, 200, {
+    'Content-Type': 'text/plain; charset=utf-8',
     'Cache-Control': 'public, max-age=60',
   });
 });

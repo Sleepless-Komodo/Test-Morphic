@@ -446,28 +446,33 @@ claude "Analyze this repository architecture"`,
   "plugin": []
 }`;
 
-    if (os === 'windows' && winShell === 'cmd') {
-      return {
-        file: 'opencode.json',
-        language: 'json',
-        menuPath: '%USERPROFILE%\\.config\\opencode\\opencode.json',
-        code: config,
-        extraFile: 'Command Prompt',
-        extraLanguage: 'cmd',
-        extraCode: 'setx MORPHIC_API_KEY "API_KEY_MORPHIC_LU"',
-      };
-    }
-
+    // Windows: same one-paste setup. opencode.ps1 (served by the gateway) checks the key, backs
+    // up any existing config and writes %USERPROFILE%\.config\opencode\opencode.json. From CMD it
+    // runs through powershell, which inherits the variables set with `set`.
     if (os === 'windows') {
-      return {
-        file: 'opencode.json',
-        language: 'json',
-        menuPath: '%USERPROFILE%\\.config\\opencode\\opencode.json',
-        code: config,
-        extraFile: 'PowerShell',
-        extraLanguage: 'powershell',
-        extraCode: '$env:MORPHIC_API_KEY="API_KEY_MORPHIC_LU"',
-      };
+      return winShell === 'cmd'
+        ? {
+            file: 'Command Prompt',
+            language: 'cmd',
+            menuPath: 'Command Prompt → paste → opencode',
+            code: `set BASE_URL=${BASE_URL}
+set API_KEY=mp-xxxxxxxxxxxxxxxxxxxx
+powershell -NoProfile -Command "irm $env:BASE_URL/../quickstart/opencode.ps1 | iex"`,
+            extraFile: 'opencode.json (manual, optional)',
+            extraLanguage: 'json',
+            extraCode: config,
+          }
+        : {
+            file: 'PowerShell',
+            language: 'powershell',
+            menuPath: 'PowerShell → paste → opencode',
+            code: `$env:BASE_URL = "${BASE_URL}"
+$env:API_KEY = "mp-xxxxxxxxxxxxxxxxxxxx"
+irm "$env:BASE_URL/../quickstart/opencode.ps1" | iex`,
+            extraFile: 'opencode.json (manual, optional)',
+            extraLanguage: 'json',
+            extraCode: config,
+          };
     }
 
     // macOS / Linux: one paste in the terminal. The script (served by the gateway) checks the
