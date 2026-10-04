@@ -2,7 +2,8 @@
 
 import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { eq, and, desc, sql, gt, gte, lte } from 'drizzle-orm';
+import { revalidatePath } from 'next/cache';
+import { eq, and, desc, sql, gt, gte, lte, ne } from 'drizzle-orm';
 import { db, schema as s } from '@morphic/db';
 import { generateApiKey, maskedKey, encryptApiKey, decryptApiKey } from '@morphic/shared/keys';
 import { auth } from '@/lib/auth';
@@ -227,7 +228,13 @@ export async function revokeSessionById(formData: FormData): Promise<{ ok: boole
   if (!row) return { ok: false, error: 'That session is already signed out.' };
 
   try {
-    await auth.api.revokeSession({ body: { token: row.token }, headers: await headers() });
+    try {
+      await auth.api.revokeSession({ body: { token: row.token }, headers: await headers() });
+    } catch {
+      // Direct DB deletion below guarantees session row is removed
+    }
+    await db.delete(s.sessions).where(and(eq(s.sessions.id, id), eq(s.sessions.userId, user.id)));
+    revalidatePath('/dashboard/settings');
     return { ok: true };
   } catch (err) {
     console.error('[revokeSessionById] Failed to revoke session:', err);
@@ -236,10 +243,22 @@ export async function revokeSessionById(formData: FormData): Promise<{ ok: boole
 }
 
 export async function revokeOtherSessions(): Promise<{ ok: boolean; error?: string }> {
-  await requireInteractiveUser();
+  const user = await requireInteractiveUser();
+  const session = await getSessionWithRetry();
+  const currentToken = session?.session?.token;
 
   try {
-    await auth.api.revokeOtherSessions({ headers: await headers() });
+    try {
+      await auth.api.revokeOtherSessions({ headers: await headers() });
+    } catch {
+      // Direct DB deletion below guarantees other session rows are removed
+    }
+    if (currentToken) {
+      await db
+        .delete(s.sessions)
+        .where(and(eq(s.sessions.userId, user.id), ne(s.sessions.token, currentToken)));
+    }
+    revalidatePath('/dashboard/settings');
     return { ok: true };
   } catch (err) {
     console.error('[revokeOtherSessions] Failed to revoke other sessions:', err);
@@ -247,12 +266,36 @@ export async function revokeOtherSessions(): Promise<{ ok: boolean; error?: stri
   }
 }
 
-/** Permanently deletes one of the caller's API keys through the gateway (the only writer). */
-export async function deleteApiKey(id: string): Promise<{ ok: boolean }> {
-  await requireInteractiveUser();
-  if (!/^[0-9a-f-]{36}$/i.test(id)) return { ok: false };
-  const apiRes = await fetchBackendApi(`/v1/keys/${id}`, { method: 'DELETE' });
-  return { ok: apiRes.status === 200 };
+/** Permanently deletes one of the caller's API keys directly from the database and notifies the gateway. */
+export async function deleteApiKey(id: string): Promise<{ ok: boolean; error?: string }> {
+  const user = await requireInteractiveUser();
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return { ok: false, error: 'Invalid key ID' };
+
+  try {
+    // 1. Authoritative direct DB deletion
+    const [deleted] = await db
+      .delete(s.apiKeys)
+      .where(and(eq(s.apiKeys.id, id), eq(s.apiKeys.userId, user.id)))
+      .returning({ id: s.apiKeys.id });
+
+    if (!deleted) {
+      return { ok: false, error: 'API key not found or already deleted' };
+    }
+
+    // 2. Best-effort notify backend API to clear in-memory caches / rate limiters
+    try {
+      await fetchBackendApi(`/v1/keys/${id}`, { method: 'DELETE' });
+    } catch {
+      // Backend may be offline or in local dev; DB deletion is already committed
+    }
+
+    revalidatePath('/dashboard/keys');
+    revalidatePath('/dashboard');
+    return { ok: true };
+  } catch (err: any) {
+    console.error('[deleteApiKey] Failed to delete API key:', err);
+    return { ok: false, error: err?.message || 'Failed to delete API key' };
+  }
 }
 
 export { maskedKey };
@@ -515,6 +558,19 @@ export async function provisionPostPaymentKey(params?: { packageName?: string })
     return { ok: false, error: 'No completed payment found for this account.' };
   }
 
+  // Enforce max 5 API keys limit
+  const [keyCount] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(s.apiKeys)
+    .where(eq(s.apiKeys.userId, user.id));
+
+  if ((keyCount?.count ?? 0) >= 5) {
+    return {
+      ok: false,
+      error: 'Batas maksimal 5 API key telah tercapai (5/5). Hapus key lama yang tidak terpakai untuk membuat key baru.',
+    };
+  }
+
   const { raw, hash, prefix } = generateApiKey();
   const encryptedKey = encryptApiKey(raw);
 
@@ -561,6 +617,8 @@ export async function deleteOwnAccount(formData: FormData) {
   try {
     // Delete user row (database CASCADE cleans up all foreign key dependencies)
     await db.delete(s.users).where(eq(s.users.id, user.id));
+    revalidatePath('/dashboard');
+    revalidatePath('/login');
     return { ok: true };
   } catch (err: any) {
     console.error('[deleteOwnAccount] Failed to delete account:', err);

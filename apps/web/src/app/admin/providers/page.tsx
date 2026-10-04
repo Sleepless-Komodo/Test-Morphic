@@ -16,6 +16,8 @@ async function CatalogSection() {
   return <ProviderCatalog key={key} initial={catalogs} />;
 }
 
+export const dynamic = 'force-dynamic';
+
 export default async function AdminProviders() {
   await requireAdmin();
   const { t } = await getServerTranslation();

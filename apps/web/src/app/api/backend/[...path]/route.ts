@@ -128,9 +128,11 @@ async function proxyRequest(req: NextRequest) {
   reqHeaders.delete('authorization');
 
   let sessionToken: string | undefined;
+  let authedUserId: string | undefined;
   try {
     const session = await auth.api.getSession({ headers: req.headers });
     sessionToken = session?.session?.token;
+    authedUserId = session?.user?.id;
   } catch {
     // Session lookup error
   }
@@ -143,6 +145,31 @@ async function proxyRequest(req: NextRequest) {
   }
 
   reqHeaders.set('authorization', `Bearer ${sessionToken}`);
+
+  // Enforce max 5 API keys per user on creation
+  if (rawPath === '/v1/keys' && req.method === 'POST' && authedUserId) {
+    try {
+      const { db, schema: s } = await import('@morphic/db');
+      const { eq, sql } = await import('drizzle-orm');
+      const [kc] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(s.apiKeys)
+        .where(eq(s.apiKeys.userId, authedUserId));
+      if ((kc?.count ?? 0) >= 5) {
+        return NextResponse.json(
+          {
+            error: {
+              message: 'Batas maksimal 5 API key telah tercapai (5/5). Hapus key lama yang tidak terpakai untuk membuat key baru.',
+              code: 'max_keys_exceeded',
+            },
+          },
+          { status: 400 },
+        );
+      }
+    } catch (err) {
+      console.warn('[proxy] Error checking api_keys count:', err);
+    }
+  }
 
   // 5. Proxy Request to Backend Target URL
   const targetBase = (
