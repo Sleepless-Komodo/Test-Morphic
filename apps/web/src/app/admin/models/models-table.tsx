@@ -1,9 +1,9 @@
 'use client';
 
-import { useState } from 'react';
-import { saveModel } from '@/lib/admin-actions';
+import { useState, useTransition } from 'react';
+import { saveModel, deleteModel } from '@/lib/admin-actions';
 import { useTranslation } from '@/lib/i18n';
-import { Check, Edit3, X } from 'lucide-react';
+import { AlertTriangle, Check, Edit3, Loader2, Trash2, X } from 'lucide-react';
 
 interface Provider { id: string; name: string; }
 interface ModelRow {
@@ -225,83 +225,220 @@ export function ModelsTable({ models, providers }: {
   providers: Provider[];
 }) {
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [selectedModelForDelete, setSelectedModelForDelete] = useState<(ModelRow & { providerId: string }) | null>(null);
+  const [toastMessage, setToastMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [isPending, startTransition] = useTransition();
   const { t } = useTranslation();
 
+  const handleDeleteModel = () => {
+    if (!selectedModelForDelete) return;
+
+    startTransition(async () => {
+      try {
+        const fd = new FormData();
+        fd.set('id', selectedModelForDelete.id);
+        const res = await deleteModel(fd);
+        setToastMessage({ type: res.deleted ? 'success' : 'error', text: res.message });
+        if (res.deleted) {
+          setSelectedModelForDelete(null);
+        }
+      } catch (err: unknown) {
+        setToastMessage({
+          type: 'error',
+          text: err instanceof Error ? err.message : 'Gagal menghapus model.',
+        });
+      }
+    });
+  };
+
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-xs">
-        <thead>
-          <tr className="border-b border-neutral-200/80 bg-neutral-50/50">
-            <th className="text-left font-mono font-semibold uppercase tracking-wider text-neutral-500 py-3 px-4">{t.admin.models.thPublicId}</th>
-            <th className="text-left font-mono font-semibold uppercase tracking-wider text-neutral-500 py-3 px-3">{t.admin.models.thProviderId}</th>
-            <th className="text-left font-mono font-semibold uppercase tracking-wider text-neutral-500 py-3 px-3">{t.admin.models.thProvider}</th>
-            <th className="text-left font-mono font-semibold uppercase tracking-wider text-neutral-500 py-3 px-3">{t.admin.models.thContext}</th>
-            <th className="text-left font-mono font-semibold uppercase tracking-wider text-neutral-500 py-3 px-3">{t.admin.models.thRates}</th>
-            <th className="text-left font-mono font-semibold uppercase tracking-wider text-neutral-500 py-3 px-3">{t.admin.models.thCapabilities}</th>
-            <th className="text-left font-mono font-semibold uppercase tracking-wider text-neutral-500 py-3 px-3">{t.admin.models.thStatus}</th>
-            <th className="text-right font-mono font-semibold uppercase tracking-wider text-neutral-500 py-3 px-4">{t.admin.models.thAction}</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-neutral-100">
-          {models.map((m) =>
-            editingId === m.id ? (
-              <EditRow
-                key={m.id}
-                model={m}
-                providers={providers}
-                onDone={() => setEditingId(null)}
-              />
+    <>
+      {/* Toast Alert */}
+      {toastMessage && (
+        <div
+          className={`p-3.5 rounded-2xl text-xs flex items-center justify-between border shadow-2xs mb-4 ${
+            toastMessage.type === 'success'
+              ? 'bg-emerald-50 text-emerald-900 border-emerald-200'
+              : 'bg-red-50 text-red-900 border-red-200'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            {toastMessage.type === 'success' ? (
+              <Check className="w-4 h-4 text-emerald-600 shrink-0" />
             ) : (
-              <tr key={m.id} className="hover:bg-neutral-50/60 transition-colors">
-                <td className="py-3 px-4">
-                  <div className="font-mono font-semibold text-neutral-950">{m.publicModelId}</div>
-                  <div className="text-[11px] text-neutral-500">{m.displayName}</div>
-                </td>
-                <td className="py-3 px-3 font-mono text-neutral-600 text-xs">{m.providerModelId}</td>
-                <td className="py-3 px-3 font-medium text-neutral-900">{m.providerName}</td>
-                <td className="py-3 px-3 font-mono text-neutral-600">{(m.contextLength / 1000).toFixed(0)}K</td>
-                <td className="py-3 px-3 font-mono text-neutral-900 font-semibold">{m.inputCreditsPer1m} / {m.outputCreditsPer1m}</td>
-                <td className="py-3 px-3 text-neutral-500 text-[11px]">
-                  {Array.isArray(m.capabilities) && m.capabilities.length > 0 ? (
-                    <div className="flex flex-wrap gap-1">
-                      {m.capabilities.map((cap) => (
-                        <span key={cap} className="px-1.5 py-0.5 rounded bg-neutral-100 text-neutral-700 font-mono text-[10px]">
-                          {cap}
-                        </span>
-                      ))}
-                    </div>
-                  ) : (
-                    '—'
-                  )}
-                </td>
-                <td className="py-3 px-3 whitespace-nowrap">
-                  {m.status === 'active' ? (
-                    <span className="inline-flex items-center gap-1.5 font-mono text-[11px] font-medium text-neutral-700">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" />
-                      {t.admin.status.active}
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1.5 font-mono text-[11px] font-medium text-neutral-500">
-                      <span className="w-1.5 h-1.5 rounded-full bg-neutral-400 shrink-0" aria-hidden="true" />
-                      {m.status}
-                    </span>
-                  )}
-                </td>
-                <td className="py-3 px-4 text-right">
-                  <button
-                    type="button"
-                    onClick={() => setEditingId(m.id)}
-                    className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border border-neutral-200 bg-white hover:bg-neutral-100 text-neutral-900 font-medium transition-colors cursor-pointer shadow-2xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
-                  >
-                    <Edit3 className="w-3 h-3" />
-                    {t.admin.models.editBtn}
-                  </button>
-                </td>
+              <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
+            )}
+            <span>{toastMessage.text}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setToastMessage(null)}
+            className="text-neutral-500 hover:text-neutral-900 cursor-pointer text-xs font-semibold px-2 py-1"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* Table Card */}
+      <div className="bg-white rounded-2xl border border-neutral-200/90 shadow-xs overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-neutral-200/80 bg-neutral-50/50">
+                <th className="text-left font-mono font-semibold uppercase tracking-wider text-neutral-500 py-3 px-4">{t.admin.models.thPublicId}</th>
+                <th className="text-left font-mono font-semibold uppercase tracking-wider text-neutral-500 py-3 px-3">{t.admin.models.thProviderId}</th>
+                <th className="text-left font-mono font-semibold uppercase tracking-wider text-neutral-500 py-3 px-3">{t.admin.models.thProvider}</th>
+                <th className="text-left font-mono font-semibold uppercase tracking-wider text-neutral-500 py-3 px-3">{t.admin.models.thContext}</th>
+                <th className="text-left font-mono font-semibold uppercase tracking-wider text-neutral-500 py-3 px-3">{t.admin.models.thRates}</th>
+                <th className="text-left font-mono font-semibold uppercase tracking-wider text-neutral-500 py-3 px-3">{t.admin.models.thCapabilities}</th>
+                <th className="text-left font-mono font-semibold uppercase tracking-wider text-neutral-500 py-3 px-3">{t.admin.models.thStatus}</th>
+                <th className="text-right font-mono font-semibold uppercase tracking-wider text-neutral-500 py-3 px-4">{t.admin.models.thAction}</th>
               </tr>
-            )
-          )}
-        </tbody>
-      </table>
-    </div>
+            </thead>
+            <tbody className="divide-y divide-neutral-100">
+              {models.map((m) =>
+                editingId === m.id ? (
+                  <EditRow
+                    key={m.id}
+                    model={m}
+                    providers={providers}
+                    onDone={() => setEditingId(null)}
+                  />
+                ) : (
+                  <tr key={m.id} className="hover:bg-neutral-50/60 transition-colors">
+                    <td className="py-3 px-4">
+                      <div className="font-mono font-semibold text-neutral-950">{m.publicModelId}</div>
+                      <div className="text-[11px] text-neutral-500">{m.displayName}</div>
+                    </td>
+                    <td className="py-3 px-3 font-mono text-neutral-600 text-xs">{m.providerModelId}</td>
+                    <td className="py-3 px-3 font-medium text-neutral-900">{m.providerName}</td>
+                    <td className="py-3 px-3 font-mono text-neutral-600">{(m.contextLength / 1000).toFixed(0)}K</td>
+                    <td className="py-3 px-3 font-mono text-neutral-900 font-semibold">{m.inputCreditsPer1m} / {m.outputCreditsPer1m}</td>
+                    <td className="py-3 px-3 text-neutral-500 text-[11px]">
+                      {Array.isArray(m.capabilities) && m.capabilities.length > 0 ? (
+                        <div className="flex flex-wrap gap-1">
+                          {m.capabilities.map((cap) => (
+                            <span key={cap} className="px-1.5 py-0.5 rounded bg-neutral-100 text-neutral-700 font-mono text-[10px]">
+                              {cap}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        '—'
+                      )}
+                    </td>
+                    <td className="py-3 px-3 whitespace-nowrap">
+                      {m.status === 'active' ? (
+                        <span className="inline-flex items-center gap-1.5 font-mono text-[11px] font-medium text-neutral-700">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" />
+                          {t.admin.status.active}
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 font-mono text-[11px] font-medium text-neutral-500">
+                          <span className="w-1.5 h-1.5 rounded-full bg-neutral-400 shrink-0" aria-hidden="true" />
+                          {m.status}
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-3 px-4 text-right">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setEditingId(m.id)}
+                          className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border border-neutral-200 bg-white hover:bg-neutral-100 text-neutral-900 font-medium transition-colors cursor-pointer shadow-2xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
+                        >
+                          <Edit3 className="w-3 h-3" />
+                          {t.admin.models.editBtn}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedModelForDelete(m)}
+                          className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border border-red-200 bg-red-50/50 hover:bg-red-50 text-red-600 hover:text-red-700 font-medium transition-colors cursor-pointer shadow-2xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
+                          aria-label={`Hapus model ${m.displayName}`}
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          {t.admin.models.deleteBtn}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                )
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Delete Confirmation Modal */}
+      {selectedModelForDelete && (
+        <div
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !isPending) setSelectedModelForDelete(null);
+          }}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs animate-in fade-in duration-150"
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl border border-red-200 space-y-4 animate-in zoom-in-95 duration-150"
+          >
+            <div className="flex items-center gap-3 text-red-600">
+              <div className="w-10 h-10 rounded-2xl bg-red-50 border border-red-200 flex items-center justify-center shrink-0">
+                <AlertTriangle className="h-5 w-5 text-red-600" />
+              </div>
+              <div>
+                <h4 className="text-base font-bold text-neutral-950 font-heading">
+                  {t.admin.models.deleteModelTitle || 'Hapus Model AI'}
+                </h4>
+                <p className="text-xs text-neutral-500 font-mono">
+                  {selectedModelForDelete.displayName} ({selectedModelForDelete.publicModelId})
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-red-50/70 border border-red-200/80 text-xs text-red-900 leading-relaxed space-y-1.5">
+              <p>
+                {t.admin.models.confirmDelete || 'Apakah Anda yakin ingin menghapus model ini?'}
+              </p>
+              <ul className="list-disc list-inside text-[11px] text-red-800 space-y-0.5">
+                <li>Model <strong>{selectedModelForDelete.publicModelId}</strong> tidak akan lagi tersedia di API inference.</li>
+                <li>{t.admin.models.deleteModelWarning}</li>
+              </ul>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setSelectedModelForDelete(null)}
+                disabled={isPending}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-neutral-700 hover:bg-neutral-100 transition cursor-pointer"
+              >
+                {t.admin.models.cancelBtn}
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteModel}
+                disabled={isPending}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition shadow-xs cursor-pointer disabled:opacity-50"
+              >
+                {isPending ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Memproses...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>{t.admin.models.deleteBtn}</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
+
