@@ -418,7 +418,7 @@ export function ProvidersClient({ initialProviders, stats }: ProvidersClientProp
               {initialProviders.length === 0 && (
                 <tr>
                   <td colSpan={5} className="py-10 text-center text-xs text-neutral-500 font-mono">
-                    Belum ada provider terdaftar. Klik tombol "+ Tambah Provider" di atas untuk menambahkan.
+                    Belum ada provider terdaftar. Klik tombol &quot;+ Tambah Provider&quot; di atas untuk menambahkan.
                   </td>
                 </tr>
               )}

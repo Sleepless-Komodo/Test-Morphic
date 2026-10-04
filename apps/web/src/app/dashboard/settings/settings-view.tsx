@@ -105,7 +105,6 @@ export function SettingsView({ user, sessions }: SettingsViewProps) {
       setIsDeletingAccount(false);
     }
   };
-
   const otherSessions = sessions.filter((item) => !item.isCurrent);
 
   const genericSessionError = isId

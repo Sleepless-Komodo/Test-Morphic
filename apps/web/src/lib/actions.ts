@@ -628,5 +628,3 @@ export async function deleteOwnAccount(formData: FormData) {
     };
   }
 }
-
-
