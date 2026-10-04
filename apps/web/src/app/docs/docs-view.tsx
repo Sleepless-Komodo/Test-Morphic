@@ -27,6 +27,9 @@ import { useTranslation } from '@/lib/i18n';
 import { API_BASE_URL, CHAT_COMPLETIONS_URL } from '@/lib/utils';
 
 const BASE_URL = API_BASE_URL;
+// Installer scripts live next to /v1 on the gateway. The commands use this fixed URL rather than
+// a $BASE_URL variable: generic names like BASE_URL are often already set by other tools.
+const QUICKSTART_URL = `${BASE_URL.replace(/\/v1\/?$/, '')}/quickstart`;
 const CHAT_URL = CHAT_COMPLETIONS_URL;
 
 type IdeKey = 'cursor' | 'cline' | 'windsurf' | 'claudecode' | 'opencode' | 'aider';
@@ -448,16 +451,15 @@ claude "Analyze this repository architecture"`,
 
     // Windows: same one-paste setup. opencode.ps1 (served by the gateway) checks the key, backs
     // up any existing config and writes %USERPROFILE%\.config\opencode\opencode.json. From CMD it
-    // runs through powershell, which inherits the variables set with `set`.
+    // runs through powershell, which inherits MORPHIC_API_KEY set with `set`.
     if (os === 'windows') {
       return winShell === 'cmd'
         ? {
             file: 'Command Prompt',
             language: 'cmd',
             menuPath: 'Command Prompt → paste → opencode',
-            code: `set BASE_URL=${BASE_URL}
-set API_KEY=mp-xxxxxxxxxxxxxxxxxxxx
-powershell -NoProfile -Command "irm $env:BASE_URL/../quickstart/opencode.ps1 | iex"`,
+            code: `set MORPHIC_API_KEY=mp-xxxxxxxxxxxxxxxxxxxx
+powershell -NoProfile -Command "irm ${QUICKSTART_URL}/opencode.ps1 | iex"`,
             extraFile: 'opencode.json (manual, optional)',
             extraLanguage: 'json',
             extraCode: config,
@@ -466,9 +468,8 @@ powershell -NoProfile -Command "irm $env:BASE_URL/../quickstart/opencode.ps1 | i
             file: 'PowerShell',
             language: 'powershell',
             menuPath: 'PowerShell → paste → opencode',
-            code: `$env:BASE_URL = "${BASE_URL}"
-$env:API_KEY = "mp-xxxxxxxxxxxxxxxxxxxx"
-irm "$env:BASE_URL/../quickstart/opencode.ps1" | iex`,
+            code: `$env:MORPHIC_API_KEY = "mp-xxxxxxxxxxxxxxxxxxxx"
+irm ${QUICKSTART_URL}/opencode.ps1 | iex`,
             extraFile: 'opencode.json (manual, optional)',
             extraLanguage: 'json',
             extraCode: config,
@@ -481,9 +482,8 @@ irm "$env:BASE_URL/../quickstart/opencode.ps1" | iex`,
       file: os === 'macos' ? 'Terminal (zsh)' : 'Terminal (bash)',
       language: 'bash',
       menuPath: os === 'macos' ? 'macOS Terminal → paste → opencode' : 'Linux Terminal → paste → opencode',
-      code: `export BASE_URL=${BASE_URL}
-export API_KEY=mp-xxxxxxxxxxxxxxxxxxxx
-curl -fsSL "$BASE_URL/../quickstart/opencode.sh" | bash`,
+      code: `export MORPHIC_API_KEY=mp-xxxxxxxxxxxxxxxxxxxx
+curl -fsSL ${QUICKSTART_URL}/opencode.sh | bash`,
       extraFile: 'opencode.json (manual, optional)',
       extraLanguage: 'json',
       extraCode: config,

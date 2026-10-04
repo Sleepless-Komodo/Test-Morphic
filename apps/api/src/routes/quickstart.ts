@@ -5,7 +5,11 @@ import { eq } from 'drizzle-orm';
 /**
  * Public install scripts: `curl -fsSL <url> | bash` (macOS/Linux) and `irm <url> | iex`
  * (Windows PowerShell). They contain no secrets: the API key is read from the caller's own
- * environment ($API_KEY) and only ever written to a local file on their machine.
+ * environment ($MORPHIC_API_KEY) and only ever written to a local file on their machine.
+ *
+ * Only MORPHIC_-prefixed variables choose the gateway. A generic BASE_URL is often set by other
+ * tools (one user's pointed at another AI service), and following it would send the Morphic key
+ * there. API_KEY is still accepted as a fallback for the key, but only if it looks like mp-...
  */
 const quickstart = new Hono();
 
@@ -39,32 +43,31 @@ quickstart.get('/opencode.sh', async (c) => {
   const script = `#!/usr/bin/env bash
 # Morphic x opencode quickstart. Writes ~/.config/opencode/opencode.json for the Morphic provider.
 # Usage:
-#   export BASE_URL=${defaultBase}
-#   export API_KEY=mp-...
-#   curl -fsSL "$BASE_URL/../quickstart/opencode.sh" | bash
+#   export MORPHIC_API_KEY=mp-...
+#   curl -fsSL ${defaultBase.replace(/\/v1$/, '')}/quickstart/opencode.sh | bash
 set -euo pipefail
 
-BASE_URL="\${BASE_URL:-${defaultBase}}"
+BASE_URL="\${MORPHIC_BASE_URL:-${defaultBase}}"
 BASE_URL="\${BASE_URL%/}"
-API_KEY="\${API_KEY:-\${MORPHIC_API_KEY:-}}"
+API_KEY="\${MORPHIC_API_KEY:-\${API_KEY:-}}"
 
 if [ -z "$API_KEY" ]; then
-  echo "x API_KEY is not set. Run: export API_KEY=mp-your-key" >&2
+  echo "x MORPHIC_API_KEY is not set. Run: export MORPHIC_API_KEY=mp-your-key" >&2
   exit 1
 fi
 case "$API_KEY" in
   mp-*) ;;
-  *) echo "x API_KEY should start with mp-. Copy it from your Morphic dashboard (API Keys)." >&2; exit 1 ;;
+  *) echo "x MORPHIC_API_KEY should start with mp-. Copy it from your Morphic dashboard (API Keys)." >&2; exit 1 ;;
 esac
 # Keys are [A-Za-z0-9_-] only; anything else would break the JSON written below.
 if ! printf '%s' "$API_KEY" | grep -Eq '^mp-[A-Za-z0-9_-]+$'; then
-  echo "x API_KEY contains unexpected characters." >&2
+  echo "x MORPHIC_API_KEY contains unexpected characters." >&2
   exit 1
 fi
 
 echo "> Checking your key against $BASE_URL ..."
 if ! curl -fsS -o /dev/null -H "Authorization: Bearer $API_KEY" "$BASE_URL/models"; then
-  echo "x The gateway rejected this key (or is unreachable). Check the key and BASE_URL." >&2
+  echo "x The gateway rejected this key (or is unreachable). Check the key." >&2
   exit 1
 fi
 
@@ -119,24 +122,23 @@ quickstart.get('/opencode.ps1', async (c) => {
 
   const script = `# Morphic x opencode quickstart for Windows. Writes %USERPROFILE%\\.config\\opencode\\opencode.json.
 # Usage (PowerShell):
-#   $env:BASE_URL = "${defaultBase}"
-#   $env:API_KEY  = "mp-..."
-#   irm "$env:BASE_URL/../quickstart/opencode.ps1" | iex
+#   $env:MORPHIC_API_KEY = "mp-..."
+#   irm ${defaultBase.replace(/\/v1$/, '')}/quickstart/opencode.ps1 | iex
 & {
   $ErrorActionPreference = 'Stop'
   # Windows PowerShell 5.1 on older builds defaults to TLS 1.0/1.1.
   [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
-  $BaseUrl = if ($env:BASE_URL) { $env:BASE_URL } else { '${defaultBase}' }
+  $BaseUrl = if ($env:MORPHIC_BASE_URL) { $env:MORPHIC_BASE_URL } else { '${defaultBase}' }
   $BaseUrl = $BaseUrl.TrimEnd('/')
-  $ApiKey = if ($env:API_KEY) { $env:API_KEY } else { $env:MORPHIC_API_KEY }
+  $ApiKey = if ($env:MORPHIC_API_KEY) { $env:MORPHIC_API_KEY } else { $env:API_KEY }
 
   if (-not $ApiKey) {
-    Write-Host 'x API_KEY is not set. Run: $env:API_KEY = "mp-your-key"' -ForegroundColor Red
+    Write-Host 'x MORPHIC_API_KEY is not set. Run: $env:MORPHIC_API_KEY = "mp-your-key"' -ForegroundColor Red
     return
   }
   if ($ApiKey -notmatch '^mp-[A-Za-z0-9_-]+$') {
-    Write-Host 'x API_KEY should look like mp-... Copy it from your Morphic dashboard (API Keys).' -ForegroundColor Red
+    Write-Host 'x MORPHIC_API_KEY should look like mp-... Copy it from your Morphic dashboard (API Keys).' -ForegroundColor Red
     return
   }
 
@@ -144,7 +146,7 @@ quickstart.get('/opencode.ps1', async (c) => {
   try {
     Invoke-RestMethod -Uri "$BaseUrl/models" -Headers @{ Authorization = "Bearer $ApiKey" } | Out-Null
   } catch {
-    Write-Host 'x The gateway rejected this key (or is unreachable). Check the key and BASE_URL.' -ForegroundColor Red
+    Write-Host 'x The gateway rejected this key (or is unreachable). Check the key.' -ForegroundColor Red
     return
   }
 
