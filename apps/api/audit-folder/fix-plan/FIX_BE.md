@@ -97,7 +97,7 @@
   - Integration test dengan mock PayPal webhook payload + valid signature vs invalid signature.
 - **Ketergantungan:** Kredensial `PAYPAL_WEBHOOK_ID` di environment.
 - **Risiko Regresi:** Rendah. Route baru yang tidak mengganggu route yang sudah ada.
-- **Status:** Pending
+- **Status:** Completed
 
 ---
 
@@ -128,7 +128,7 @@
   - Unit test dengan `process.env.NODE_ENV = 'production'` → assert status 404.
 - **Ketergantungan:** Tidak ada.
 - **Risiko Regresi:** Nol di produksi. Pengujian lokal tetap berjalan jika `NODE_ENV=test` atau `development`.
-- **Status:** Pending
+- **Status:** Completed
 
 ---
 
