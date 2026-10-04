@@ -378,7 +378,7 @@ export const en = {
       voucherCardTitle: 'Have a Redeem Code?',
       voucherCardDesc: 'Credits will be added to your Morphic account balance immediately once verified.',
       voucherInputLabel: 'REDEEM CODE',
-      voucherInputPlaceholder: 'e.g. MORPHIC-CODE-2026',
+      voucherInputPlaceholder: 'e.g. MP-CODE-2026',
       redeemSubmitBtn: 'Apply Code',
       redeemingBtn: 'Verifying...',
       termsCardTitle: 'Redeem Code Guidelines',

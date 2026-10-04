@@ -199,15 +199,30 @@ export function RedeemCodeGenerator({ packages }: { packages: GeneratorPackage[]
             <label htmlFor="gen-prefix" className="mb-2 block text-xs font-semibold text-neutral-500">
               {en ? 'Custom code (optional)' : 'Kode sendiri (opsional)'}
             </label>
-            <input
-              id="gen-prefix"
-              name="prefix"
-              value={prefix}
-              onChange={(e) => setPrefix(e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, ''))}
-              maxLength={32}
-              placeholder={en ? 'Empty = random' : 'Kosong = acak'}
-              className="w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-xs font-mono uppercase focus:outline-none focus:border-neutral-950 focus-visible:ring-2 focus-visible:ring-neutral-950"
-            />
+            <div className="flex rounded-xl border border-neutral-200 bg-white focus-within:border-neutral-950 focus-within:ring-2 focus-within:ring-neutral-950 overflow-hidden">
+              <span className="inline-flex items-center px-3 py-2 bg-neutral-100 border-r border-neutral-200 text-xs font-mono font-bold text-neutral-700 select-none">
+                MP-
+              </span>
+              <input
+                id="gen-prefix"
+                name="prefix"
+                value={prefix}
+                onChange={(e) => {
+                  let val = e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, '');
+                  if (val.startsWith('MP-')) val = val.slice(3);
+                  else if (val.startsWith('MP')) val = val.slice(2);
+                  setPrefix(val);
+                }}
+                maxLength={30}
+                placeholder={en ? 'PROMO50 (Empty = random MP-XXXXXX)' : 'PROMO50 (Kosong = acak MP-XXXXXX)'}
+                className="w-full bg-transparent px-3 py-2 text-xs font-mono uppercase focus:outline-none"
+              />
+            </div>
+            <p className="mt-1.5 text-[11px] text-neutral-500">
+              {prefix
+                ? (en ? `Result code: MP-${prefix}` : `Hasil kode: MP-${prefix}`)
+                : (en ? 'All generated codes will automatically start with MP-' : 'Semua kode yang dibuat akan otomatis diawali dengan MP-')}
+            </p>
           </div>
         </div>
 

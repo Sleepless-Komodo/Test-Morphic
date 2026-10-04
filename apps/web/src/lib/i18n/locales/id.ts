@@ -378,7 +378,7 @@ export const id = {
       voucherCardTitle: 'Punya Redeem Code?',
       voucherCardDesc: 'Saldo kredit akan langsung ditambahkan ke akun Morphic Anda setelah kode diverifikasi.',
       voucherInputLabel: 'REDEEM CODE',
-      voucherInputPlaceholder: 'Contoh: MORPHIC-CODE-2026',
+      voucherInputPlaceholder: 'Contoh: MP-CODE-2026',
       redeemSubmitBtn: 'Klaim Kode',
       redeemingBtn: 'Memverifikasi...',
       termsCardTitle: 'Ketentuan Redeem Code',

@@ -51,12 +51,18 @@ redeem.post('/', async (c) => {
   }
 
   const upperCode = code.trim().toUpperCase();
+  const withMpPrefix = upperCode.startsWith('MP-') ? upperCode : `MP-${upperCode}`;
 
-  // Fetch the active redeem code
+  // Fetch the active redeem code (match exact or with MP- prefix)
   const [redeemCode] = await db
     .select()
     .from(s.redeemCodes)
-    .where(and(eq(s.redeemCodes.code, upperCode), eq(s.redeemCodes.active, true)))
+    .where(
+      and(
+        or(eq(s.redeemCodes.code, upperCode), eq(s.redeemCodes.code, withMpPrefix)),
+        eq(s.redeemCodes.active, true),
+      ),
+    )
     .limit(1);
 
   if (!redeemCode) {
