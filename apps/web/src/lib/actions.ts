@@ -547,3 +547,26 @@ export async function provisionPostPaymentKey(params?: { packageName?: string })
   }
 }
 
+export async function deleteOwnAccount(formData: FormData) {
+  const user = await requireInteractiveUser();
+  const confirmation = String(formData.get('confirmation') || '').trim();
+
+  if (!user.email || confirmation.toLowerCase() !== user.email.toLowerCase()) {
+    return {
+      ok: false,
+      error: 'Konfirmasi email tidak sesuai. Masukkan alamat email akun Anda persis seperti terdaftar.',
+    };
+  }
+
+  try {
+    // Delete user row (database CASCADE cleans up all foreign key dependencies)
+    await db.delete(s.users).where(eq(s.users.id, user.id));
+    return { ok: true };
+  } catch (err: any) {
+    console.error('[deleteOwnAccount] Failed to delete account:', err);
+    return {
+      ok: false,
+      error: err?.message || 'Gagal menghapus akun. Silakan coba lagi nanti.',
+    };
+  }
+}

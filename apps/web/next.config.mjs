@@ -14,8 +14,6 @@ if (fs.existsSync(rootEnv) && typeof process.loadEnvFile === 'function') {
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   transpilePackages: ['@morphic/db', '@morphic/shared'],
-  // 'standalone' is for self-hosting / Docker. Vercel and Netlify bring their own build
-  // adapters (standalone breaks Vercel's), so let them use the native output.
   output: process.env.VERCEL || process.env.NETLIFY ? undefined : 'standalone',
   images: {
     remotePatterns: [

@@ -6,7 +6,8 @@ import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { useTranslation } from '@/lib/i18n';
 import { SignOutButton } from '@/app/dashboard/sign-out';
-import { revokeOtherSessions, revokeSessionById, type ActiveSession } from '@/lib/actions';
+import { revokeOtherSessions, revokeSessionById, deleteOwnAccount, type ActiveSession } from '@/lib/actions';
+import { signOut } from '@/lib/auth-client';
 import { timeAgo } from '@/lib/utils';
 import {
   User,
@@ -70,11 +71,40 @@ export function SettingsView({ user, sessions }: SettingsViewProps) {
 
   const [copiedId, setCopiedId] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleteConfirmation, setDeleteConfirmation] = useState('');
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [copiedSupport, setCopiedSupport] = useState(false);
   const [revokingId, setRevokingId] = useState<string | null>(null);
   const [sessionError, setSessionError] = useState<string | null>(null);
   const [, startTransition] = useTransition();
 
+  const handleExecuteDeleteAccount = async () => {
+    if (isDeletingAccount) return;
+    if (deleteConfirmation.trim().toLowerCase() !== (user.email ?? '').trim().toLowerCase()) {
+      setDeleteError(isId ? 'Email konfirmasi tidak sesuai.' : 'Confirmation email does not match.');
+      return;
+    }
+
+    setIsDeletingAccount(true);
+    setDeleteError(null);
+
+    try {
+      const fd = new FormData();
+      fd.set('confirmation', deleteConfirmation);
+      const res = await deleteOwnAccount(fd);
+      if (!res.ok) {
+        setDeleteError(res.error ?? (isId ? 'Gagal menghapus akun.' : 'Failed to delete account.'));
+        setIsDeletingAccount(false);
+        return;
+      }
+      await signOut();
+      window.location.href = '/login?deleted=true';
+    } catch (err: any) {
+      setDeleteError(err?.message || (isId ? 'Terjadi kesalahan sistem.' : 'A system error occurred.'));
+      setIsDeletingAccount(false);
+    }
+  };
   const otherSessions = sessions.filter((item) => !item.isCurrent);
 
   const genericSessionError = isId
@@ -575,19 +605,23 @@ export function SettingsView({ user, sessions }: SettingsViewProps) {
         </section>
       </div>
 
-      {/* Confirmation Modal for Delete Account */}
+      {/* Interactive Self-Serve Delete Account Modal */}
       {showDeleteModal && (
         <div
           onClick={(e) => {
-            if (e.target === e.currentTarget) setShowDeleteModal(false);
+            if (e.target === e.currentTarget && !isDeletingAccount) {
+              setShowDeleteModal(false);
+              setDeleteConfirmation('');
+              setDeleteError(null);
+            }
           }}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs animate-in fade-in duration-150"
         >
           <div
             role="dialog"
             aria-modal="true"
             aria-labelledby="delete-account-title"
-            className="w-full max-w-md rounded-3xl bg-white p-6 shadow-xl border border-neutral-200 space-y-4 animate-in fade-in zoom-in-95 duration-150"
+            className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl border border-red-200 space-y-4 animate-in zoom-in-95 duration-150"
           >
             <div className="flex items-center gap-3 text-red-600">
               <div className="w-10 h-10 rounded-2xl bg-red-50 border border-red-200 flex items-center justify-center shrink-0">
@@ -595,54 +629,79 @@ export function SettingsView({ user, sessions }: SettingsViewProps) {
               </div>
               <div>
                 <h4 id="delete-account-title" className="text-base font-bold text-neutral-950 font-heading">
-                  {isId ? 'Konfirmasi Hapus Akun' : 'Confirm Account Deletion'}
+                  {isId ? 'Hapus Akun Permanen' : 'Delete Account Permanently'}
                 </h4>
                 <p className="text-xs text-neutral-500">{user.email}</p>
               </div>
             </div>
 
-            <p className="text-xs text-neutral-600 leading-relaxed">
+            <div className="p-3.5 rounded-2xl bg-red-50/70 border border-red-200/80 text-xs text-red-900 leading-relaxed">
               {isId
-                ? 'Untuk melindungi saldo kredit dan mencegah pembatalan tak disengaja pada integrasi sistem produksi, penghapusan akun diverifikasi secara manual oleh tim engineering kami.'
-                : 'To protect remaining credit balances and prevent accidental downtime for production workflows, account deletions are processed with engineering verification.'}
-            </p>
+                ? 'Tindakan ini tidak dapat dibatalkan. Seluruh API key aktif, sisa saldo kredit, sesi login, dan data akun Anda akan langsung dihapus dari sistem.'
+                : 'This action is irreversible. All active API keys, token credit balance, sessions, and account credentials will be permanently erased.'}
+            </div>
 
-            <div className="p-3 rounded-xl bg-neutral-50 border border-neutral-200/80 flex items-center justify-between text-xs">
-              <span className="font-mono text-neutral-700 select-all">support@morphic.sh</span>
-              <button
-                type="button"
-                onClick={copySupportEmail}
-                className="inline-flex items-center gap-1 text-[11px] font-semibold text-neutral-700 hover:text-black cursor-pointer"
-              >
-                {copiedSupport ? (
+            {deleteError && (
+              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-700 flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                <span>{deleteError}</span>
+              </div>
+            )}
+
+            <div className="space-y-1.5">
+              <label htmlFor="confirm-email-input" className="block text-xs font-semibold text-neutral-800">
+                {isId ? (
                   <>
-                    <Check className="h-3 w-3 text-emerald-600" />
-                    <span className="text-emerald-700">{isId ? 'Tersalin' : 'Copied'}</span>
+                    Ketik <strong className="font-mono text-neutral-950 select-all">{user.email}</strong> untuk mengonfirmasi:
                   </>
                 ) : (
                   <>
-                    <Copy className="h-3 w-3" />
-                    <span>{isId ? 'Salin' : 'Copy'}</span>
+                    Type <strong className="font-mono text-neutral-950 select-all">{user.email}</strong> to confirm:
                   </>
                 )}
-              </button>
+              </label>
+              <input
+                id="confirm-email-input"
+                type="text"
+                value={deleteConfirmation}
+                onChange={(e) => {
+                  setDeleteConfirmation(e.target.value);
+                  setDeleteError(null);
+                }}
+                disabled={isDeletingAccount}
+                placeholder={user.email ?? ''}
+                className="w-full px-3.5 py-2 text-xs rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 placeholder:text-neutral-400 font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600"
+              />
             </div>
 
-            <div className="flex items-center justify-end gap-3 pt-2">
+            <div className="flex items-center justify-end gap-2.5 pt-2">
               <button
                 type="button"
-                onClick={() => setShowDeleteModal(false)}
+                onClick={() => {
+                  setShowDeleteModal(false);
+                  setDeleteConfirmation('');
+                  setDeleteError(null);
+                }}
+                disabled={isDeletingAccount}
                 className="px-4 py-2 rounded-xl text-xs font-semibold text-neutral-700 hover:bg-neutral-100 transition cursor-pointer"
               >
-                {isId ? 'Tutup' : 'Close'}
+                {isId ? 'Batal' : 'Cancel'}
               </button>
-              <a
-                href={`mailto:support@morphic.sh?subject=Permintaan%20Penghapusan%20Akun%20(${encodeURIComponent(user.id)})`}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition shadow-2xs cursor-pointer"
+              <button
+                type="button"
+                onClick={handleExecuteDeleteAccount}
+                disabled={
+                  isDeletingAccount ||
+                  deleteConfirmation.trim().toLowerCase() !== (user.email ?? '').trim().toLowerCase()
+                }
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition shadow-xs cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                <LifeBuoy className="h-3.5 w-3.5" />
-                <span>{isId ? 'Hubungi Tim Support' : 'Contact Support'}</span>
-              </a>
+                {isDeletingAccount ? (
+                  <span>{isId ? 'Menghapus Akun...' : 'Deleting Account...'}</span>
+                ) : (
+                  <span>{isId ? 'Hapus Akun Saya' : 'Delete My Account'}</span>
+                )}
+              </button>
             </div>
           </div>
         </div>
