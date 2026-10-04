@@ -8,6 +8,8 @@ import { requireAdmin } from '@/lib/actions';
 import { randomInt } from 'node:crypto';
 import { normalizeCatalog, type CatalogResult } from '@/lib/provider-catalog';
 import { invalidate } from '@/lib/memo';
+import { parsePackageForm } from '@/lib/package-form';
+import { getServerTranslation } from '@/lib/i18n/server';
 
 async function audit(adminId: string, action: string, entity: string, entityId: string | null, detail?: unknown) {
   await db.insert(s.adminAuditLog).values({
@@ -355,27 +357,92 @@ export async function toggleProviderStatus(formData: FormData) {
   revalidatePath('/admin/providers');
   revalidatePath('/admin/models');
 }
-export async function savePackage(formData: FormData) {
+type PackageResult = { ok: boolean; message: string };
+
+
+/** Create (no id) or edit (id) a package. Currency is left as stored; prices are in that currency's minor unit. */
+export async function savePackage(formData: FormData): Promise<PackageResult> {
   const admin = await requireAdmin();
+  const en = (await getServerTranslation()).locale === 'en';
   const id = String(formData.get('id') || '');
-  const modelIdRaw = String(formData.get('modelId') || '');
-  const values = {
-    name: String(formData.get('name')),
-    description: String(formData.get('description') || ''),
-    creditAllowance: Number(formData.get('creditAllowance')),
-    modelId: modelIdRaw || null,
-    durationHours: formData.get('durationHours') ? Number(formData.get('durationHours')) : null,
-    priceCents: formData.get('priceCents') ? Number(formData.get('priceCents')) : null,
-    status: String(formData.get('status') || 'active') as 'active' | 'inactive',
-  };
-  if (id) {
-    await db.update(s.packages).set(values).where(eq(s.packages.id, id));
-    await audit(admin.id, 'update', 'package', id, values);
-  } else {
-    const [p] = await db.insert(s.packages).values(values).returning();
-    await audit(admin.id, 'create', 'package', p!.id, values);
+  const parsed = parsePackageForm(formData, en);
+  if ('error' in parsed) return { ok: false, message: parsed.error! };
+  const values = parsed.values;
+  try {
+    if (id) {
+      const [p] = await db
+        .update(s.packages)
+        .set({ ...values, updatedAt: new Date() })
+        .where(eq(s.packages.id, id))
+        .returning({ id: s.packages.id });
+      if (!p) return { ok: false, message: en ? 'Package not found.' : 'Paket tidak ditemukan.' };
+      await audit(admin.id, 'update', 'package', id, values);
+    } else {
+      const [p] = await db.insert(s.packages).values(values).returning();
+      await audit(admin.id, 'create', 'package', p!.id, values);
+    }
+  } catch (e) {
+    if ((e as { cause?: { code?: string } }).cause?.code === '23505') {
+      return { ok: false, message: en ? `A package named "${values.name}" already exists.` : `Nama paket "${values.name}" sudah dipakai.` };
+    }
+    throw e;
   }
   revalidatePath('/admin/packages');
+  revalidatePath('/dashboard/billing');
+  const verb = id ? (en ? 'updated' : 'diperbarui') : en ? 'created' : 'dibuat';
+  return { ok: true, message: en ? `Package "${values.name}" ${verb}.` : `Paket "${values.name}" ${verb}.` };
+}
+
+/**
+ * Hard delete. Refused while the package is still in flight: a pending payment would lose its
+ * package (FK set null) and settle as plain credits instead of the pass that was bought, and an
+ * active redeem code pointing at it would hand out the wrong reward. Entitlements already granted
+ * keep working; they carry their own allowance, model and expiry.
+ */
+export async function deletePackage(formData: FormData): Promise<PackageResult> {
+  const admin = await requireAdmin();
+  const en = (await getServerTranslation()).locale === 'en';
+  const id = String(formData.get('id') || '');
+  const [pkg] = id ? await db.select({ id: s.packages.id, name: s.packages.name }).from(s.packages).where(eq(s.packages.id, id)).limit(1) : [];
+  if (!pkg) return { ok: false, message: en ? 'Package not found.' : 'Paket tidak ditemukan.' };
+
+  const [[pending], [codes]] = await Promise.all([
+    db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(s.payments)
+      .where(and(eq(s.payments.packageId, id), sql`${s.payments.status} in ('pending', 'capturing', 'pending_paypal')`)),
+    db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(s.redeemCodes)
+      .where(
+        and(
+          eq(s.redeemCodes.packageId, id),
+          eq(s.redeemCodes.active, true),
+          sql`(${s.redeemCodes.expiresAt} is null or ${s.redeemCodes.expiresAt} > now())`,
+        ),
+      ),
+  ]);
+  const blockers = [
+    pending!.n > 0 && (en ? `${pending!.n} payment(s) still pending` : `${pending!.n} pembayaran masih pending`),
+    codes!.n > 0 &&
+      (en
+        ? `${codes!.n} active redeem code(s) still give this package (disable them under Redeem Codes)`
+        : `${codes!.n} kode redeem aktif masih memberi paket ini (nonaktifkan di menu Redeem Codes)`),
+  ].filter(Boolean);
+  if (blockers.length) {
+    return {
+      ok: false,
+      message: en
+        ? `"${pkg.name}" can't be deleted yet: ${blockers.join('; ')}. To hide it from users now, edit it and set status Inactive.`
+        : `"${pkg.name}" belum bisa dihapus: ${blockers.join('; ')}. Untuk menyembunyikannya dari user sekarang, edit dan set status Inactive.`,
+    };
+  }
+
+  await db.delete(s.packages).where(eq(s.packages.id, id));
+  await audit(admin.id, 'delete', 'package', id, { name: pkg.name });
+  revalidatePath('/admin/packages');
+  revalidatePath('/dashboard/billing');
+  return { ok: true, message: en ? `Package "${pkg.name}" deleted.` : `Paket "${pkg.name}" dihapus.` };
 }
 
 export type GenerateCodesState = { ok: boolean; message: string; codes: string[] };
