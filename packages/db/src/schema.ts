@@ -227,9 +227,8 @@ export const reservations = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     apiKeyId: uuid('api_key_id').references(() => apiKeys.id, { onDelete: 'set null' }),
-    modelId: uuid('model_id')
-      .notNull()
-      .references(() => models.id, { onDelete: 'restrict' }),
+    // Nullable + set null: deleting a provider/model keeps this billing row, just unlinked.
+    modelId: uuid('model_id').references(() => models.id, { onDelete: 'set null' }),
     sourceType: text('source_type', { enum: ['balance', 'entitlement'] }).notNull(),
     sourceId: uuid('source_id'),
     estimatedCredits: bigint('estimated_credits', { mode: 'number' }).notNull(),
@@ -297,9 +296,8 @@ export const usageRecords = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     apiKeyId: uuid('api_key_id').references(() => apiKeys.id, { onDelete: 'set null' }),
-    modelId: uuid('model_id')
-      .notNull()
-      .references(() => models.id, { onDelete: 'restrict' }),
+    // Nullable + set null: deleting a provider/model keeps this billing row, just unlinked.
+    modelId: uuid('model_id').references(() => models.id, { onDelete: 'set null' }),
     providerId: uuid('provider_id').references(() => providers.id, { onDelete: 'set null' }),
     requestId: text('request_id').notNull().unique(),
     promptTokens: integer('prompt_tokens').notNull().default(0),
