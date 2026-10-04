@@ -7,6 +7,7 @@ import { grantCredits, getBalance, reconcileBalance, sweepExpiredReservations } 
 import { requireAdmin } from '@/lib/actions';
 import { randomInt } from 'node:crypto';
 import { normalizeCatalog, type CatalogResult } from '@/lib/provider-catalog';
+import { invalidate } from '@/lib/memo';
 
 async function audit(adminId: string, action: string, entity: string, entityId: string | null, detail?: unknown) {
   await db.insert(s.adminAuditLog).values({
@@ -501,6 +502,7 @@ export async function reconcileUserBalance(formData: FormData) {
   const before = await getBalance(userId);
   const after = await reconcileBalance(userId);
   await audit(admin.id, 'reconcile', 'balance', userId, { before, after });
+  invalidate('admin:alerts');
   revalidatePath('/admin/alerts');
 }
 
@@ -509,5 +511,6 @@ export async function releaseStuckReservations() {
   const admin = await requireAdmin();
   const released = await sweepExpiredReservations();
   await audit(admin.id, 'release_stuck', 'reservation', null, { released });
+  invalidate('admin:alerts');
   revalidatePath('/admin/alerts');
 }

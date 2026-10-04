@@ -6,6 +6,7 @@ import { requireAdmin } from '@/lib/actions';
 import { getServerTranslation } from '@/lib/i18n/server';
 import { formatCredits, formatTokenEstimate, timeAgo } from '@/lib/utils';
 import { AutoRefresh } from '@/components/AutoRefresh';
+import { memo } from '@/lib/memo';
 import { ArrowLeft } from 'lucide-react';
 import { UserCell } from '../../user-cell';
 import { PERIODS, parsePeriod, keyStatus } from '../period';
@@ -64,7 +65,7 @@ export default async function AdminApiKeyDetail({
   // rejects GROUP BY because the select and group expressions no longer match.
   const day = sql<string>`to_char(date_trunc('day', ${L.createdAt} at time zone ${sql.raw(`'${TZ}'`)}), 'YYYY-MM-DD')`;
 
-  const [[totals], byModel, byDay, byError, recent] = await Promise.all([
+  const [[totals], byModel, byDay, byError, recent] = await memo(`admin:apikey:${id}:${period.key}`, 20_000, () => Promise.all([
     db
       .select({
         requests,
@@ -118,14 +119,14 @@ export default async function AdminApiKeyDetail({
       .where(where)
       .orderBy(desc(L.createdAt))
       .limit(100),
-  ]);
+  ]));
 
   // Owner's other keys, so you can see whether usage is spread across keys.
-  const otherKeys = await db
+  const otherKeys = await memo(`admin:apikey-others:${key.userId}:${id}`, 60_000, () => db
     .select({ id: s.apiKeys.id, name: s.apiKeys.name, keyPrefix: s.apiKeys.keyPrefix, status: s.apiKeys.status, expiresAt: s.apiKeys.expiresAt })
     .from(s.apiKeys)
     .where(and(eq(s.apiKeys.userId, key.userId), ne(s.apiKeys.id, id)))
-    .orderBy(desc(s.apiKeys.createdAt));
+    .orderBy(desc(s.apiKeys.createdAt)));
 
   const st = keyStatus(key);
   const t = totals!;

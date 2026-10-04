@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { requireAdmin } from '@/lib/actions';
 import { getServerTranslation } from '@/lib/i18n/server';
 import { ALERTS, loadAlerts } from '@/lib/admin-insights';
+import { memo } from '@/lib/memo';
 import { reconcileUserBalance, releaseStuckReservations } from '@/lib/admin-actions';
 import { formatCredits, formatTokenEstimate, timeAgo } from '@/lib/utils';
 import { AutoRefresh } from '@/components/AutoRefresh';
@@ -46,7 +47,7 @@ export default async function AdminAlerts() {
   await requireAdmin();
   const { locale } = await getServerTranslation();
   const en = locale === 'en';
-  const a = await loadAlerts();
+  const a = await memo('admin:alerts', 20_000, () => loadAlerts());
 
   const th = 'py-2.5 px-3 font-mono font-semibold uppercase tracking-wider text-[10px] text-neutral-500';
   const num = 'py-2.5 px-3 text-right font-mono tabular-nums';
@@ -61,7 +62,7 @@ export default async function AdminAlerts() {
 
   return (
     <div className="max-w-6xl space-y-6">
-      <AutoRefresh intervalMs={30_000} />
+      <AutoRefresh />
       <div className="border-b border-neutral-200/80 pb-5">
         <h1 className="flex items-center gap-2 font-heading text-xl font-extrabold tracking-tight text-neutral-950 sm:text-2xl">
           <AlertTriangle className="h-5 w-5 text-neutral-700" />

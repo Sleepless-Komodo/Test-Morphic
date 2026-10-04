@@ -6,6 +6,7 @@ import { getServerTranslation } from '@/lib/i18n/server';
 import { formatCredits, formatTokenEstimate } from '@/lib/utils';
 import { UserCell } from '../user-cell';
 import { IDR_PER_USD, rupiah } from '@/lib/money';
+import { memo } from '@/lib/memo';
 import { AutoRefresh } from '@/components/AutoRefresh';
 
 
@@ -44,7 +45,7 @@ export default async function AdminLeaderboard({ searchParams }: { searchParams:
   const requests = sql<number>`count(*)::int`;
 
   // All four reads run in parallel: one round trip of latency for the whole page.
-  const [spenders, requesters, [revenue], [traffic]] = await Promise.all([
+  const [spenders, requesters, [revenue], [traffic]] = await memo(`admin:leaderboard:${period.key}`, 30_000, () => Promise.all([
     db
       .select({
         userId: s.users.id,
@@ -87,7 +88,7 @@ export default async function AdminLeaderboard({ searchParams }: { searchParams:
       .select({ total: requests, users: sql<number>`count(distinct ${s.requestLogs.userId})::int` })
       .from(s.requestLogs)
       .where(reqWhere),
-  ]);
+  ]));
 
   const tile = 'rounded-3xl border border-neutral-200/90 bg-white shadow-2xs';
   const label = 'text-xs font-semibold text-neutral-500';

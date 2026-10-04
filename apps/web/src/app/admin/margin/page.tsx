@@ -7,14 +7,19 @@ import { formatCredits, formatTokenEstimate } from '@/lib/utils';
 import { IDR_PER_USD, rupiah } from '@/lib/money';
 import { costIdr, findPrice, margin, rupiahPerCredit } from '@/lib/margin';
 import { loadMarginUsage, loadSales } from '@/lib/admin-insights';
+import { memo } from '@/lib/memo';
 import { AutoRefresh } from '@/components/AutoRefresh';
 import { TrendingUp } from 'lucide-react';
 import { PERIODS, parsePeriod } from '../api-keys/period';
 
 export const dynamic = 'force-dynamic';
 
-async function MarginTable({ since, en }: { since: Date | null; en: boolean }) {
-  const [sales, usage, catalogs] = await Promise.all([loadSales(), loadMarginUsage(since), fetchAllProviderCatalogs()]);
+async function MarginTable({ since, periodKey, en }: { since: Date | null; periodKey: string; en: boolean }) {
+  const [sales, usage, catalogs] = await Promise.all([
+    memo('admin:margin:sales', 60_000, loadSales),
+    memo(`admin:margin:usage:${periodKey}`, 60_000, () => loadMarginUsage(since)),
+    fetchAllProviderCatalogs(),
+  ]);
 
   const rpc = rupiahPerCredit(sales.idr, sales.credits);
   const rows = usage
@@ -189,7 +194,7 @@ export default async function AdminMargin({ searchParams }: { searchParams: Prom
       </div>
 
       <Suspense key={period.key} fallback={<MarginSkeleton />}>
-        <MarginTable since={since} en={en} />
+        <MarginTable since={since} periodKey={period.key} en={en} />
       </Suspense>
     </div>
   );

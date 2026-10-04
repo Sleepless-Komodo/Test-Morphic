@@ -7,6 +7,7 @@ import { getServerTranslation } from '@/lib/i18n/server';
 import { formatCredits } from '@/lib/utils';
 import { AutoRefresh } from '@/components/AutoRefresh';
 import { IDR_PER_USD } from '@/lib/money';
+import { memo } from '@/lib/memo';
 import { Activity, AlertTriangle, Users, Cpu, DollarSign, Zap, ServerCrash } from 'lucide-react';
 
 function StatsCardsSkeleton() {
@@ -39,7 +40,7 @@ async function AlertBannerSection({ t }: { t: any }) {
   const fiveMinCutoff = new Date(Date.now() - 5 * 60_000);
   let fiveMinStats: { providerName: string | null; total: number; errors: number }[] = [];
   try {
-    fiveMinStats = await db
+    fiveMinStats = await memo('admin:overview:alerts', 15_000, () => db
       .select({
         providerName: s.requestLogs.providerName,
         total: sql<number>`count(*)::int`,
@@ -47,7 +48,7 @@ async function AlertBannerSection({ t }: { t: any }) {
       })
       .from(s.requestLogs)
       .where(gte(s.requestLogs.createdAt, fiveMinCutoff))
-      .groupBy(s.requestLogs.providerName);
+      .groupBy(s.requestLogs.providerName));
   } catch {
     return null;
   }
@@ -98,7 +99,7 @@ async function CoreStatsCardsSection({ t }: { t: any }) {
   let usage: { requests: number; credits: number } | undefined;
 
   try {
-    [[users], [models], [payments], [usage]] = await Promise.all([
+    [[users], [models], [payments], [usage]] = await memo('admin:overview:core', 20_000, () => Promise.all([
       db.select({ count: sql<number>`count(*)::int` }).from(s.users),
       db.select({ count: sql<number>`count(*)::int` }).from(s.models).where(eq(s.models.status, 'active')),
       db
@@ -114,7 +115,7 @@ async function CoreStatsCardsSection({ t }: { t: any }) {
           credits: sql<number>`coalesce(sum(${s.usageRecords.creditsConsumed}),0)::bigint`,
         })
         .from(s.usageRecords),
-    ]);
+    ]));
   } catch {
     // DB timeout — render cards with zero values so page still loads
   }
@@ -181,7 +182,7 @@ async function CoreStatsCardsSection({ t }: { t: any }) {
 async function ProviderHealth24hSection({ t }: { t: any }) {
   let healthStats: any[] = [];
   try {
-    healthStats = await db
+    healthStats = await memo('admin:overview:health', 30_000, () => db
       .select({
         providerName: s.requestLogs.providerName,
         total: sql<number>`count(*)::int`,
@@ -193,7 +194,7 @@ async function ProviderHealth24hSection({ t }: { t: any }) {
       })
       .from(s.requestLogs)
       .where(sql`${s.requestLogs.createdAt} > now() - interval '24 hours'`)
-      .groupBy(s.requestLogs.providerName);
+      .groupBy(s.requestLogs.providerName));
   } catch {
     // Graceful fallback for DB timeout
   }
@@ -256,13 +257,13 @@ async function ProviderHealth24hSection({ t }: { t: any }) {
 async function CircuitBreakersSection({ t }: { t: any }) {
   let providers: { name: string; status: string; circuitBreaker: any }[] = [];
   try {
-    providers = await db
+    providers = await memo('admin:overview:breakers', 10_000, () => db
       .select({
         name: s.providers.name,
         status: s.providers.status,
         circuitBreaker: s.providers.circuitBreakerState,
       })
-      .from(s.providers);
+      .from(s.providers));
   } catch {
     // Graceful fallback for DB timeout
   }

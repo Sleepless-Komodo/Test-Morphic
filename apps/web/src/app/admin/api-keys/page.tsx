@@ -5,6 +5,7 @@ import { requireAdmin } from '@/lib/actions';
 import { getServerTranslation } from '@/lib/i18n/server';
 import { formatCredits, formatTokenEstimate, timeAgo } from '@/lib/utils';
 import { AutoRefresh } from '@/components/AutoRefresh';
+import { memo } from '@/lib/memo';
 import { KeyRound, Search } from 'lucide-react';
 import { UserCell } from '../user-cell';
 import { PERIODS, parsePeriod, keyStatus } from './period';
@@ -71,7 +72,7 @@ export default async function AdminApiKeys({ searchParams }: { searchParams: Pro
     created: [desc(s.apiKeys.createdAt)],
   }[sort];
 
-  const [rows, [count], [summary], [activity]] = await Promise.all([
+  const [rows, [count], [summary], [activity]] = await memo(`admin:apikeys:${period.key}:${sort}:${status}:${page}:${q}`, 20_000, () => Promise.all([
     db
       .select({
         id: s.apiKeys.id,
@@ -118,7 +119,7 @@ export default async function AdminApiKeys({ searchParams }: { searchParams: Pro
       })
       .from(s.requestLogs)
       .where(logWhere),
-  ]);
+  ]));
 
   const pages = Math.max(1, Math.ceil((count?.n ?? 0) / PAGE_SIZE));
   const href = (patch: Partial<Params>) => {

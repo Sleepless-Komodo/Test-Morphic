@@ -4,13 +4,14 @@ import { requireAdmin } from '@/lib/actions';
 import { formatCredits } from '@/lib/utils';
 import { getServerTranslation } from '@/lib/i18n/server';
 import { AutoRefresh } from '@/components/AutoRefresh';
+import { memo } from '@/lib/memo';
 import { CreditCard } from 'lucide-react';
 
 export default async function AdminTransactions() {
   await requireAdmin();
   const { t } = await getServerTranslation();
 
-  const payments = await db
+  const payments = await memo('admin:transactions', 10_000, () => db
     .select({
       id: s.payments.id,
       userEmail: s.users.email,
@@ -25,7 +26,7 @@ export default async function AdminTransactions() {
     .from(s.payments)
     .leftJoin(s.users, eq(s.payments.userId, s.users.id))
     .orderBy(desc(s.payments.createdAt))
-    .limit(100);
+    .limit(100));
 
   return (
     <div className="space-y-6 max-w-6xl">
