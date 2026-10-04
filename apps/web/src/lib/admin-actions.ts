@@ -53,6 +53,29 @@ export async function adjustUserCredits(formData: FormData) {
   revalidatePath('/admin/users');
 }
 
+export async function deleteUserByAdmin(formData: FormData) {
+  const admin = await requireAdmin();
+  const id = String(formData.get('id') || '');
+  if (!id) return;
+
+  if (id === admin.id) {
+    throw new Error('Anda tidak dapat menghapus akun admin Anda sendiri.');
+  }
+
+  const [target] = await db
+    .select({ id: s.users.id, email: s.users.email, role: s.users.role })
+    .from(s.users)
+    .where(eq(s.users.id, id))
+    .limit(1);
+
+  if (!target) return;
+
+  await db.delete(s.users).where(eq(s.users.id, id));
+  await audit(admin.id, 'delete', 'user', id, { email: target.email, role: target.role });
+
+  revalidatePath('/admin/users');
+}
+
 export async function saveModel(formData: FormData) {
   const admin = await requireAdmin();
   const id = String(formData.get('id') || '');
@@ -84,12 +107,16 @@ export async function saveModel(formData: FormData) {
 export async function saveProvider(formData: FormData) {
   const admin = await requireAdmin();
   const id = String(formData.get('id') || '');
-  const credential = String(formData.get('credential') || '');
+  const credential = String(formData.get('credential') || '').trim();
   const values = {
-    name: String(formData.get('name')),
-    baseUrl: String(formData.get('baseUrl')),
+    name: String(formData.get('name')).trim().toLowerCase(),
+    baseUrl: String(formData.get('baseUrl')).trim(),
     status: String(formData.get('status') || 'active') as 'active' | 'disabled',
   };
+
+  if (!values.name || !values.baseUrl) {
+    throw new Error('Name and Base URL are required');
+  }
 
   if (id) {
     const update: Record<string, unknown> = { ...values };
@@ -101,19 +128,79 @@ export async function saveProvider(formData: FormData) {
     await db.update(s.providers).set(update).where(eq(s.providers.id, id));
     await audit(admin.id, 'update', 'provider', id, { ...values, credentialSet: Boolean(credential) });
   } else {
-    let encryptedCredentials: string | null = null;
-    if (credential) {
-      const { encrypt } = await import('@morphic/shared/provider-crypto');
-      encryptedCredentials = encrypt(credential);
+    // If id is not specified, check if provider name already exists to prevent duplicate key error
+    const [existing] = await db
+      .select({ id: s.providers.id })
+      .from(s.providers)
+      .where(eq(s.providers.name, values.name))
+      .limit(1);
+
+    if (existing) {
+      const update: Record<string, unknown> = { ...values };
+      if (credential) {
+        const { encrypt } = await import('@morphic/shared/provider-crypto');
+        update.encryptedCredentials = encrypt(credential);
+        update.credentialReference = null;
+      }
+      await db.update(s.providers).set(update).where(eq(s.providers.id, existing.id));
+      await audit(admin.id, 'update', 'provider', existing.id, { ...values, credentialSet: Boolean(credential) });
+    } else {
+      let encryptedCredentials: string | null = null;
+      if (credential) {
+        const { encrypt } = await import('@morphic/shared/provider-crypto');
+        encryptedCredentials = encrypt(credential);
+      }
+      const [p] = await db
+        .insert(s.providers)
+        .values({ ...values, encryptedCredentials })
+        .returning();
+      await audit(admin.id, 'create', 'provider', p!.id, { ...values, credentialSet: Boolean(credential) });
     }
-    const [p] = await db
-      .insert(s.providers)
-      .values({ ...values, encryptedCredentials })
-      .returning();
-    await audit(admin.id, 'create', 'provider', p!.id, { ...values, credentialSet: Boolean(credential) });
   }
   revalidatePath('/admin/providers');
 }
+
+export async function deleteProvider(formData: FormData) {
+  const admin = await requireAdmin();
+  const id = String(formData.get('id') || '');
+  if (!id) return;
+
+  const [target] = await db
+    .select({ id: s.providers.id, name: s.providers.name })
+    .from(s.providers)
+    .where(eq(s.providers.id, id))
+    .limit(1);
+
+  if (!target) return;
+
+  await db.delete(s.providers).where(eq(s.providers.id, id));
+  await audit(admin.id, 'delete', 'provider', id, { name: target.name });
+
+  revalidatePath('/admin/providers');
+  revalidatePath('/admin/models');
+}
+
+export async function toggleProviderStatus(formData: FormData) {
+  const admin = await requireAdmin();
+  const id = String(formData.get('id') || '');
+  if (!id) return;
+
+  const [target] = await db
+    .select({ id: s.providers.id, status: s.providers.status })
+    .from(s.providers)
+    .where(eq(s.providers.id, id))
+    .limit(1);
+
+  if (!target) return;
+
+  const newStatus = target.status === 'active' ? 'disabled' : 'active';
+  await db.update(s.providers).set({ status: newStatus }).where(eq(s.providers.id, id));
+  await audit(admin.id, 'update_status', 'provider', id, { previousStatus: target.status, newStatus });
+
+  revalidatePath('/admin/providers');
+  revalidatePath('/admin/models');
+}
+
 
 export async function savePackage(formData: FormData) {
   const admin = await requireAdmin();
