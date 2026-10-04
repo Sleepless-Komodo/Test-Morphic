@@ -3,7 +3,18 @@ import { requireAdmin } from '@/lib/actions';
 import { getServerTranslation } from '@/lib/i18n/server';
 import { sql, gte } from 'drizzle-orm';
 import { Server } from 'lucide-react';
+import { Suspense } from 'react';
+import { fetchAllProviderCatalogs } from '@/lib/admin-actions';
 import { ProvidersClient, type ProviderRow, type ProviderStat } from './providers-client';
+import { ProviderCatalog, ProviderCatalogSkeleton } from './provider-catalog';
+
+// Streams in after the providers table, so slow upstreams don't block the page.
+async function CatalogSection() {
+  const catalogs = await fetchAllProviderCatalogs();
+  // New key whenever the server refetched (e.g. after a provider edit), so client state resets.
+  const key = Object.entries(catalogs).map(([n, r]) => n + r.fetchedAt).join();
+  return <ProviderCatalog key={key} initial={catalogs} />;
+}
 
 export const dynamic = 'force-dynamic';
 
@@ -62,6 +73,10 @@ export default async function AdminProviders() {
       </div>
 
       <ProvidersClient initialProviders={formattedProviders} stats={stats} />
+
+      <Suspense fallback={<ProviderCatalogSkeleton />}>
+        <CatalogSection />
+      </Suspense>
     </div>
   );
 }

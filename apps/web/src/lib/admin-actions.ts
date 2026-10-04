@@ -6,6 +6,7 @@ import { db, schema as s } from '@morphic/db';
 import { grantCredits } from '@morphic/db/billing';
 import { requireAdmin } from '@/lib/actions';
 import { randomInt } from 'node:crypto';
+import { normalizeCatalog, type CatalogResult } from '@/lib/provider-catalog';
 
 async function audit(adminId: string, action: string, entity: string, entityId: string | null, detail?: unknown) {
   await db.insert(s.adminAuditLog).values({
@@ -160,24 +161,134 @@ export async function saveProvider(formData: FormData) {
   revalidatePath('/admin/providers');
 }
 
-export async function deleteProvider(formData: FormData) {
+async function loadCatalog(baseUrl: string, credential: string | null): Promise<CatalogResult> {
+  const fetchedAt = new Date().toISOString();
+  const fail = (error: string): CatalogResult => ({ ok: false, error, models: [], fetchedAt });
+  if (!/^https?:\/\//i.test(baseUrl)) return fail('Base URL harus diawali http:// atau https://');
+  const url = `${baseUrl.replace(/\/$/, '')}/models`;
+
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      headers: credential ? { Authorization: `Bearer ${credential}` } : {},
+      cache: 'no-store',
+      signal: AbortSignal.timeout(10_000),
+    });
+  } catch (e) {
+    const cause = (e as { cause?: { code?: string } }).cause?.code;
+    if (e instanceof Error && e.name === 'TimeoutError') return fail(`${url} tidak membalas dalam 10 detik.`);
+    return fail(`Tidak bisa terhubung ke ${new URL(url).host}${cause ? ` (${cause})` : ''}. Cek Base URL.`);
+  }
+  if (res.status === 401 || res.status === 403) {
+    return fail(credential ? `API key ditolak (HTTP ${res.status}). Ganti key lewat Edit.` : 'Belum ada API key. Isi lewat Edit.');
+  }
+  if (res.status === 404) return fail(`${url} tidak ditemukan (404). Base URL harus endpoint OpenAI-compatible, biasanya diakhiri /v1.`);
+  if (!res.ok) return fail(`HTTP ${res.status} dari ${url}.`);
+  if (!res.headers.get('content-type')?.includes('json')) {
+    return fail(`${url} tidak membalas JSON. Base URL ini bukan endpoint OpenAI-compatible.`);
+  }
+  try {
+    const models = normalizeCatalog(await res.json());
+    return models.length ? { ok: true, models, fetchedAt } : fail('Provider tidak mengembalikan model.');
+  } catch {
+    return fail(`${url} membalas JSON yang tidak valid.`);
+  }
+}
+
+// Per-server-instance cache so opening the page doesn't re-hit every provider.
+// Keyed on URL + stored credential, so editing either invalidates the entry.
+// Stale-while-revalidate: past the TTL the old result is served and refreshed in the background,
+// so only the very first load ever waits on upstreams.
+const CATALOG_TTL_MS = 5 * 60_000;
+const catalogCache = new Map<string, { at: number; result: CatalogResult }>();
+const inflight = new Map<string, Promise<CatalogResult>>();
+
+function refreshCatalog(key: string, baseUrl: string, credential: string | null): Promise<CatalogResult> {
+  let p = inflight.get(key);
+  if (!p) {
+    p = loadCatalog(baseUrl, credential)
+      .then((result) => {
+        catalogCache.set(key, { at: Date.now(), result });
+        return result;
+      })
+      .finally(() => inflight.delete(key));
+    inflight.set(key, p);
+  }
+  return p;
+}
+
+/** Live model + price list for every saved provider, fetched in parallel. `fresh` skips the cache. */
+export async function fetchAllProviderCatalogs(fresh = false): Promise<Record<string, CatalogResult>> {
+  await requireAdmin();
+  const { resolveProviderCredential } = await import('@morphic/shared/provider-crypto');
+  const providers = await db.select().from(s.providers);
+  const entries = await Promise.all(
+    providers.map(async (p) => {
+      const key = `${p.id}|${p.baseUrl}|${p.encryptedCredentials ?? p.credentialReference ?? ''}`;
+      let credential: string | null = null;
+      try {
+        credential = resolveProviderCredential(p.encryptedCredentials, p.credentialReference);
+      } catch {
+        return [p.name, { ok: false, error: 'Key tersimpan tidak bisa didekripsi. Isi ulang lewat Edit.', models: [], fetchedAt: new Date().toISOString() }] as const;
+      }
+      const hit = catalogCache.get(key);
+      if (!fresh && hit) {
+        if (Date.now() - hit.at >= CATALOG_TTL_MS) void refreshCatalog(key, p.baseUrl, credential);
+        return [p.name, hit.result] as const;
+      }
+      return [p.name, await refreshCatalog(key, p.baseUrl, credential)] as const;
+    }),
+  );
+  return Object.fromEntries(entries);
+}
+
+/**
+ * Model list for the add/edit form, using the typed base URL/key. Never cached.
+ * The saved key is only ever sent to the saved base URL.
+ */
+export async function fetchProviderCatalog(input: {
+  providerId?: string;
+  baseUrl?: string;
+  credential?: string;
+}): Promise<CatalogResult> {
+  await requireAdmin();
+  let baseUrl = input.baseUrl?.trim() ?? '';
+  let credential = input.credential?.trim() || null;
+  if (input.providerId) {
+    const [p] = await db.select().from(s.providers).where(eq(s.providers.id, input.providerId)).limit(1);
+    if (p) {
+      baseUrl ||= p.baseUrl;
+      if (!credential && baseUrl.replace(/\/$/, '') === p.baseUrl.replace(/\/$/, '')) {
+        const { resolveProviderCredential } = await import('@morphic/shared/provider-crypto');
+        credential = resolveProviderCredential(p.encryptedCredentials, p.credentialReference);
+      }
+    }
+  }
+  return loadCatalog(baseUrl, credential);
+}
+
+export async function deleteProvider(formData: FormData): Promise<{ deleted: boolean; message: string }> {
   const admin = await requireAdmin();
   const id = String(formData.get('id') || '');
-  if (!id) return;
+  const [target] = id
+    ? await db.select({ id: s.providers.id, name: s.providers.name }).from(s.providers).where(eq(s.providers.id, id)).limit(1)
+    : [];
+  if (!target) return { deleted: false, message: 'Provider tidak ditemukan.' };
 
-  const [target] = await db
-    .select({ id: s.providers.id, name: s.providers.name })
-    .from(s.providers)
-    .where(eq(s.providers.id, id))
-    .limit(1);
-
-  if (!target) return;
-
-  await db.delete(s.providers).where(eq(s.providers.id, id));
+  // Cascades to its models; billing rows (reservations, usage_records) keep their data with model_id set null.
+  try {
+    await db.delete(s.providers).where(eq(s.providers.id, id));
+  } catch (e) {
+    const code = (e as { cause?: { code?: string } }).cause?.code;
+    if (code === '23001' || code === '23503') {
+      return { deleted: false, message: 'Database masih memblokir hapus model yang punya riwayat billing. Jalankan migration terbaru (pnpm db:migrate).' };
+    }
+    throw e;
+  }
   await audit(admin.id, 'delete', 'provider', id, { name: target.name });
-
   revalidatePath('/admin/providers');
   revalidatePath('/admin/models');
+  return { deleted: true, message: `Provider "${target.name}" berhasil dihapus.` };
 }
 
 export async function toggleProviderStatus(formData: FormData) {

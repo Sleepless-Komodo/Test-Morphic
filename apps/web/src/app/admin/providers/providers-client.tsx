@@ -1,7 +1,9 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { saveProvider, deleteProvider, toggleProviderStatus } from '@/lib/admin-actions';
+import { saveProvider, deleteProvider, toggleProviderStatus, fetchProviderCatalog } from '@/lib/admin-actions';
+import type { CatalogResult } from '@/lib/provider-catalog';
+import { CatalogTable } from './provider-catalog';
 import { useTranslation } from '@/lib/i18n';
 import {
   Activity,
@@ -16,6 +18,7 @@ import {
   ShieldCheck,
   AlertTriangle,
   Loader2,
+  Search,
 } from 'lucide-react';
 
 export interface ProviderRow {
@@ -74,6 +77,20 @@ export function ProvidersClient({ initialProviders, stats }: ProvidersClientProp
   });
 
   const [isPending, startTransition] = useTransition();
+  const [preview, setPreview] = useState<CatalogResult | null>(null);
+  const [previewing, setPreviewing] = useState(false);
+
+  const handlePreview = async () => {
+    setPreviewing(true);
+    setPreview(
+      await fetchProviderCatalog({
+        providerId: formData.id || undefined,
+        baseUrl: formData.baseUrl,
+        credential: formData.credential,
+      }),
+    );
+    setPreviewing(false);
+  };
   const [toastMessage, setToastMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const statsMap = new Map(
@@ -119,6 +136,7 @@ export function ProvidersClient({ initialProviders, stats }: ProvidersClientProp
 
   const closeModal = () => {
     setModalMode(null);
+    setPreview(null);
     setSelectedProvider(null);
   };
 
@@ -168,11 +186,8 @@ export function ProvidersClient({ initialProviders, stats }: ProvidersClientProp
       try {
         const fd = new FormData();
         fd.set('id', selectedProvider.id);
-        await deleteProvider(fd);
-        setToastMessage({
-          type: 'success',
-          text: `Provider "${selectedProvider.name}" berhasil dihapus.`,
-        });
+        const res = await deleteProvider(fd);
+        setToastMessage({ type: res.deleted ? 'success' : 'error', text: res.message });
         closeModal();
       } catch (err: any) {
         setToastMessage({
@@ -440,7 +455,7 @@ export function ProvidersClient({ initialProviders, stats }: ProvidersClientProp
           <div
             role="dialog"
             aria-modal="true"
-            className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl border border-neutral-200 space-y-4 animate-in zoom-in-95 duration-150 max-h-[90vh] overflow-y-auto"
+            className={`w-full ${preview?.ok ? 'max-w-3xl' : 'max-w-lg'} rounded-3xl bg-white p-6 shadow-2xl border border-neutral-200 space-y-4 animate-in zoom-in-95 duration-150 max-h-[90vh] overflow-y-auto`}
           >
             <div className="flex items-center justify-between pb-3 border-b border-neutral-100">
               <div className="flex items-center gap-2.5">
@@ -561,6 +576,26 @@ export function ProvidersClient({ initialProviders, stats }: ProvidersClientProp
                 </select>
               </div>
 
+              <div className="space-y-3">
+                <button
+                  type="button"
+                  onClick={handlePreview}
+                  disabled={previewing || !formData.baseUrl}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-neutral-200 bg-white hover:bg-neutral-100 text-xs font-semibold disabled:opacity-50 cursor-pointer"
+                >
+                  {previewing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
+                  <span>Cek model &amp; harga</span>
+                </button>
+                {preview && !preview.ok && (
+                  <p className="text-[11px] font-mono text-amber-800 bg-amber-50 border border-amber-200 rounded-xl p-3 break-all">
+                    {preview.error}
+                  </p>
+                )}
+                {preview?.ok && (
+                  <CatalogTable rows={preview.models.map((m) => ({ ...m, provider: formData.name }))} showProvider={false} />
+                )}
+              </div>
+
               <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-neutral-100">
                 <button
                   type="button"
@@ -627,7 +662,7 @@ export function ProvidersClient({ initialProviders, stats }: ProvidersClientProp
 
             <p className="text-xs text-neutral-600 leading-relaxed">
               Apakah Anda yakin ingin menghapus provider <strong className="text-neutral-900">{selectedProvider.name}</strong>?
-              Semua model katalog yang menggunakan provider ini akan ikut terhapus dari sistem (cascade delete).
+              Semua model provider ini ikut terhapus. Riwayat billing dan usage tetap tersimpan, hanya tidak lagi terhubung ke model.
             </p>
 
             <div className="flex items-center justify-end gap-2.5 pt-2">
