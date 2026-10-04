@@ -105,6 +105,49 @@ export async function saveModel(formData: FormData) {
   revalidatePath('/admin/models');
 }
 
+export async function deleteModel(formData: FormData): Promise<{ deleted: boolean; message: string }> {
+  const admin = await requireAdmin();
+  const id = String(formData.get('id') || '');
+  if (!id) return { deleted: false, message: 'ID model tidak ditemukan.' };
+
+  const [target] = await db
+    .select({
+      id: s.models.id,
+      publicModelId: s.models.publicModelId,
+      displayName: s.models.displayName,
+    })
+    .from(s.models)
+    .where(eq(s.models.id, id))
+    .limit(1);
+
+  if (!target) return { deleted: false, message: 'Model tidak ditemukan.' };
+
+  try {
+    await db.delete(s.models).where(eq(s.models.id, id));
+  } catch (e) {
+    const code = (e as { cause?: { code?: string } }).cause?.code;
+    if (code === '23001' || code === '23503') {
+      return {
+        deleted: false,
+        message: 'Database memblokir penghapusan model karena masih memiliki relasi data aktif.',
+      };
+    }
+    throw e;
+  }
+
+  await audit(admin.id, 'delete', 'model', id, {
+    publicModelId: target.publicModelId,
+    displayName: target.displayName,
+  });
+
+  revalidatePath('/admin/models');
+  revalidatePath('/dashboard/models');
+  return {
+    deleted: true,
+    message: `Model "${target.displayName || target.publicModelId}" berhasil dihapus.`,
+  };
+}
+
 export async function saveProvider(formData: FormData) {
   const admin = await requireAdmin();
   const id = String(formData.get('id') || '');
@@ -351,12 +394,19 @@ export async function createRedeemCodes(_prev: GenerateCodesState, formData: For
   const admin = await requireAdmin();
   const fail = (message: string): GenerateCodesState => ({ ok: false, message, codes: [] });
 
-  // Empty prefix = fully random codes (MORPHIC-XXXXXXXXXXXX), the one-click path.
-  const typedPrefix = String(formData.get('prefix') ?? '').trim().toUpperCase();
-  if (typedPrefix && !/^[A-Z0-9][A-Z0-9-]{2,31}$/.test(typedPrefix)) {
-    return fail('Kode/prefix: 3-32 karakter, huruf A-Z, angka, atau tanda -.');
+  // Code format: All redeem codes MUST be prefixed with "MP-".
+  // If the admin typed a custom code (e.g. "LAUNCH50" or "MP-LAUNCH50"), normalize it so it always starts with "MP-".
+  const rawPrefix = String(formData.get('prefix') ?? '').trim().toUpperCase();
+  let customSuffix = '';
+  if (rawPrefix) {
+    customSuffix = rawPrefix.replace(/^MP-+/i, '').replace(/^MP/i, '').replace(/^-+/, '').trim();
+    if (customSuffix && !/^[A-Z0-9][A-Z0-9-]{1,29}$/.test(customSuffix)) {
+      return fail('Kode custom: minimal 2 karakter (huruf A-Z, angka, tanda -).');
+    }
   }
-  const prefix = typedPrefix || 'MORPHIC';
+
+  // Base prefix is always "MP"
+  const prefix = customSuffix ? `MP-${customSuffix}` : 'MP';
 
   const count = intOrNull(formData.get('count')) ?? 1;
   if (!Number.isInteger(count) || count < 1 || count > 500) return fail('Jumlah kode harus 1-500.');
@@ -392,10 +442,14 @@ export async function createRedeemCodes(_prev: GenerateCodesState, formData: For
   if (![0, 7, 30, 90].includes(expiresInDays)) return fail('Masa berlaku tidak valid.');
   const expiresAt = expiresInDays ? new Date(Date.now() + expiresInDays * 86_400_000) : null;
 
-  // Single code = the admin's chosen vanity code (e.g. "LAUNCH50"). Batches get a
-  // cryptographically-random 12-char suffix so codes are not enumerable (audit H2).
-  const vanity = count === 1 && typedPrefix !== '';
-  const codes = Array.from({ length: count }, () => (vanity ? prefix : `${prefix}-${randomCodeSuffix()}`));
+  // Single code with custom text = vanity code (e.g. "MP-LAUNCH50").
+  // Batches get a cryptographically-random suffix so codes are not enumerable (audit H2).
+  // Empty custom text = random codes starting with "MP-" (e.g. "MP-K7X9P2M4N6").
+  const vanity = count === 1 && customSuffix !== '';
+  const codes = Array.from({ length: count }, () => {
+    if (vanity) return prefix;
+    return `${prefix}-${randomCodeSuffix(customSuffix ? 8 : 10)}`;
+  });
 
   const inserted = await db
     .insert(s.redeemCodes)
