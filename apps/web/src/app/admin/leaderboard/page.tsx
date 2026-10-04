@@ -4,10 +4,10 @@ import { db, schema as s } from '@morphic/db';
 import { requireAdmin } from '@/lib/actions';
 import { getServerTranslation } from '@/lib/i18n/server';
 import { formatCredits, formatTokenEstimate } from '@/lib/utils';
+import { UserCell } from '../user-cell';
+import { IDR_PER_USD, rupiah } from '@/lib/money';
 import { AutoRefresh } from '@/components/AutoRefresh';
 
-// Same conversion the checkout uses for USD packages, so the ranking compares like with like.
-const IDR_PER_USD = 16_000;
 
 const PERIODS = [
   { key: '7d', days: 7, en: '7 days', id: '7 hari' },
@@ -15,37 +15,6 @@ const PERIODS = [
   { key: 'all', days: null, en: 'All time', id: 'Semua' },
 ] as const;
 
-const rupiah = (n: number) => `Rp ${Math.round(n).toLocaleString('id-ID')}`;
-
-function Avatar({ name, image }: { name: string; image: string | null }) {
-  if (image) {
-    // eslint-disable-next-line @next/next/no-img-element -- OAuth avatars come from arbitrary hosts
-    return <img src={image} alt="" className="h-9 w-9 shrink-0 rounded-full border border-neutral-200 object-cover" loading="lazy" />;
-  }
-  const initials = name.split(/\s+/).map((p) => p[0]).join('').slice(0, 2).toUpperCase() || '?';
-  return (
-    <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-neutral-950 text-xs font-bold text-white">
-      {initials}
-    </span>
-  );
-}
-
-function UserCell({ name, email, image, role }: { name: string | null; email: string | null; image: string | null; role: string | null }) {
-  return (
-    <div className="flex min-w-0 items-center gap-3">
-      <Avatar name={name || email || '?'} image={image} />
-      <div className="min-w-0">
-        <div className="flex items-center gap-1.5">
-          <span className="truncate font-semibold text-neutral-950">{name || '—'}</span>
-          {role === 'admin' && (
-            <span className="rounded-md bg-neutral-950 px-1.5 py-0.5 text-[10px] font-bold text-white">admin</span>
-          )}
-        </div>
-        <div className="truncate text-xs text-neutral-500">{email ?? '—'}</div>
-      </div>
-    </div>
-  );
-}
 
 function Rank({ n }: { n: number }) {
   return (

@@ -19,6 +19,9 @@ import {
   ArrowLeft,
   Menu,
   X,
+  KeyRound,
+  TrendingUp,
+  AlertTriangle,
 } from 'lucide-react';
 
 interface AdminShellProps {
@@ -44,6 +47,9 @@ export function AdminShell({ user, children }: AdminShellProps) {
     { href: '/admin/packages', label: t.admin.nav.packages, icon: Package },
     { href: '/admin/transactions', label: t.admin.nav.transactions, icon: CreditCard },
     { href: '/admin/usage', label: t.admin.nav.usage, icon: Activity },
+    { href: '/admin/api-keys', label: t.admin.nav.apiKeys, icon: KeyRound },
+    { href: '/admin/margin', label: t.admin.nav.margin, icon: TrendingUp },
+    { href: '/admin/alerts', label: t.admin.nav.alerts, icon: AlertTriangle },
     { href: '/admin/codes', label: t.admin.nav.codes, icon: Ticket },
     { href: '/admin/leaderboard', label: t.admin.nav.leaderboard, icon: Trophy },
     { href: '/admin/audit', label: t.admin.nav.audit, icon: History },

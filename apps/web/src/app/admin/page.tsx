@@ -6,9 +6,7 @@ import { requireAdmin } from '@/lib/actions';
 import { getServerTranslation } from '@/lib/i18n/server';
 import { formatCredits } from '@/lib/utils';
 import { AutoRefresh } from '@/components/AutoRefresh';
-
-// Same conversion as checkout and the leaderboard.
-const IDR_PER_USD = 16_000;
+import { IDR_PER_USD } from '@/lib/money';
 import { Activity, AlertTriangle, Users, Cpu, DollarSign, Zap, ServerCrash } from 'lucide-react';
 
 function StatsCardsSkeleton() {

@@ -173,6 +173,7 @@ export const requestLogs = pgTable(
   (t) => [
     index('req_logs_user_idx').on(t.userId),
     index('req_logs_created_idx').on(t.createdAt),
+    index('req_logs_api_key_idx').on(t.apiKeyId, t.createdAt),
   ],
 );
 

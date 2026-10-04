@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { and, eq, sql } from 'drizzle-orm';
 import { db, schema as s } from '@morphic/db';
-import { grantCredits } from '@morphic/db/billing';
+import { grantCredits, getBalance, reconcileBalance, sweepExpiredReservations } from '@morphic/db/billing';
 import { requireAdmin } from '@/lib/actions';
 import { randomInt } from 'node:crypto';
 import { normalizeCatalog, type CatalogResult } from '@/lib/provider-catalog';
@@ -437,4 +437,23 @@ export async function toggleRedeemCode(formData: FormData) {
   await audit(admin.id, rc.active ? 'disable_code' : 'enable_code', 'redeem_code', id);
   revalidatePath('/admin/codes');
   revalidatePath('/dashboard/redeem');
+}
+
+/** Rebuild one user's cached balance from the ledger (the source of truth). */
+export async function reconcileUserBalance(formData: FormData) {
+  const admin = await requireAdmin();
+  const userId = String(formData.get('userId') || '');
+  if (!userId) return;
+  const before = await getBalance(userId);
+  const after = await reconcileBalance(userId);
+  await audit(admin.id, 'reconcile', 'balance', userId, { before, after });
+  revalidatePath('/admin/alerts');
+}
+
+/** Release every reservation past its expiry, returning the held credits. Same path as the API's sweep. */
+export async function releaseStuckReservations() {
+  const admin = await requireAdmin();
+  const released = await sweepExpiredReservations();
+  await audit(admin.id, 'release_stuck', 'reservation', null, { released });
+  revalidatePath('/admin/alerts');
 }

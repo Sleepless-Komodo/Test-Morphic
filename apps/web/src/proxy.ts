@@ -125,28 +125,7 @@ export function proxy(req: NextRequest) {
   response.headers.set('X-Frame-Options', 'DENY');
   response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
 
-  // 7. Auto-detect Geo Country / Locale on first visit
-  const existingLocale = req.cookies.get('morphic_locale')?.value;
-  if (!existingLocale) {
-    const cfCountry = req.headers.get('cf-ipcountry');
-    const vercelCountry = req.headers.get('x-vercel-ip-country');
-    const geoCountry = (cfCountry || vercelCountry || '').trim().toUpperCase();
-
-    let autoLocale = 'id';
-    if (geoCountry) {
-      autoLocale = geoCountry === 'ID' ? 'id' : 'en';
-    } else {
-      const acceptLang = (req.headers.get('accept-language') || '').toLowerCase();
-      autoLocale = acceptLang.includes('id') ? 'id' : 'en';
-    }
-
-    response.cookies.set('morphic_locale', autoLocale, {
-      path: '/',
-      maxAge: 31536000,
-      sameSite: 'lax',
-    });
-    response.headers.set('x-morphic-detected-locale', autoLocale);
-  }
+  // 7. Locale: English unless the visitor picked a language (morphic_lang cookie).
 
   return response;
 }

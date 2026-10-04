@@ -1,0 +1,1 @@
+CREATE INDEX "req_logs_api_key_idx" ON "request_logs" USING btree ("api_key_id","created_at");

@@ -468,6 +468,9 @@ export const en = {
         codes: 'Redeem Codes',
         audit: 'Audit Log',
         leaderboard: 'Leaderboard',
+        apiKeys: 'API Keys',
+        margin: 'Margin',
+        alerts: 'Alerts',
       },
       status: {
         active: 'Active',

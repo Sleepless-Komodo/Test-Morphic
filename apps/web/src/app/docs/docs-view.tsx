@@ -189,6 +189,7 @@ function CodeBlock({
 
   const lines = code.split('\n');
   const isMultiLine = lines.length > 1;
+  const isShell = ['bash', 'sh', 'shell', 'zsh', 'powershell', 'cmd'].includes((language ?? '').toLowerCase());
 
   const handleCopyLine = (index: number, lineText: string) => {
     // Strip terminal prompt symbols ($ or >) if present at start
@@ -222,57 +223,45 @@ function CodeBlock({
           <CopyButton text={code} label={isId ? 'Salin Semua' : 'Copy All'} />
         </div>
       </div>
-      <div className="p-3 sm:p-4 overflow-x-auto">
-        {isMultiLine ? (
-          <div className="font-mono text-xs leading-relaxed divide-y divide-transparent">
-            {lines.map((line, idx) => {
-              const isNonEmpty = line.trim().length > 0;
-              const isComment = line.trim().startsWith('#') || line.trim().startsWith('//');
-              const canCopy = isNonEmpty && !isComment;
-
-              return (
-                <div
-                  key={idx}
-                  className="group/line flex items-center justify-between hover:bg-neutral-900/90 -mx-3 sm:-mx-4 px-3 sm:px-4 py-0.5 rounded transition-colors"
-                >
-                  <pre className="font-mono text-xs leading-relaxed text-neutral-200 selection:bg-neutral-800 whitespace-pre overflow-x-auto m-0 flex-1">
-                    <code>{line || ' '}</code>
-                  </pre>
-                  {canCopy && (
-                    <button
-                      type="button"
-                      onClick={() => handleCopyLine(idx, line)}
-                      title={isId ? 'Salin baris ini' : 'Copy this line'}
-                      aria-label={isId ? `Salin baris ${idx + 1}` : `Copy line ${idx + 1}`}
-                      className={`ml-2 shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border text-[10px] font-mono transition cursor-pointer ${
-                        copiedLineIndex === idx
-                          ? 'opacity-100 bg-emerald-950/80 border-emerald-500/50 text-emerald-400'
-                          : 'opacity-0 group-hover/line:opacity-100 bg-neutral-900 border-neutral-700/80 text-neutral-400 hover:text-white hover:border-neutral-600'
-                      }`}
-                    >
-                      {copiedLineIndex === idx ? (
-                        <>
-                          <Check className="w-2.5 h-2.5 text-emerald-400" />
-                          <span>{isId ? 'Tersalin' : 'Copied'}</span>
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="w-2.5 h-2.5" />
-                          <span className="hidden sm:inline">{isId ? 'Baris' : 'Line'}</span>
-                        </>
-                      )}
-                    </button>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <pre className="font-mono text-xs leading-relaxed text-neutral-200 selection:bg-neutral-800">
-            <code>{code}</code>
-          </pre>
-        )}
-      </div>
+      {isShell && isMultiLine ? (
+        // Shell: copy one command at a time. Lines wrap rather than scroll, and the
+        // button is select-none so it never ends up in copied text.
+        <div className="p-3 sm:p-4 font-mono text-xs leading-relaxed">
+          {lines.map((line, idx) => {
+            const canCopy = line.trim().length > 0 && !/^\s*(#|\/\/|REM\b|::)/i.test(line);
+            return (
+              <div
+                key={idx}
+                className="group/line flex items-start gap-2 -mx-3 sm:-mx-4 px-3 sm:px-4 py-0.5 rounded hover:bg-neutral-900/90 transition-colors"
+              >
+                <code className="flex-1 min-w-0 whitespace-pre-wrap break-words text-neutral-200 selection:bg-neutral-800">
+                  {line || ' '}
+                </code>
+                {canCopy && (
+                  <button
+                    type="button"
+                    onClick={() => handleCopyLine(idx, line)}
+                    aria-label={isId ? `Salin baris ${idx + 1}` : `Copy line ${idx + 1}`}
+                    title={isId ? 'Salin baris ini' : 'Copy this line'}
+                    className={`select-none shrink-0 grid place-items-center w-5 h-5 rounded-md border transition cursor-pointer focus-visible:opacity-100 ${
+                      copiedLineIndex === idx
+                        ? 'opacity-100 bg-emerald-950/80 border-emerald-500/50 text-emerald-400'
+                        : 'opacity-0 group-hover/line:opacity-100 bg-neutral-900 border-neutral-700/80 text-neutral-400 hover:text-white hover:border-neutral-600'
+                    }`}
+                  >
+                    {copiedLineIndex === idx ? <Check className="w-2.5 h-2.5" /> : <Copy className="w-2.5 h-2.5" />}
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        // Everything else (JSON, code, configs) is one block with a single scroll, if it needs one.
+        <pre className="p-3 sm:p-4 overflow-x-auto font-mono text-xs leading-relaxed text-neutral-200 selection:bg-neutral-800 m-0">
+          <code>{code}</code>
+        </pre>
+      )}
     </div>
   );
 }

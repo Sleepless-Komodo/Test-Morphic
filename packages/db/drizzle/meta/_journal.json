@@ -43,6 +43,13 @@
       "when": 1791092021986,
       "tag": "0005_billing_model_set_null",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1791099700151,
+      "tag": "0006_request_logs_api_key_idx",
+      "breakpoints": true
     }
   ]
 }

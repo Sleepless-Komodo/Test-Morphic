@@ -17,25 +17,10 @@ export const viewport: Viewport = {
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const cookieStore = await cookies();
-  const cookieVal = cookieStore.get('morphic_locale')?.value as Locale | undefined;
+  const cookieVal = cookieStore.get('morphic_lang')?.value as Locale | undefined;
 
-  let initialLocale: Locale = 'id';
-  if (cookieVal === 'en' || cookieVal === 'id') {
-    initialLocale = cookieVal;
-  } else {
-    const reqHeaders = await headers();
-    const detected = reqHeaders.get('x-morphic-detected-locale');
-    const country = (reqHeaders.get('cf-ipcountry') || reqHeaders.get('x-vercel-ip-country') || '').trim().toUpperCase();
-
-    if (detected === 'en' || detected === 'id') {
-      initialLocale = detected;
-    } else if (country) {
-      initialLocale = country === 'ID' ? 'id' : 'en';
-    } else {
-      const acceptLang = (reqHeaders.get('accept-language') || '').toLowerCase();
-      initialLocale = acceptLang.includes('id') ? 'id' : 'en';
-    }
-  }
+  // English by default; Indonesian only when the visitor chose it with the language toggle.
+  const initialLocale: Locale = cookieVal === 'id' ? 'id' : 'en';
 
   return (
     <html lang={initialLocale} className="scroll-smooth" suppressHydrationWarning>

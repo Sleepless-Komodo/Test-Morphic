@@ -37,38 +37,16 @@ export function LanguageProvider({
 
   useEffect(() => {
     try {
-      const saved = localStorage.getItem('morphic_locale') as Locale | null;
+      const saved = localStorage.getItem('morphic_lang') as Locale | null;
       if (saved === 'id' || saved === 'en') {
         if (saved !== initialLocale) {
           // eslint-disable-next-line react-hooks/set-state-in-effect
           setLocaleState(saved);
         }
-        document.cookie = `morphic_locale=${saved}; path=/; max-age=31536000; SameSite=Lax`;
-      } else {
-        // First-time visitor: use server-provided initialLocale (from Geo IP headers),
-        // with client timezone detection as fallback (useful for localhost/VPS without edge headers)
-        let resolved: Locale = initialLocale;
-        if (typeof Intl !== 'undefined') {
-          const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
-          const isIndoTz =
-            tz.startsWith('Asia/Jakarta') ||
-            tz.startsWith('Asia/Pontianak') ||
-            tz.startsWith('Asia/Makassar') ||
-            tz.startsWith('Asia/Jayapura');
-          const navLang = (navigator.language || '').toLowerCase();
-          if (isIndoTz || navLang.startsWith('id')) {
-            resolved = 'id';
-          }
-        }
-
-        // Compared against initialLocale, the value this branch started from: reading the
-        // live `locale` here only re-read the same thing through a stale closure.
-        if (resolved !== initialLocale) {
-          setLocaleState(resolved);
-        }
-        localStorage.setItem('morphic_locale', resolved);
-        document.cookie = `morphic_locale=${resolved}; path=/; max-age=31536000; SameSite=Lax`;
+        document.cookie = `morphic_lang=${saved}; path=/; max-age=31536000; SameSite=Lax`;
       }
+      // No saved choice: stay on initialLocale (English). Only the language toggle saves one.
+      // Key renamed from morphic_locale, which was filled by geo auto-detection, not by the visitor.
     } catch {
       // LocalStorage unavailable
     }
@@ -77,8 +55,8 @@ export function LanguageProvider({
   const setLocale = (newLocale: Locale) => {
     setLocaleState(newLocale);
     try {
-      localStorage.setItem('morphic_locale', newLocale);
-      document.cookie = `morphic_locale=${newLocale}; path=/; max-age=31536000; SameSite=Lax`;
+      localStorage.setItem('morphic_lang', newLocale);
+      document.cookie = `morphic_lang=${newLocale}; path=/; max-age=31536000; SameSite=Lax`;
     } catch {
       // LocalStorage unavailable
     }
