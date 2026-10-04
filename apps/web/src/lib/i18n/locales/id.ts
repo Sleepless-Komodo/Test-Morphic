@@ -542,6 +542,10 @@ export const id = {
         thStatus: 'Status',
         thAction: 'Aksi',
         editBtn: 'Edit',
+        deleteBtn: 'Hapus',
+        deleteModelTitle: 'Hapus Model AI',
+        confirmDelete: 'Apakah Anda yakin ingin menghapus model ini?',
+        deleteModelWarning: 'Model tidak akan lagi dapat diakses melalui API inference. Riwayat log penggunaan token dan billing lama tetap tersimpan.',
       },
       providers: {
         title: 'Upstream Providers',

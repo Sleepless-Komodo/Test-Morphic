@@ -105,6 +105,49 @@ export async function saveModel(formData: FormData) {
   revalidatePath('/admin/models');
 }
 
+export async function deleteModel(formData: FormData): Promise<{ deleted: boolean; message: string }> {
+  const admin = await requireAdmin();
+  const id = String(formData.get('id') || '');
+  if (!id) return { deleted: false, message: 'ID model tidak ditemukan.' };
+
+  const [target] = await db
+    .select({
+      id: s.models.id,
+      publicModelId: s.models.publicModelId,
+      displayName: s.models.displayName,
+    })
+    .from(s.models)
+    .where(eq(s.models.id, id))
+    .limit(1);
+
+  if (!target) return { deleted: false, message: 'Model tidak ditemukan.' };
+
+  try {
+    await db.delete(s.models).where(eq(s.models.id, id));
+  } catch (e) {
+    const code = (e as { cause?: { code?: string } }).cause?.code;
+    if (code === '23001' || code === '23503') {
+      return {
+        deleted: false,
+        message: 'Database memblokir penghapusan model karena masih memiliki relasi data aktif.',
+      };
+    }
+    throw e;
+  }
+
+  await audit(admin.id, 'delete', 'model', id, {
+    publicModelId: target.publicModelId,
+    displayName: target.displayName,
+  });
+
+  revalidatePath('/admin/models');
+  revalidatePath('/dashboard/models');
+  return {
+    deleted: true,
+    message: `Model "${target.displayName || target.publicModelId}" berhasil dihapus.`,
+  };
+}
+
 export async function saveProvider(formData: FormData) {
   const admin = await requireAdmin();
   const id = String(formData.get('id') || '');

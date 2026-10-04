@@ -542,6 +542,10 @@ export const en = {
         thStatus: 'Status',
         thAction: 'Action',
         editBtn: 'Edit',
+        deleteBtn: 'Delete',
+        deleteModelTitle: 'Delete AI Model',
+        confirmDelete: 'Are you sure you want to delete this model?',
+        deleteModelWarning: 'This model will no longer be available for inference API calls. Past token usage and billing logs remain preserved.',
       },
       providers: {
         title: 'Upstream Providers',
