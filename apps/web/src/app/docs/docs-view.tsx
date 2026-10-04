@@ -148,6 +148,8 @@ function OsSelector({
 
 function CopyButton({ text, label }: { text: string; label?: string }) {
   const [copied, setCopied] = useState(false);
+  const { locale } = useTranslation();
+  const isId = locale === 'id';
 
   const handleCopy = () => {
     navigator.clipboard.writeText(text);
@@ -159,7 +161,7 @@ function CopyButton({ text, label }: { text: string; label?: string }) {
     <button
       type="button"
       onClick={handleCopy}
-      aria-label={label || 'Copy'}
+      aria-label={label || (isId ? 'Salin Semua' : 'Copy All')}
       className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-700/80 bg-neutral-800 px-2 py-1 text-[11px] font-semibold text-neutral-300 transition-colors hover:bg-neutral-700 hover:text-white cursor-pointer shrink-0"
     >
       {copied ? (
@@ -167,7 +169,7 @@ function CopyButton({ text, label }: { text: string; label?: string }) {
       ) : (
         <Copy className="h-3 w-3" />
       )}
-      <span>{copied ? 'Tersalin' : 'Salin'}</span>
+      <span>{copied ? (isId ? 'Tersalin' : 'Copied') : (label || (isId ? 'Salin Semua' : 'Copy All'))}</span>
     </button>
   );
 }
@@ -181,8 +183,23 @@ function CodeBlock({
   filename?: string;
   language?: string;
 }) {
+  const { locale } = useTranslation();
+  const isId = locale === 'id';
+  const [copiedLineIndex, setCopiedLineIndex] = useState<number | null>(null);
+
+  const lines = code.split('\n');
+  const isMultiLine = lines.length > 1;
+
+  const handleCopyLine = (index: number, lineText: string) => {
+    // Strip terminal prompt symbols ($ or >) if present at start
+    const cleaned = lineText.replace(/^\s*[$>]\s+/, '').trimEnd();
+    navigator.clipboard.writeText(cleaned);
+    setCopiedLineIndex(index);
+    setTimeout(() => setCopiedLineIndex(null), 1800);
+  };
+
   return (
-    <div className="rounded-xl bg-neutral-950 border border-neutral-800/90 overflow-hidden text-neutral-200 shadow-2xs my-3">
+    <div className="rounded-xl bg-neutral-950 border border-neutral-800/90 overflow-hidden text-neutral-200 shadow-2xs my-3 group/block">
       <div className="flex items-center justify-between px-3.5 py-2 border-b border-neutral-800/80 bg-neutral-900/60">
         <div className="flex items-center gap-2">
           <div className="flex gap-1.5">
@@ -191,7 +208,7 @@ function CodeBlock({
             <div className="w-2.5 h-2.5 rounded-full bg-[#27c93f] border border-[#1aab29]/50" />
           </div>
           {filename && (
-            <span className="font-mono text-[11px] text-neutral-500 font-medium ml-2">
+            <span className="font-mono text-[11px] text-neutral-400 font-medium ml-2">
               {filename}
             </span>
           )}
@@ -202,13 +219,59 @@ function CodeBlock({
               {language}
             </span>
           )}
-          <CopyButton text={code} />
+          <CopyButton text={code} label={isId ? 'Salin Semua' : 'Copy All'} />
         </div>
       </div>
-      <div className="p-3.5 sm:p-4 overflow-x-auto">
-        <pre className="font-mono text-xs leading-relaxed text-neutral-200 selection:bg-neutral-800">
-          <code>{code}</code>
-        </pre>
+      <div className="p-3 sm:p-4 overflow-x-auto">
+        {isMultiLine ? (
+          <div className="font-mono text-xs leading-relaxed divide-y divide-transparent">
+            {lines.map((line, idx) => {
+              const isNonEmpty = line.trim().length > 0;
+              const isComment = line.trim().startsWith('#') || line.trim().startsWith('//');
+              const canCopy = isNonEmpty && !isComment;
+
+              return (
+                <div
+                  key={idx}
+                  className="group/line flex items-center justify-between hover:bg-neutral-900/90 -mx-3 sm:-mx-4 px-3 sm:px-4 py-0.5 rounded transition-colors"
+                >
+                  <pre className="font-mono text-xs leading-relaxed text-neutral-200 selection:bg-neutral-800 whitespace-pre overflow-x-auto m-0 flex-1">
+                    <code>{line || ' '}</code>
+                  </pre>
+                  {canCopy && (
+                    <button
+                      type="button"
+                      onClick={() => handleCopyLine(idx, line)}
+                      title={isId ? 'Salin baris ini' : 'Copy this line'}
+                      aria-label={isId ? `Salin baris ${idx + 1}` : `Copy line ${idx + 1}`}
+                      className={`ml-2 shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border text-[10px] font-mono transition cursor-pointer ${
+                        copiedLineIndex === idx
+                          ? 'opacity-100 bg-emerald-950/80 border-emerald-500/50 text-emerald-400'
+                          : 'opacity-0 group-hover/line:opacity-100 bg-neutral-900 border-neutral-700/80 text-neutral-400 hover:text-white hover:border-neutral-600'
+                      }`}
+                    >
+                      {copiedLineIndex === idx ? (
+                        <>
+                          <Check className="w-2.5 h-2.5 text-emerald-400" />
+                          <span>{isId ? 'Tersalin' : 'Copied'}</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-2.5 h-2.5" />
+                          <span className="hidden sm:inline">{isId ? 'Baris' : 'Line'}</span>
+                        </>
+                      )}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <pre className="font-mono text-xs leading-relaxed text-neutral-200 selection:bg-neutral-800">
+            <code>{code}</code>
+          </pre>
+        )}
       </div>
     </div>
   );
