@@ -1,7 +1,7 @@
 import { randomBytes, createHash } from 'node:crypto';
 import { Hono } from 'hono';
 import { db, schema as s } from '@morphic/db';
-import { eq, and, desc } from 'drizzle-orm';
+import { eq, and, desc, sql } from 'drizzle-orm';
 import { encryptApiKey, decryptApiKey } from '@morphic/shared/keys';
 import { sessionAuth, denyKeyDerivedSession } from '../middleware/session-auth';
 import { sessionRateLimit } from '../middleware/session-ratelimit';
@@ -14,6 +14,26 @@ keys.use('*', sessionRateLimit('keys', 30));
 
 keys.post('/', async (c) => {
   const { userId } = c.get('userSession');
+
+  // Enforce max 5 API keys per account
+  const [keyCount] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(s.apiKeys)
+    .where(eq(s.apiKeys.userId, userId));
+
+  if ((keyCount?.count ?? 0) >= 5) {
+    return c.json(
+      {
+        error: {
+          message: 'Batas maksimal 5 API key telah tercapai. Hapus key yang tidak terpakai untuk membuat yang baru.',
+          type: 'invalid_request_error',
+          code: 'max_keys_exceeded',
+        },
+      },
+      400,
+    );
+  }
+
   let body: { name?: string; expiresIn?: string };
 
   try {

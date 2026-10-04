@@ -1,6 +1,8 @@
 import { listApiKeys } from '@/lib/actions';
 import { KeysView } from './keys-view';
 
+export const dynamic = 'force-dynamic';
+
 export default async function KeysPage() {
   let keys: any[] = [];
 
