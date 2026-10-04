@@ -5,6 +5,10 @@ import { db, schema as s } from '@morphic/db';
 import { requireAdmin } from '@/lib/actions';
 import { getServerTranslation } from '@/lib/i18n/server';
 import { formatCredits } from '@/lib/utils';
+import { AutoRefresh } from '@/components/AutoRefresh';
+
+// Same conversion as checkout and the leaderboard.
+const IDR_PER_USD = 16_000;
 import { Activity, AlertTriangle, Users, Cpu, DollarSign, Zap, ServerCrash } from 'lucide-react';
 
 function StatsCardsSkeleton() {
@@ -98,11 +102,11 @@ async function CoreStatsCardsSection({ t }: { t: any }) {
   try {
     [[users], [models], [payments], [usage]] = await Promise.all([
       db.select({ count: sql<number>`count(*)::int` }).from(s.users),
-      db.select({ count: sql<number>`count(*)::int` }).from(s.models),
+      db.select({ count: sql<number>`count(*)::int` }).from(s.models).where(eq(s.models.status, 'active')),
       db
         .select({
           count: sql<number>`count(*)::int`,
-          total: sql<number>`coalesce(sum(${s.payments.amountCents}),0)::int`,
+          total: sql<number>`coalesce(sum(case when ${s.payments.currency} = 'USD' then ${s.payments.amountCents}::numeric / 100 * ${IDR_PER_USD} else ${s.payments.amountCents} end),0)::float8`,
         })
         .from(s.payments)
         .where(eq(s.payments.status, 'paid')),
@@ -132,7 +136,7 @@ async function CoreStatsCardsSection({ t }: { t: any }) {
     },
     {
       title: t.admin.overview.revenuePaid,
-      value: `Rp${formatCredits(payments?.total ?? 0)}`,
+      value: `Rp${formatCredits(Math.round(payments?.total ?? 0))}`,
       detail: `${formatCredits(payments?.count ?? 0)} ${t.admin.overview.successfulTxs}`,
       icon: DollarSign,
     },
@@ -329,6 +333,7 @@ export default async function AdminOverview() {
 
   return (
     <div className="space-y-6 max-w-6xl">
+      <AutoRefresh />
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pb-5 border-b border-neutral-200/80">
         <div>

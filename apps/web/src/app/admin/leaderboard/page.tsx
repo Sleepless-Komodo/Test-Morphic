@@ -4,6 +4,7 @@ import { db, schema as s } from '@morphic/db';
 import { requireAdmin } from '@/lib/actions';
 import { getServerTranslation } from '@/lib/i18n/server';
 import { formatCredits, formatTokenEstimate } from '@/lib/utils';
+import { AutoRefresh } from '@/components/AutoRefresh';
 
 // Same conversion the checkout uses for USD packages, so the ranking compares like with like.
 const IDR_PER_USD = 16_000;
@@ -124,6 +125,7 @@ export default async function AdminLeaderboard({ searchParams }: { searchParams:
 
   return (
     <div className="max-w-6xl space-y-6">
+      <AutoRefresh />
       <div className="flex flex-col gap-4 border-b border-neutral-200/80 pb-5 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="font-heading text-xl font-extrabold tracking-tight text-neutral-950 sm:text-2xl">Leaderboard</h1>
