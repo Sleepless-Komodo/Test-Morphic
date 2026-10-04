@@ -5,6 +5,8 @@ import { sql, gte } from 'drizzle-orm';
 import { Server } from 'lucide-react';
 import { ProvidersClient, type ProviderRow, type ProviderStat } from './providers-client';
 
+export const dynamic = 'force-dynamic';
+
 export default async function AdminProviders() {
   await requireAdmin();
   const { t } = await getServerTranslation();

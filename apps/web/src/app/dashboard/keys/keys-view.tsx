@@ -2,6 +2,7 @@
 
 import { useRef, useState, useTransition } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useTranslation } from '@/lib/i18n';
 import { deleteApiKey } from '@/lib/actions';
 import { timeAgo } from '@/lib/utils';
@@ -36,6 +37,7 @@ interface KeysViewProps {
 }
 
 export function KeysView({ initialKeys }: KeysViewProps) {
+  const router = useRouter();
   const { t, locale } = useTranslation();
   const isId = locale === 'id';
   const [keys, setKeys] = useState<KeyItem[]>(initialKeys);
@@ -53,10 +55,13 @@ export function KeysView({ initialKeys }: KeysViewProps) {
   const [isPending, startTransition] = useTransition();
 
 
+  const MAX_KEYS = 5;
+  const isAtLimit = keys.length >= MAX_KEYS;
+
   const getFullKey = (k: KeyItem): string | null => k.rawKey ?? null;
   const unavailableHint = isId
-    ? 'Key lama: nilai lengkapnya tidak pernah disimpan. Hapus lalu buat key baru.'
-    : 'Old key: its full value was never stored. Delete it and create a new one.';
+    ? 'Key ini tetap aktif & berfungsi. Nilai rahasia lengkap disimpan sebagai hash satu arah demi keamanan. Jika Anda lupa kuncinya, buat key baru.'
+    : 'This key remains active and working. Full secret is stored as a secure one-way hash. If you lost the raw secret, create a new key.';
 
   const toggleReveal = (id: string) => {
     setRevealedKeys((prev) => ({
@@ -79,6 +84,15 @@ export function KeysView({ initialKeys }: KeysViewProps) {
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isCreating) return;
+
+    if (isAtLimit) {
+      setCreateError(
+        isId
+          ? `Batas kuota tercapai: Anda sudah memiliki ${MAX_KEYS}/${MAX_KEYS} API key. Hapus key yang tidak terpakai jika ingin membuat yang baru.`
+          : `Quota reached: You already have ${MAX_KEYS}/${MAX_KEYS} API keys. Delete an unused key if you need to create a new one.`
+      );
+      return;
+    }
 
     const name = newKeyName.trim();
     if (!name) {
@@ -143,8 +157,9 @@ export function KeysView({ initialKeys }: KeysViewProps) {
       const res = await deleteApiKey(id);
       if (res.ok) {
         setKeys((prev) => prev.filter((k) => k.id !== id));
+        router.refresh();
       } else {
-        setDeleteError(isId ? 'Gagal menghapus key. Coba lagi.' : 'Could not delete the key. Try again.');
+        setDeleteError(res.error || (isId ? 'Gagal menghapus key. Coba lagi.' : 'Could not delete the key. Try again.'));
       }
     });
   };
@@ -160,9 +175,18 @@ export function KeysView({ initialKeys }: KeysViewProps) {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-neutral-200/70 pb-4">
         <div>
-          <h1 suppressHydrationWarning className="text-2xl md:text-3xl font-heading font-extrabold text-neutral-950 tracking-tight">
-            {t.dashboard.keysPageTitle}
-          </h1>
+          <div className="flex items-center gap-3">
+            <h1 suppressHydrationWarning className="text-2xl md:text-3xl font-heading font-extrabold text-neutral-950 tracking-tight">
+              {t.dashboard.keysPageTitle}
+            </h1>
+            <span className={`px-2.5 py-0.5 rounded-full text-xs font-mono font-semibold border ${
+              isAtLimit
+                ? 'bg-amber-50 text-amber-800 border-amber-200'
+                : 'bg-neutral-100 text-neutral-700 border-neutral-200'
+            }`}>
+              {keys.length}/{MAX_KEYS} Keys
+            </span>
+          </div>
           <p suppressHydrationWarning className="text-xs md:text-sm text-neutral-600 mt-1 max-w-2xl leading-relaxed">
             {t.dashboard.keysPageSubtitle}
           </p>
@@ -171,23 +195,36 @@ export function KeysView({ initialKeys }: KeysViewProps) {
 
       {/* Create Key Card */}
       <div className="p-6 rounded-3xl bg-white border border-neutral-200/90 shadow-xs space-y-4">
+        {isAtLimit && (
+          <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200/90 text-xs text-amber-900 flex items-center gap-2">
+            <ShieldAlert className="h-4 w-4 text-amber-600 shrink-0" />
+            <span>
+              {isId
+                ? `Batas maksimal 5 API key telah tercapai (${keys.length}/${MAX_KEYS}). Hapus key lama di bawah untuk membuat key baru.`
+                : `Maximum limit of 5 API keys reached (${keys.length}/${MAX_KEYS}). Delete an unused key below to create a new one.`}
+            </span>
+          </div>
+        )}
+
         <form onSubmit={handleCreate} className="flex flex-col sm:flex-row gap-3">
           <input
             ref={nameInputRef}
             type="text"
             value={newKeyName}
             onChange={(e) => setNewKeyName(e.target.value)}
-            placeholder={t.dashboard.keyNameInputPlaceholder}
+            disabled={isCreating || isAtLimit}
+            placeholder={isAtLimit ? (isId ? 'Batas maksimal 5 key tercapai' : 'Max 5 keys limit reached') : t.dashboard.keyNameInputPlaceholder}
             aria-label={t.dashboard.keyNameInputPlaceholder}
             aria-invalid={createError ? true : undefined}
             aria-describedby={createError ? 'create-key-error' : undefined}
-            className="flex-1 bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-2.5 text-xs text-neutral-900 focus:outline-none focus:border-neutral-950 focus-visible:ring-2 focus-visible:ring-neutral-950 transition-colors"
+            className="flex-1 bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-2.5 text-xs text-neutral-900 focus:outline-none focus:border-neutral-950 focus-visible:ring-2 focus-visible:ring-neutral-950 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           />
           <select
             value={expiresIn}
             onChange={(e) => setExpiresIn(e.target.value as any)}
+            disabled={isCreating || isAtLimit}
             aria-label={locale === 'en' ? 'API key expiration duration' : 'Masa berlaku kunci API'}
-            className="bg-neutral-50 border border-neutral-200 rounded-xl px-3 py-2.5 text-xs text-neutral-800 focus:outline-none focus:border-neutral-950 focus-visible:ring-2 focus-visible:ring-neutral-950 transition-colors shrink-0 cursor-pointer"
+            className="bg-neutral-50 border border-neutral-200 rounded-xl px-3 py-2.5 text-xs text-neutral-800 focus:outline-none focus:border-neutral-950 focus-visible:ring-2 focus-visible:ring-neutral-950 transition-colors shrink-0 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <option value="none">{t.dashboard.expiryNever}</option>
             <option value="30d">{t.dashboard.expiry30Days}</option>
@@ -195,8 +232,8 @@ export function KeysView({ initialKeys }: KeysViewProps) {
           </select>
           <button
             type="submit"
-            disabled={isCreating}
-            className="px-5 py-2.5 rounded-xl bg-neutral-950 hover:bg-neutral-800 disabled:opacity-50 text-white text-xs font-bold transition-all shadow-xs shrink-0 flex items-center justify-center gap-1.5 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 focus-visible:ring-offset-2 active:scale-95"
+            disabled={isCreating || isAtLimit}
+            className="px-5 py-2.5 rounded-xl bg-neutral-950 hover:bg-neutral-800 disabled:opacity-50 text-white text-xs font-bold transition-all shadow-xs shrink-0 flex items-center justify-center gap-1.5 cursor-pointer disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 focus-visible:ring-offset-2 active:scale-95"
           >
             <KeyRound className="h-3.5 w-3.5" />
             <span>{isCreating ? t.dashboard.creatingKeyBtn : t.dashboard.createKeyBtn}</span>
@@ -249,7 +286,19 @@ export function KeysView({ initialKeys }: KeysViewProps) {
       </div>
 
       {deleteError && (
-        <p role="alert" className="text-xs text-red-700">{deleteError}</p>
+        <div role="alert" className="p-3.5 rounded-2xl bg-red-50 border border-red-200 text-xs text-red-700 flex items-center justify-between shadow-2xs">
+          <div className="flex items-center gap-2">
+            <ShieldAlert className="h-4 w-4 text-red-600 shrink-0" />
+            <span>{deleteError}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setDeleteError(null)}
+            className="text-red-500 hover:text-red-700 p-1 text-xs font-bold cursor-pointer"
+          >
+            ✕
+          </button>
+        </div>
       )}
 
       {/* Keys Table Card */}
@@ -376,15 +425,15 @@ export function KeysView({ initialKeys }: KeysViewProps) {
                               setConfirmDeleteId(null);
                             }}
                             disabled={isPending}
-                            className="px-2 py-0.5 rounded-md bg-red-600 hover:bg-red-700 text-white text-[10px] font-bold transition-all active:scale-95 shadow-2xs cursor-pointer"
+                            className="px-2 py-0.5 rounded-md bg-red-600 hover:bg-red-700 text-white text-[10px] font-bold transition-all active:scale-95 shadow-2xs cursor-pointer disabled:opacity-50"
                           >
-                            {t.dashboard.revokeYes}
+                            {isPending ? '...' : t.dashboard.revokeYes}
                           </button>
                           <button
                             type="button"
                             onClick={() => setConfirmDeleteId(null)}
                             disabled={isPending}
-                            className="px-2 py-0.5 rounded-md bg-neutral-100 hover:bg-neutral-200 text-neutral-700 text-[10px] font-semibold transition-all active:scale-95 cursor-pointer"
+                            className="px-2 py-0.5 rounded-md bg-neutral-100 hover:bg-neutral-200 text-neutral-700 text-[10px] font-semibold transition-all active:scale-95 cursor-pointer disabled:opacity-50"
                           >
                             {t.dashboard.revokeCancel}
                           </button>
@@ -393,7 +442,8 @@ export function KeysView({ initialKeys }: KeysViewProps) {
                         <button
                           type="button"
                           onClick={() => setConfirmDeleteId(k.id)}
-                          className="px-2.5 py-1 rounded-lg border border-neutral-200 hover:border-red-300 hover:bg-red-50 text-neutral-600 hover:text-red-700 text-[11px] font-semibold transition-colors cursor-pointer inline-flex items-center gap-1"
+                          disabled={isPending}
+                          className="px-2.5 py-1 rounded-lg border border-neutral-200 hover:border-red-300 hover:bg-red-50 text-neutral-600 hover:text-red-700 text-[11px] font-semibold transition-colors cursor-pointer inline-flex items-center gap-1 disabled:opacity-50"
                         >
                           <Trash2 className="h-3 w-3" />
                           <span suppressHydrationWarning>{t.dashboard.revokeBtn}</span>

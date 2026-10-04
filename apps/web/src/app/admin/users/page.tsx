@@ -5,6 +5,8 @@ import { getServerTranslation } from '@/lib/i18n/server';
 import { Users as UsersIcon } from 'lucide-react';
 import { UsersTable, type UserItem } from './users-table';
 
+export const dynamic = 'force-dynamic';
+
 export default async function AdminUsers() {
   const admin = await requireAdmin();
   const { t } = await getServerTranslation();
