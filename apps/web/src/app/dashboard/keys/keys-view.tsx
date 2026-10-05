@@ -15,6 +15,7 @@ import {
   ShieldCheck,
   Trash2,
   Zap,
+  RefreshCw,
 } from 'lucide-react';
 
 const maskedKey = (prefix: string) => `${(prefix || 'mp-live-').slice(0, 10)}••••••••••••••••`;
@@ -48,6 +49,53 @@ export function KeysView({ initialKeys }: KeysViewProps) {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [rotateId, setRotateId] = useState<string | null>(null);
+  const [rotateGrace, setRotateGrace] = useState(86_400);
+  const [isRotating, setIsRotating] = useState(false);
+  const [rotateError, setRotateError] = useState<string | null>(null);
+  const [rotatingIds, setRotatingIds] = useState<Set<string>>(() => new Set());
+
+  // Replacement is shown once in the same banner as a new key; the old key keeps working
+  // until the chosen grace period ends so deployed clients can switch over.
+  const handleRotate = async (id: string) => {
+    if (isRotating) return;
+    setIsRotating(true);
+    setRotateError(null);
+    try {
+      const res = await fetch(`/api/backend/v1/keys/${id}/rotate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ gracePeriodSeconds: rotateGrace }),
+      });
+      const body = await res.json().catch(() => null);
+      if (!res.ok || !body?.key) {
+        setRotateError(body?.error?.message || (isId ? 'Gagal merotasi key. Coba lagi.' : 'Could not rotate the key. Try again.'));
+        return;
+      }
+      setCreatedRawKey(body.key);
+      setKeys((prev) => [
+        {
+          id: body.id,
+          name: body.name,
+          keyPrefix: body.prefix,
+          status: body.status,
+          expiresAt: body.expires_at ? new Date(body.expires_at) : null,
+          lastUsedAt: null,
+          createdAt: new Date(body.created_at),
+        },
+        ...prev.map((k) => (k.id === id ? { ...k, expiresAt: new Date(body.rotated_from.expires_at) } : k)),
+      ]);
+      setRotatingIds((prev) => new Set(prev).add(id));
+      setRotateId(null);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } catch {
+      setRotateError(isId ? 'Tidak bisa menghubungi server.' : 'Could not reach the server.');
+    } finally {
+      setIsRotating(false);
+    }
+  };
+
+  const hoursLeft = (d: Date) => Math.max(1, Math.ceil((new Date(d).getTime() - Date.now()) / 3_600_000));
 
 
   const MAX_KEYS = 5;
@@ -305,7 +353,7 @@ export function KeysView({ initialKeys }: KeysViewProps) {
                   <tr key={k.id} className="hover:bg-neutral-50/50 transition-colors">
                     <td className="px-6 py-4 font-bold text-neutral-900">{k.name}</td>
                     <td className="px-6 py-4 font-mono text-neutral-600">
-                      <span className="px-2.5 py-1 rounded-lg border text-xs font-mono bg-neutral-100 text-neutral-600 border-neutral-200">
+                      <span className="whitespace-nowrap px-2.5 py-1 rounded-lg border text-xs font-mono bg-neutral-100 text-neutral-600 border-neutral-200">
                         {maskedKey(k.keyPrefix)}
                       </span>
                     </td>
@@ -314,6 +362,13 @@ export function KeysView({ initialKeys }: KeysViewProps) {
                         <span className="inline-flex items-center gap-1.5 text-xs font-mono font-medium text-red-600">
                           <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />
                           <span suppressHydrationWarning>{t.dashboard.keyStatusExpired}</span>
+                        </span>
+                      ) : k.status === 'active' && rotatingIds.has(k.id) && k.expiresAt ? (
+                        <span className="inline-flex items-center gap-1.5 text-xs font-mono font-medium text-amber-800">
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
+                          <span>
+                            {isId ? `Dirotasi · habis dalam ${hoursLeft(k.expiresAt)} jam` : `Rotating · expires in ${hoursLeft(k.expiresAt)}h`}
+                          </span>
                         </span>
                       ) : k.status === 'active' ? (
                         <span className="inline-flex items-center gap-1.5 text-xs font-mono font-medium text-neutral-700">
@@ -350,7 +405,48 @@ export function KeysView({ initialKeys }: KeysViewProps) {
                       {new Date(k.createdAt).toLocaleDateString(locale === 'en' ? 'en-US' : 'id-ID')}
                     </td>
                     <td className="px-6 py-4 text-right">
-                      {confirmDeleteId === k.id ? (
+                      {rotateId === k.id ? (
+                        <div className="inline-flex flex-wrap items-center gap-1.5 justify-end">
+                          <label htmlFor={`grace-${k.id}`} className="text-[11px] text-neutral-700 font-semibold">
+                            {isId ? 'Key lama tetap aktif' : 'Keep old key for'}
+                          </label>
+                          <select
+                            id={`grace-${k.id}`}
+                            value={rotateGrace}
+                            onChange={(e) => setRotateGrace(Number(e.target.value))}
+                            disabled={isRotating}
+                            className="min-h-8 rounded-md border border-neutral-300 bg-white px-1.5 text-[11px] text-neutral-900 focus:outline-none focus:ring-2 focus:ring-neutral-950"
+                          >
+                            <option value={3600}>{isId ? '1 jam' : '1 hour'}</option>
+                            <option value={86400}>{isId ? '24 jam' : '24 hours'}</option>
+                            <option value={604800}>{isId ? '7 hari' : '7 days'}</option>
+                          </select>
+                          <button
+                            type="button"
+                            onClick={() => handleRotate(k.id)}
+                            disabled={isRotating}
+                            className="min-h-8 px-2.5 rounded-md bg-neutral-950 hover:bg-neutral-800 text-white text-[11px] font-bold cursor-pointer disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 focus-visible:ring-offset-1"
+                          >
+                            {isRotating ? '...' : isId ? 'Rotasi' : 'Rotate'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setRotateId(null);
+                              setRotateError(null);
+                            }}
+                            disabled={isRotating}
+                            className="min-h-8 px-2 rounded-md bg-neutral-100 hover:bg-neutral-200 text-neutral-700 text-[11px] font-semibold cursor-pointer disabled:opacity-50"
+                          >
+                            {t.dashboard.revokeCancel}
+                          </button>
+                          {rotateError && (
+                            <p role="alert" className="basis-full text-right text-[11px] text-red-700">
+                              {rotateError}
+                            </p>
+                          )}
+                        </div>
+                      ) : confirmDeleteId === k.id ? (
                         <div className="inline-flex items-center gap-1.5 justify-end">
                           <span className="text-[11px] text-red-600 font-bold">
                             {t.dashboard.revokeConfirm}
@@ -376,15 +472,31 @@ export function KeysView({ initialKeys }: KeysViewProps) {
                           </button>
                         </div>
                       ) : (
-                        <button
-                          type="button"
-                          onClick={() => setConfirmDeleteId(k.id)}
-                          disabled={isPending}
-                          className="px-2.5 py-1 rounded-lg border border-neutral-200 hover:border-red-300 hover:bg-red-50 text-neutral-600 hover:text-red-700 text-[11px] font-semibold transition-colors cursor-pointer inline-flex items-center gap-1 disabled:opacity-50"
-                        >
-                          <Trash2 className="h-3 w-3" />
-                          <span suppressHydrationWarning>{t.dashboard.revokeBtn}</span>
-                        </button>
+                        <div className="inline-flex items-center gap-1.5 justify-end">
+                          {k.status === 'active' && !(k.expiresAt && new Date(k.expiresAt).getTime() < Date.now()) && !rotatingIds.has(k.id) && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setConfirmDeleteId(null);
+                                setRotateId(k.id);
+                              }}
+                              disabled={isPending}
+                              className="px-2.5 py-1 rounded-lg border border-neutral-200 hover:border-neutral-400 hover:bg-neutral-50 text-neutral-700 text-[11px] font-semibold transition-colors cursor-pointer inline-flex items-center gap-1 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
+                            >
+                              <RefreshCw className="h-3 w-3" />
+                              <span>{isId ? 'Rotasi' : 'Rotate'}</span>
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDeleteId(k.id)}
+                            disabled={isPending}
+                            className="px-2.5 py-1 rounded-lg border border-neutral-200 hover:border-red-300 hover:bg-red-50 text-neutral-600 hover:text-red-700 text-[11px] font-semibold transition-colors cursor-pointer inline-flex items-center gap-1 disabled:opacity-50"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                            <span suppressHydrationWarning>{t.dashboard.revokeBtn}</span>
+                          </button>
+                        </div>
                       )}
                     </td>
                   </tr>
