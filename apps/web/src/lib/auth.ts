@@ -139,3 +139,25 @@ export const auth = betterAuth({
 });
 
 export type Session = typeof auth.$Infer.Session;
+
+/**
+ * Fetches the current session for public server-component pages (homepage, docs, pricing …).
+ *
+ * Races against a 3-second timeout so a cold-start Neon DB or temporary network
+ * hiccup never blocks the initial page render. Falls back to `null` (guest view)
+ * gracefully — the user can still log in normally; auth routes are unaffected.
+ */
+export async function getSessionSafe(
+  reqHeaders: Headers,
+) {
+  try {
+    const result = await Promise.race([
+      auth.api.getSession({ headers: reqHeaders }),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000)),
+    ]);
+    return result ?? null;
+  } catch {
+    return null;
+  }
+}
+

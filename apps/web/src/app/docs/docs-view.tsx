@@ -32,7 +32,7 @@ const BASE_URL = API_BASE_URL;
 const QUICKSTART_URL = `${BASE_URL.replace(/\/v1\/?$/, '')}/quickstart`;
 const CHAT_URL = CHAT_COMPLETIONS_URL;
 
-type IdeKey = 'cursor' | 'cline' | 'windsurf' | 'claudecode' | 'opencode' | 'aider';
+type IdeKey = 'opencode' | 'claudecode';
 type SdkKey = 'ts' | 'python' | 'curl';
 type OsKey = 'windows' | 'macos' | 'linux';
 type WindowsShell = 'powershell' | 'cmd';
@@ -277,7 +277,7 @@ export default function DocsView({ session }: DocsViewProps) {
   const { locale } = useTranslation();
   const isId = locale === 'id';
 
-  const [activeIde, setActiveIde] = useState<IdeKey>('cursor');
+  const [activeIde, setActiveIde] = useState<IdeKey>('opencode');
   const [activeSdk, setActiveSdk] = useState<SdkKey>('ts');
   const [selectedOs, setSelectedOs] = useState<OsKey>('windows');
   const [selectedWinShell, setSelectedWinShell] = useState<WindowsShell>('powershell');
@@ -449,17 +449,18 @@ claude "Analyze this repository architecture"`,
   "plugin": []
 }`;
 
-    // Windows: same one-paste setup. opencode.ps1 (served by the gateway) checks the key, backs
-    // up any existing config and writes %USERPROFILE%\.config\opencode\opencode.json. From CMD it
-    // runs through powershell, which inherits MORPHIC_API_KEY set with `set`.
+    // Windows: native PowerShell script (opencode.ps1) — no WSL needed.
+    // It checks the key, backs up any existing config and writes
+    // %USERPROFILE%\.config\opencode\opencode.json.
+    // From CMD it delegates to powershell, inheriting MORPHIC_API_KEY set with `set`.
     if (os === 'windows') {
       return winShell === 'cmd'
         ? {
             file: 'Command Prompt',
             language: 'cmd',
-            menuPath: 'Command Prompt → paste → opencode',
+            menuPath: 'Command Prompt (CMD)',
             code: `set MORPHIC_API_KEY=mp-xxxxxxxxxxxxxxxxxxxx
-powershell -NoProfile -Command "irm ${QUICKSTART_URL}/opencode.ps1 | iex"`,
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$env:MORPHIC_API_KEY='%MORPHIC_API_KEY%'; irm ${QUICKSTART_URL}/opencode.ps1 | iex"`,
             extraFile: 'opencode.json (manual, optional)',
             extraLanguage: 'json',
             extraCode: config,
@@ -467,7 +468,7 @@ powershell -NoProfile -Command "irm ${QUICKSTART_URL}/opencode.ps1 | iex"`,
         : {
             file: 'PowerShell',
             language: 'powershell',
-            menuPath: 'PowerShell → paste → opencode',
+            menuPath: 'Windows PowerShell',
             code: `$env:MORPHIC_API_KEY = "mp-xxxxxxxxxxxxxxxxxxxx"
 irm ${QUICKSTART_URL}/opencode.ps1 | iex`,
             extraFile: 'opencode.json (manual, optional)',
@@ -490,54 +491,8 @@ curl -fsSL ${QUICKSTART_URL}/opencode.sh | bash`,
     };
   };
 
-  const getAiderSnippet = (os: OsKey, winShell: WindowsShell) => {
-    if (os === 'macos') {
-      return {
-        file: 'run-aider-mac.sh',
-        language: 'bash',
-        menuPath: 'macOS Terminal (zsh)',
-        code: `export OPENAI_API_BASE="${BASE_URL}"
-export OPENAI_API_KEY="mp-live-xxxxxxxxxxxxxxxxxxxx"
-
-aider --model openai/deepseek-v4`,
-      };
-    }
-    if (os === 'linux') {
-      return {
-        file: 'run-aider-linux.sh',
-        language: 'bash',
-        menuPath: 'Linux Terminal (bash)',
-        code: `export OPENAI_API_BASE="${BASE_URL}"
-export OPENAI_API_KEY="mp-live-xxxxxxxxxxxxxxxxxxxx"
-
-aider --model openai/deepseek-v4`,
-      };
-    }
-    if (winShell === 'cmd') {
-      return {
-        file: 'run-aider.cmd',
-        language: 'cmd',
-        menuPath: 'Windows Command Prompt (CMD)',
-        code: `set OPENAI_API_BASE=${BASE_URL}
-set OPENAI_API_KEY=mp-live-xxxxxxxxxxxxxxxxxxxx
-
-aider --model openai/deepseek-v4`,
-      };
-    }
-    return {
-      file: 'run-aider.ps1',
-      language: 'powershell',
-      menuPath: 'Windows PowerShell Terminal',
-      code: `$env:OPENAI_API_BASE="${BASE_URL}"
-$env:OPENAI_API_KEY="mp-live-xxxxxxxxxxxxxxxxxxxx"
-
-aider --model openai/deepseek-v4`,
-    };
-  };
-
   const claudeSnippet = getClaudeCodeSnippet(selectedOs, selectedWinShell);
   const opencodeSnippet = getOpencodeSnippet(selectedOs, selectedWinShell);
-  const aiderSnippet = getAiderSnippet(selectedOs, selectedWinShell);
 
   const ideConfigs: Record<
     IdeKey,
@@ -556,58 +511,18 @@ aider --model openai/deepseek-v4`,
       extraLanguage?: string;
     }
   > = {
-    cursor: {
-      name: 'Cursor',
-      title: 'Cursor IDE (Composer & Inline)',
-      desc: 'Gunakan seluruh model AI langsung di Cursor Composer & Inline Edit melalui protokol resmi OpenAI API.',
-      descEn: 'Use all AI models directly in Cursor Composer & Inline Edit via the official OpenAI API protocol.',
-      menuPath:
-        selectedOs === 'macos'
-          ? 'Settings (Cmd+Shift+J) > Models > OpenAI API'
-          : 'Settings (Ctrl+Shift+J) > Models > OpenAI API',
-      file: 'cursor.settings.json',
-      language: 'json',
-      code: `// Cursor Settings > Models > OpenAI API:
-Base URL: ${BASE_URL}
-API Key:  mp-live-xxxxxxxxxxxxxxxxxxxx
-
-// Rekomendasi Model IDs untuk ditambahkan (+ Add Model):
-- deepseek-v4    (Coding & reasoning, konteks 64K)
-- kimi-coding    (Konteks 256K, refactoring multi-file)
-- qwen-max       (General purpose & reasoning, konteks 32K)`,
-    },
-    cline: {
-      name: 'Cline / Roo',
-      title: 'Cline & Roo Code (VS Code Extension)',
-      desc: 'Konfigurasi ekstensi autonomous coding agent di VS Code dengan Morphic Gateway.',
-      descEn: 'Configure autonomous coding agents in VS Code with Morphic Gateway.',
-      menuPath:
-        selectedOs === 'macos'
-          ? 'Cline (Cmd+Shift+P) > Settings > API Provider: OpenAI Compatible'
-          : 'Cline (Ctrl+Shift+P) > Settings > API Provider: OpenAI Compatible',
-      file: 'cline_settings.json',
-      language: 'json',
-      code: `{
-  "apiProvider": "openai",
-  "openAiBaseUrl": "${BASE_URL}",
-  "openAiApiKey": "mp-live-xxxxxxxxxxxxxxxxxxxx",
-  "openAiModelId": "deepseek-v4"
-}`,
-    },
-    windsurf: {
-      name: 'Windsurf',
-      title: 'Windsurf (Codeium Cascade)',
-      desc: 'Jalankan fitur Cascade AI pada Windsurf dengan menghubungkan custom model provider OpenAI.',
-      descEn: 'Run Cascade AI features in Windsurf by connecting a custom OpenAI provider.',
-      menuPath: 'Windsurf Settings > AI Providers > Custom OpenAI-Compatible Provider',
-      file: 'windsurf_config.json',
-      language: 'json',
-      code: `{
-  "provider": "openai-compatible",
-  "endpoint": "${BASE_URL}",
-  "apiKey": "mp-live-xxxxxxxxxxxxxxxxxxxx",
-  "defaultModel": "deepseek-v4"
-}`,
+    opencode: {
+      name: 'opencode',
+      title: 'opencode (Terminal AI Agent)',
+      desc: 'Ganti mp-xxxx dengan API key Anda, paste perintah di terminal sesuai OS Anda, lalu jalankan opencode. Config lama otomatis di-backup. Windows: skrip native PowerShell tersedia langsung — tidak perlu WSL.',
+      descEn: 'Replace mp-xxxx with your API key, paste the command into a terminal for your OS, then run opencode. Any existing config is backed up automatically. Windows: a native PowerShell script is available — no WSL required.',
+      menuPath: opencodeSnippet.menuPath,
+      file: opencodeSnippet.file,
+      language: opencodeSnippet.language,
+      code: opencodeSnippet.code,
+      extraCode: opencodeSnippet.extraCode,
+      extraFile: opencodeSnippet.extraFile,
+      extraLanguage: opencodeSnippet.extraLanguage,
     },
     claudecode: {
       name: 'Claude Code CLI',
@@ -618,29 +533,6 @@ API Key:  mp-live-xxxxxxxxxxxxxxxxxxxx
       file: claudeSnippet.file,
       language: claudeSnippet.language,
       code: claudeSnippet.code,
-    },
-    opencode: {
-      name: 'opencode',
-      title: 'opencode (Terminal AI Agent)',
-      desc: 'macOS/Linux: ganti mp-xxxx dengan API key Anda, paste 3 baris di terminal, lalu jalankan opencode. Config lama otomatis di-backup. Windows: pakai WSL/Git Bash, atau isi opencode.json manual.',
-      descEn: 'macOS/Linux: replace mp-xxxx with your API key, paste the 3 lines into a terminal, then run opencode. Any existing config is backed up. Windows: use WSL/Git Bash, or fill opencode.json manually.',
-      menuPath: opencodeSnippet.menuPath,
-      file: opencodeSnippet.file,
-      language: opencodeSnippet.language,
-      code: opencodeSnippet.code,
-      extraCode: opencodeSnippet.extraCode,
-      extraFile: opencodeSnippet.extraFile,
-      extraLanguage: opencodeSnippet.extraLanguage,
-    },
-    aider: {
-      name: 'Aider',
-      title: 'Aider (Command-line Pair Programming)',
-      desc: 'Pair programming di command line dengan Aider menggunakan satu baris perintah.',
-      descEn: 'Pair program in the command line with Aider using a single terminal command.',
-      menuPath: aiderSnippet.menuPath,
-      file: aiderSnippet.file,
-      language: aiderSnippet.language,
-      code: aiderSnippet.code,
     },
   };
 
@@ -920,31 +812,15 @@ curl ${CHAT_URL} \\
       ],
     },
     {
-      title: isId ? 'Integrasi Editor & Agent' : 'IDE & Coding Agents',
+      title: isId ? 'Integrasi Platform & Agent' : 'Platform & Agent CLI',
       items: [
         {
-          id: 'ide-cursor',
+          id: 'ide-opencode',
           sectionId: 'ide-setup',
-          key: 'cursor',
-          label: 'Cursor IDE',
+          key: 'opencode',
+          label: 'opencode CLI',
           href: '#ide-setup',
-          onClick: () => setActiveIde('cursor'),
-        },
-        {
-          id: 'ide-cline',
-          sectionId: 'ide-setup',
-          key: 'cline',
-          label: 'Cline / Roo Code',
-          href: '#ide-setup',
-          onClick: () => setActiveIde('cline'),
-        },
-        {
-          id: 'ide-windsurf',
-          sectionId: 'ide-setup',
-          key: 'windsurf',
-          label: 'Windsurf Cascade',
-          href: '#ide-setup',
-          onClick: () => setActiveIde('windsurf'),
+          onClick: () => setActiveIde('opencode'),
         },
         {
           id: 'ide-claudecode',
@@ -953,22 +829,6 @@ curl ${CHAT_URL} \\
           label: 'Claude Code CLI',
           href: '#ide-setup',
           onClick: () => setActiveIde('claudecode'),
-        },
-        {
-          id: 'ide-opencode',
-          sectionId: 'ide-setup',
-          key: 'opencode',
-          label: 'opencode',
-          href: '#ide-setup',
-          onClick: () => setActiveIde('opencode'),
-        },
-        {
-          id: 'ide-aider',
-          sectionId: 'ide-setup',
-          key: 'aider',
-          label: 'Aider CLI',
-          href: '#ide-setup',
-          onClick: () => setActiveIde('aider'),
         },
       ],
     },
@@ -1388,13 +1248,13 @@ curl ${CHAT_URL} \\
           {/* SECTION 4: IDE SETUP */}
           <section id="ide-setup" className="scroll-mt-32 sm:scroll-mt-36 space-y-4">
             <h2 className="text-xl sm:text-2xl font-heading font-bold text-neutral-950 pb-2 border-b border-neutral-100">
-              {isId ? 'Integrasi Editor & Coding Agent' : 'IDE & Coding Agents Setup'}
+              {isId ? 'Integrasi Platform & Agent CLI' : 'Platform & Agent CLI Setup'}
             </h2>
 
             <p className="text-sm text-neutral-600 leading-relaxed">
               {isId
-                ? 'Pilih editor coding Anda di bawah ini untuk melihat jalur pengaturan dan snippet konfigurasi yang tepat:'
-                : 'Select your coding editor below to view exact setup paths and configuration snippets:'}
+                ? 'Pilih platform CLI agent Anda di bawah ini (opencode atau Claude Code) untuk melihat panduan setup instan:'
+                : 'Select your CLI agent platform below (opencode or Claude Code) for instant setup instructions:'}
             </p>
 
             {/* Apple/shadcn segmented tab bar */}
@@ -1426,15 +1286,13 @@ curl ${CHAT_URL} \\
                     <h3 className="font-bold text-sm sm:text-base text-neutral-950">
                       {ideConfigs[activeIde].title}
                     </h3>
-                    {(activeIde === 'claudecode' || activeIde === 'opencode' || activeIde === 'aider') && (
-                      <OsSelector
-                        selectedOs={selectedOs}
-                        onSelectOs={setSelectedOs}
-                        selectedWinShell={selectedWinShell}
-                        onSelectWinShell={setSelectedWinShell}
-                        isId={isId}
-                      />
-                    )}
+                    <OsSelector
+                      selectedOs={selectedOs}
+                      onSelectOs={setSelectedOs}
+                      selectedWinShell={selectedWinShell}
+                      onSelectWinShell={setSelectedWinShell}
+                      isId={isId}
+                    />
                   </div>
                   <p className="text-xs text-neutral-600">
                     {isId ? ideConfigs[activeIde].desc : ideConfigs[activeIde].descEn}
