@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { downloadCsv } from '@/lib/csv';
 import { useTranslation } from '@/lib/i18n';
 import { formatCredits, cn } from '@/lib/utils';
-import { Zap, CreditCard, Clock, Wallet, QrCode, Coins, Sparkles, Download, Loader2 } from 'lucide-react';
+import { Zap, CreditCard, Clock, Wallet, QrCode, Coins, Sparkles, Download, Loader2, FileText } from 'lucide-react';
 import {
   ModelProviderLogo,
   ClaudeLogo,
@@ -442,6 +442,18 @@ export function BillingView({
                                         ? (locale === 'en' ? 'Failed' : 'Gagal')
                                         : status}
                             </span>
+
+                            {status === 'paid' && (
+                              <a
+                                href={`/receipt/${p.id}`}
+                                target="_blank"
+                                rel="noopener"
+                                className="inline-flex items-center gap-1 min-h-8 px-2.5 rounded-lg border border-neutral-200 bg-white hover:bg-neutral-50 text-neutral-800 text-[11px] font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
+                              >
+                                <FileText className="h-3 w-3" />
+                                <span suppressHydrationWarning>{locale === 'en' ? 'Receipt' : 'Kuitansi'}</span>
+                              </a>
+                            )}
 
                             {(status === 'pending' || status === 'pending_paypal') && (
                               <button
