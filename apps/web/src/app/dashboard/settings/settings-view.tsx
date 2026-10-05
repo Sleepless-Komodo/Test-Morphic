@@ -6,7 +6,13 @@ import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { useTranslation } from '@/lib/i18n';
 import { SignOutButton } from '@/app/dashboard/sign-out';
-import { revokeOtherSessions, revokeSessionById, deleteOwnAccount, type ActiveSession } from '@/lib/actions';
+import {
+  revokeOtherSessions,
+  revokeSessionById,
+  deleteOwnAccount,
+  requestAccountDeletionCode,
+  type ActiveSession,
+} from '@/lib/actions';
 import { signOut } from '@/lib/auth-client';
 import { timeAgo } from '@/lib/utils';
 import { LoginOtpCard } from './login-otp-card';
@@ -76,6 +82,10 @@ export function SettingsView({ user, sessions, loginOtp }: SettingsViewProps) {
   const [deleteConfirmation, setDeleteConfirmation] = useState('');
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deleteCode, setDeleteCode] = useState('');
+  const [deleteCodeSent, setDeleteCodeSent] = useState(false);
+  const [sendingDeleteCode, setSendingDeleteCode] = useState(false);
   const [copiedSupport, setCopiedSupport] = useState(false);
   const [revokingId, setRevokingId] = useState<string | null>(null);
   const [sessionError, setSessionError] = useState<string | null>(null);
@@ -94,6 +104,8 @@ export function SettingsView({ user, sessions, loginOtp }: SettingsViewProps) {
     try {
       const fd = new FormData();
       fd.set('confirmation', deleteConfirmation);
+      fd.set('password', deletePassword);
+      fd.set('code', deleteCode);
       const res = await deleteOwnAccount(fd);
       if (!res.ok) {
         setDeleteError(res.error ?? (isId ? 'Gagal menghapus akun.' : 'Failed to delete account.'));
@@ -107,6 +119,31 @@ export function SettingsView({ user, sessions, loginOtp }: SettingsViewProps) {
       setIsDeletingAccount(false);
     }
   };
+  const closeDeleteModal = () => {
+    setShowDeleteModal(false);
+    setDeleteConfirmation('');
+    setDeletePassword('');
+    setDeleteCode('');
+    setDeleteCodeSent(false);
+    setDeleteError(null);
+  };
+
+  const handleSendDeleteCode = async () => {
+    setSendingDeleteCode(true);
+    setDeleteError(null);
+    const res = await requestAccountDeletionCode();
+    setSendingDeleteCode(false);
+    if (!res.ok) {
+      setDeleteError(res.error);
+      return;
+    }
+    setDeleteCodeSent(true);
+  };
+
+  const emailMatches =
+    deleteConfirmation.trim().toLowerCase() === (user.email ?? '').trim().toLowerCase();
+  const reauthReady = loginOtp.hasPassword ? deletePassword.length > 0 : /^\d{6}$/.test(deleteCode);
+
   const otherSessions = sessions.filter((item) => !item.isCurrent);
 
   const genericSessionError = isId
@@ -613,11 +650,7 @@ export function SettingsView({ user, sessions, loginOtp }: SettingsViewProps) {
       {showDeleteModal && (
         <div
           onClick={(e) => {
-            if (e.target === e.currentTarget && !isDeletingAccount) {
-              setShowDeleteModal(false);
-              setDeleteConfirmation('');
-              setDeleteError(null);
-            }
+            if (e.target === e.currentTarget && !isDeletingAccount) closeDeleteModal();
           }}
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs animate-in fade-in duration-150"
         >
@@ -641,8 +674,8 @@ export function SettingsView({ user, sessions, loginOtp }: SettingsViewProps) {
 
             <div className="p-3.5 rounded-2xl bg-red-50/70 border border-red-200/80 text-xs text-red-900 leading-relaxed">
               {isId
-                ? 'Tindakan ini tidak dapat dibatalkan. Seluruh API key aktif, sisa saldo kredit, sesi login, dan data akun Anda akan langsung dihapus dari sistem.'
-                : 'This action is irreversible. All active API keys, token credit balance, sessions, and account credentials will be permanently erased.'}
+                ? 'Tindakan ini tidak dapat dibatalkan. Akun Anda akan dinonaktifkan dan data profil dihapus. Semua API key dicabut, sesi login diakhiri, dan sisa saldo kredit hangus. Sesuai ketentuan hukum perpajakan dan keuangan, catatan transaksi dan riwayat penggunaan akan dianonimkan dan disimpan selama 5 tahun.'
+                : 'This cannot be undone. Your account will be deactivated and your profile data removed. All API keys are revoked, sessions end, and any remaining credit balance is forfeited. To meet tax and financial record-keeping law, transaction records and usage history are anonymised and kept for 5 years.'}
             </div>
 
             {deleteError && (
@@ -678,14 +711,70 @@ export function SettingsView({ user, sessions, loginOtp }: SettingsViewProps) {
               />
             </div>
 
+            {loginOtp.hasPassword ? (
+              <div className="space-y-1.5">
+                <label htmlFor="delete-password-input" className="block text-xs font-semibold text-neutral-800">
+                  {isId ? 'Kata sandi akun' : 'Account password'}
+                </label>
+                <input
+                  id="delete-password-input"
+                  type="password"
+                  autoComplete="current-password"
+                  value={deletePassword}
+                  onChange={(e) => {
+                    setDeletePassword(e.target.value);
+                    setDeleteError(null);
+                  }}
+                  disabled={isDeletingAccount}
+                  className="w-full px-3.5 py-2 text-xs rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600"
+                />
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                <label htmlFor="delete-code-input" className="block text-xs font-semibold text-neutral-800">
+                  {isId ? 'Kode konfirmasi dari email' : 'Confirmation code from email'}
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    id="delete-code-input"
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    maxLength={6}
+                    value={deleteCode}
+                    onChange={(e) => {
+                      setDeleteCode(e.target.value.replace(/\D/g, '').slice(0, 6));
+                      setDeleteError(null);
+                    }}
+                    disabled={isDeletingAccount || !deleteCodeSent}
+                    placeholder="000000"
+                    className="min-w-0 flex-1 px-3.5 py-2 text-xs rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 placeholder:text-neutral-400 font-mono tracking-widest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 disabled:opacity-60"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleSendDeleteCode}
+                    disabled={sendingDeleteCode || isDeletingAccount}
+                    className="min-h-11 px-3 rounded-xl border border-neutral-200 bg-white hover:bg-neutral-50 text-neutral-800 text-xs font-semibold shrink-0 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
+                  >
+                    {sendingDeleteCode
+                      ? isId ? 'Mengirim...' : 'Sending...'
+                      : deleteCodeSent
+                        ? isId ? 'Kirim ulang' : 'Resend'
+                        : isId ? 'Kirim kode' : 'Send code'}
+                  </button>
+                </div>
+                {deleteCodeSent && (
+                  <p role="status" className="text-[11px] text-neutral-600">
+                    {isId ? `Kode dikirim ke ${user.email}. Berlaku 10 menit.` : `Code sent to ${user.email}. Valid for 10 minutes.`}
+                  </p>
+                )}
+              </div>
+            )}
+
             <div className="flex items-center justify-end gap-2.5 pt-2">
               <button
                 type="button"
-                onClick={() => {
-                  setShowDeleteModal(false);
-                  setDeleteConfirmation('');
-                  setDeleteError(null);
-                }}
+                onClick={closeDeleteModal}
                 disabled={isDeletingAccount}
                 className="px-4 py-2 rounded-xl text-xs font-semibold text-neutral-700 hover:bg-neutral-100 transition cursor-pointer"
               >
@@ -694,10 +783,7 @@ export function SettingsView({ user, sessions, loginOtp }: SettingsViewProps) {
               <button
                 type="button"
                 onClick={handleExecuteDeleteAccount}
-                disabled={
-                  isDeletingAccount ||
-                  deleteConfirmation.trim().toLowerCase() !== (user.email ?? '').trim().toLowerCase()
-                }
+                disabled={isDeletingAccount || !emailMatches || !reauthReady}
                 className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition shadow-xs cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 {isDeletingAccount ? (

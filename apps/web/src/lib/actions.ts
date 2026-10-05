@@ -3,9 +3,11 @@
 import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
-import { eq, and, desc, sql, gt, gte, lte, ne } from 'drizzle-orm';
+import { eq, and, desc, sql, gt, gte, lte, ne, isNotNull } from 'drizzle-orm';
+import { createHash, randomInt, timingSafeEqual } from 'node:crypto';
 import { db, schema as s } from '@morphic/db';
 import { generateApiKey, maskedKey, hashApiKey } from '@morphic/shared/keys';
+import { sendEmail } from '@morphic/shared/email';
 import { auth } from '@/lib/auth';
 import { fetchBackendApi } from './api-client';
 
@@ -572,9 +574,86 @@ export async function provisionPostPaymentKey(params?: { packageName?: string })
   }
 }
 
+async function hasPasswordLogin(userId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: s.accounts.id })
+    .from(s.accounts)
+    .where(and(eq(s.accounts.userId, userId), eq(s.accounts.providerId, 'credential'), isNotNull(s.accounts.password)))
+    .limit(1);
+  return Boolean(row);
+}
+
+const DELETE_CODE_TTL_MS = 10 * 60 * 1000;
+const DELETE_CODE_MAX_ATTEMPTS = 5;
+const deleteCodeId = (userId: string) => `delete-account:${userId}`;
+const sha256 = (v: string) => createHash('sha256').update(v).digest('hex');
+
+/**
+ * Accounts without a password (Google/GitHub only) re-authenticate account deletion with a
+ * 6-digit code sent to their email. Stored hashed with an attempt counter: `<hash>:<n>`.
+ */
+export async function requestAccountDeletionCode() {
+  const user = await requireInteractiveUser();
+  if (!user.email) return { ok: false as const, error: 'Akun tidak memiliki email.' };
+
+  const [existing] = await db
+    .select({ createdAt: s.verifications.createdAt })
+    .from(s.verifications)
+    .where(eq(s.verifications.identifier, deleteCodeId(user.id)))
+    .limit(1);
+  if (existing && Date.now() - existing.createdAt.getTime() < 60_000) {
+    return { ok: false as const, error: 'Tunggu 1 menit sebelum meminta kode baru.' };
+  }
+
+  const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
+  await db.delete(s.verifications).where(eq(s.verifications.identifier, deleteCodeId(user.id)));
+  await db.insert(s.verifications).values({
+    identifier: deleteCodeId(user.id),
+    value: `${sha256(code)}:0`,
+    expiresAt: new Date(Date.now() + DELETE_CODE_TTL_MS),
+  });
+  await sendEmail({
+    to: user.email,
+    subject: `Kode konfirmasi hapus akun Morphic: ${code}`,
+    text: `Kode untuk mengonfirmasi penghapusan akun Morphic Anda: ${code}\n\nBerlaku 10 menit. Jika Anda tidak meminta ini, abaikan email ini dan akun Anda tetap aman.`,
+    html: `<p>Kode untuk mengonfirmasi penghapusan akun Morphic Anda:</p><p style="font-size:24px;font-weight:700;letter-spacing:4px">${code}</p><p>Berlaku 10 menit. Jika Anda tidak meminta ini, abaikan email ini dan akun Anda tetap aman.</p>`,
+  });
+  return { ok: true as const };
+}
+
+async function checkDeletionCode(userId: string, code: string): Promise<string | null> {
+  const [row] = await db
+    .select()
+    .from(s.verifications)
+    .where(eq(s.verifications.identifier, deleteCodeId(userId)))
+    .limit(1);
+  if (!row || row.expiresAt.getTime() < Date.now()) return 'Kode sudah kedaluwarsa. Minta kode baru.';
+  const [hash, n] = row.value.split(':');
+  const attempts = Number(n) || 0;
+  if (attempts >= DELETE_CODE_MAX_ATTEMPTS) return 'Terlalu banyak percobaan salah. Minta kode baru.';
+  const ok = /^\d{6}$/.test(code) && timingSafeEqual(Buffer.from(sha256(code)), Buffer.from(hash));
+  if (!ok) {
+    await db
+      .update(s.verifications)
+      .set({ value: `${hash}:${attempts + 1}` })
+      .where(eq(s.verifications.id, row.id));
+    return 'Kode salah.';
+  }
+  await db.delete(s.verifications).where(eq(s.verifications.id, row.id));
+  return null;
+}
+
+/**
+ * Self-serve account deletion. Re-authenticates (password, or an emailed code for
+ * password-less accounts), then soft-deletes: the user row is kept but anonymised and
+ * suspended so credit_ledger / payments / usage stay intact for financial retention, while
+ * every way back in (credentials, OAuth links, sessions, API keys) is removed.
+ */
 export async function deleteOwnAccount(formData: FormData) {
   const user = await requireInteractiveUser();
   const confirmation = String(formData.get('confirmation') || '').trim();
+  const password = String(formData.get('password') || '');
+  const code = String(formData.get('code') || '').trim();
 
   if (!user.email || confirmation.toLowerCase() !== user.email.toLowerCase()) {
     return {
@@ -583,17 +662,51 @@ export async function deleteOwnAccount(formData: FormData) {
     };
   }
 
+  if (await hasPasswordLogin(user.id)) {
+    if (!password) return { ok: false, error: 'Masukkan kata sandi Anda.' };
+    try {
+      await auth.api.verifyPassword({ body: { password }, headers: await headers() });
+    } catch (err: any) {
+      return {
+        ok: false,
+        error:
+          err?.body?.code === 'SESSION_NOT_FRESH'
+            ? 'Demi keamanan, keluar lalu masuk lagi sebelum menghapus akun.'
+            : 'Kata sandi salah.',
+      };
+    }
+  } else {
+    const codeError = await checkDeletionCode(user.id, code);
+    if (codeError) return { ok: false, error: codeError };
+  }
+
   try {
-    // Delete user row (database CASCADE cleans up all foreign key dependencies)
-    await db.delete(s.users).where(eq(s.users.id, user.id));
+    const now = new Date();
+    await db
+      .update(s.apiKeys)
+      .set({ status: 'revoked', revokedAt: now })
+      .where(and(eq(s.apiKeys.userId, user.id), eq(s.apiKeys.status, 'active')));
+    await db.delete(s.accounts).where(eq(s.accounts.userId, user.id));
+    await db.delete(s.twoFactors).where(eq(s.twoFactors.userId, user.id));
+    await db.delete(s.sessions).where(eq(s.sessions.userId, user.id));
+    await db
+      .update(s.users)
+      .set({
+        email: `deleted+${user.id}@redacted.local`,
+        name: 'Deleted User',
+        image: null,
+        emailVerified: false,
+        suspended: true,
+        twoFactorEnabled: false,
+        deletedAt: now,
+        updatedAt: now,
+      })
+      .where(eq(s.users.id, user.id));
     revalidatePath('/dashboard');
     revalidatePath('/login');
     return { ok: true };
   } catch (err: any) {
     console.error('[deleteOwnAccount] Failed to delete account:', err);
-    return {
-      ok: false,
-      error: err?.message || 'Gagal menghapus akun. Silakan coba lagi nanti.',
-    };
+    return { ok: false, error: 'Gagal menghapus akun. Silakan coba lagi nanti.' };
   }
 }

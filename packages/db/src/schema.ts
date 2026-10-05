@@ -27,6 +27,9 @@ export const users = pgTable('users', {
   suspended: boolean('suspended').notNull().default(false),
   // Better Auth twoFactor plugin: when true, email+password sign-in asks for an emailed OTP.
   twoFactorEnabled: boolean('two_factor_enabled').notNull().default(false),
+  // Set when the owner deletes the account. The row stays (anonymised, suspended) so the
+  // ledger, payments and usage history keep their user_id for financial retention.
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
   createdAt: now(),
   updatedAt: updatedAt(),
 });
