@@ -304,6 +304,17 @@ export default function EmailAuthPage() {
               </div>
             </div>
 
+            {!isSignUpMode && (
+              <div className="flex justify-end -mt-1">
+                <Link
+                  href="/forgot-password"
+                  className="inline-flex items-center min-h-11 text-xs font-semibold text-neutral-700 hover:text-neutral-950 underline-offset-2 hover:underline"
+                >
+                  <span suppressHydrationWarning>{t.login.forgotLink}</span>
+                </Link>
+              </div>
+            )}
+
             {/* Google reCAPTCHA Verification */}
             <RecaptchaWidget
               ref={recaptchaRef}

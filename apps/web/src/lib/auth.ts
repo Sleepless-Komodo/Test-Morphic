@@ -103,6 +103,16 @@ export const auth = betterAuth({
     enabled: true,
     autoSignIn: true,
     minPasswordLength: 8,
+    resetPasswordTokenExpiresIn: 30 * 60,
+    revokeSessionsOnPasswordReset: true,
+    sendResetPassword: async ({ user, url }) => {
+      await sendEmail({
+        to: user.email,
+        subject: 'Atur ulang kata sandi Morphic',
+        text: `Buka tautan ini untuk membuat kata sandi baru (berlaku 30 menit):\n${url}\n\nAbaikan email ini jika Anda tidak memintanya.`,
+        html: `<p>Buka tautan ini untuk membuat kata sandi baru (berlaku 30 menit):</p><p><a href="${url}">Atur ulang kata sandi</a></p><p>Abaikan email ini jika Anda tidak memintanya.</p>`,
+      });
+    },
   },
   socialProviders: {
     google: {
