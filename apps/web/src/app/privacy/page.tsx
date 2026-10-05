@@ -35,7 +35,7 @@ export default async function PrivacyPage() {
             {isEn ? 'Privacy Policy' : 'Kebijakan Privasi'}
           </h1>
           <p className="text-sm text-neutral-500 font-mono">
-            {isEn ? 'Last updated: September 20, 2026' : 'Terakhir diperbarui: 20 September 2026'}
+            {isEn ? 'Last updated: October 5, 2026' : 'Terakhir diperbarui: 5 Oktober 2026'}
           </p>
         </div>
 
@@ -87,6 +87,38 @@ export default async function PrivacyPage() {
               {isEn
                 ? 'IDR credit top-ups are processed via licensed payment gateways (Duitku / QRIS). We never retain or access your personal banking credentials or card numbers.'
                 : 'Transaksi pengisian saldo Rupiah diproses melalui gerbang pembayaran terlisensi (Duitku / QRIS). Kami tidak pernah menyimpan data rekening bank atau informasi kartu kredit pribadi Anda.'}
+            </p>
+          </div>
+
+          <div>
+            <h2 className="text-lg sm:text-xl font-bold text-neutral-950 font-heading mb-3">
+              {isEn ? '5. Cookies' : '5. Cookie'}
+            </h2>
+            <p>
+              {isEn
+                ? 'Morphic only sets cookies the service needs to work. There are no analytics or advertising cookies.'
+                : 'Morphic hanya memasang cookie yang dibutuhkan agar layanan berjalan. Tidak ada cookie analitik atau iklan.'}
+            </p>
+            <ul className="list-disc pl-5 mt-2 space-y-1">
+              <li>{isEn ? 'Session cookie: keeps you signed in to the dashboard.' : 'Cookie sesi: menjaga Anda tetap masuk ke dashboard.'}</li>
+              <li>{isEn ? 'Sign-in step cookie: holds a pending email OTP sign-in for a few minutes.' : 'Cookie langkah masuk: menyimpan proses masuk dengan OTP email selama beberapa menit.'}</li>
+              <li>{isEn ? 'Language cookie: remembers whether you chose Indonesian or English.' : 'Cookie bahasa: mengingat pilihan Bahasa Indonesia atau Inggris.'}</li>
+              <li>
+                {isEn
+                  ? 'Google reCAPTCHA (sign-in form) and PayPal (when you pay with PayPal) may set their own cookies under their policies.'
+                  : 'Google reCAPTCHA (form masuk) dan PayPal (saat Anda membayar dengan PayPal) dapat memasang cookie sendiri sesuai kebijakan mereka.'}
+              </li>
+            </ul>
+          </div>
+
+          <div>
+            <h2 className="text-lg sm:text-xl font-bold text-neutral-950 font-heading mb-3">
+              {isEn ? '6. Your Data Rights' : '6. Hak Atas Data Anda'}
+            </h2>
+            <p>
+              {isEn
+                ? 'From Settings you can download a copy of your personal data as JSON, and delete your account. Deleting removes your profile, sign-in methods, sessions and API keys. Transaction records and usage history are anonymised and kept for 5 years to meet tax and financial record-keeping law.'
+                : 'Dari halaman Pengaturan Anda dapat mengunduh salinan data pribadi dalam format JSON dan menghapus akun. Penghapusan akan menghapus profil, metode masuk, sesi, dan API key Anda. Catatan transaksi dan riwayat penggunaan dianonimkan dan disimpan selama 5 tahun sesuai ketentuan hukum perpajakan dan keuangan.'}
             </p>
           </div>
         </div>
