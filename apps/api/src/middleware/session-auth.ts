@@ -108,6 +108,14 @@ export async function sessionAuth(c: Context, next: Next) {
   await next();
 }
 
-export async function denyKeyDerivedSession(_c: Context, next: Next) {
+// Sessions minted from an mp-* key (audit H7) are read-only. Key login was removed in b0a7109,
+// but any such session still alive must not mint keys, redeem codes or pay.
+export async function denyKeyDerivedSession(c: Context, next: Next) {
+  if (c.get('userSession')?.authMethod === 'api_key') {
+    return c.json(
+      { error: { message: 'this session cannot perform account changes', type: 'auth_error', code: 'key_derived_session_forbidden' } },
+      403,
+    );
+  }
   await next();
 }

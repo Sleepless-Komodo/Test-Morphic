@@ -11,7 +11,7 @@ function md5(data: string): string {
   return createHash('md5').update(data).digest('hex');
 }
 
-test('Security Test 1: Authenticated Duitku /create rejects package with non-IDR currency', { timeout: 15000 }, async () => {
+test('Security Test 1: Duitku /create bills a USD package in IDR at the fixed rate', { timeout: 15000 }, async () => {
   const runId = Date.now();
 
   const [user] = await db
@@ -46,10 +46,16 @@ test('Security Test 1: Authenticated Duitku /create rejects package with non-IDR
     body: JSON.stringify({ packageId: pkgUsd.id }),
   });
 
-  assert.equal(res.status, 400);
-  const data = await res.json();
-  assert.equal(data.error?.code, 'invalid_currency');
-  assert.equal(data.error?.message, 'package currency is not IDR');
+  // Since 7ef47dc any package can be paid through Duitku; USD prices are converted at
+  // 1 USD = 16,000 IDR. The invoice must be in IDR for exactly that amount.
+  assert.equal(res.status, 200);
+  const [payment] = await db
+    .select({ currency: s.payments.currency, amountCents: s.payments.amountCents })
+    .from(s.payments)
+    .where(eq(s.payments.userId, user.id))
+    .limit(1);
+  assert.equal(payment?.currency, 'IDR');
+  assert.equal(payment?.amountCents, 80_000);
 });
 
 test('Security Test 2: markPaymentIfOpen does NOT overwrite paid status', async () => {
