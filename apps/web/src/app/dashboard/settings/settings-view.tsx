@@ -16,6 +16,7 @@ import {
 import { signOut } from '@/lib/auth-client';
 import { timeAgo } from '@/lib/utils';
 import { LoginOtpCard } from './login-otp-card';
+import { downloadBlob } from '@/lib/csv';
 import {
   User,
   Mail,
@@ -89,6 +90,8 @@ export function SettingsView({ user, sessions, loginOtp }: SettingsViewProps) {
   const [copiedSupport, setCopiedSupport] = useState(false);
   const [revokingId, setRevokingId] = useState<string | null>(null);
   const [sessionError, setSessionError] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
   const [, startTransition] = useTransition();
 
   const handleExecuteDeleteAccount = async () => {
@@ -143,6 +146,20 @@ export function SettingsView({ user, sessions, loginOtp }: SettingsViewProps) {
   const emailMatches =
     deleteConfirmation.trim().toLowerCase() === (user.email ?? '').trim().toLowerCase();
   const reauthReady = loginOtp.hasPassword ? deletePassword.length > 0 : /^\d{6}$/.test(deleteCode);
+
+  const handleExportData = async () => {
+    setExporting(true);
+    setExportError(null);
+    try {
+      const res = await fetch('/api/backend/v1/account/export', { cache: 'no-store' });
+      if (!res.ok) throw new Error(String(res.status));
+      downloadBlob(await res.blob(), `morphic-data-${new Date().toISOString().slice(0, 10)}.json`);
+    } catch {
+      setExportError(isId ? 'Gagal menyiapkan data. Coba lagi sebentar lagi.' : 'Could not prepare your data. Try again shortly.');
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const otherSessions = sessions.filter((item) => !item.isCurrent);
 
@@ -575,6 +592,33 @@ export function SettingsView({ user, sessions, loginOtp }: SettingsViewProps) {
                     : 'Upstream enterprise agreements guarantee your code is never used to train or fine-tune public foundation models.'}
                 </p>
               </div>
+            </div>
+
+            <div className="p-4 rounded-2xl border border-neutral-200/70 bg-white flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="space-y-1 min-w-0">
+                <h3 className="text-xs font-bold text-neutral-950">
+                  {isId ? 'Salinan data pribadi Anda' : 'Copy of your personal data'}
+                </h3>
+                <p className="text-xs text-neutral-600 leading-relaxed">
+                  {isId
+                    ? 'Satu file JSON berisi profil, prefix API key, saldo, riwayat transaksi dan pembayaran, serta ringkasan pemakaian harian.'
+                    : 'One JSON file with your profile, API key prefixes, balance, transaction and payment history, and a daily usage summary.'}
+                </p>
+                {exportError && (
+                  <p role="alert" className="flex items-start gap-2 text-xs text-red-700">
+                    <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0 text-red-600" />
+                    <span>{exportError}</span>
+                  </p>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={handleExportData}
+                disabled={exporting}
+                className="min-h-11 px-4 rounded-xl bg-neutral-950 hover:bg-neutral-800 text-white text-xs font-semibold shrink-0 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 focus-visible:ring-offset-2"
+              >
+                {exporting ? (isId ? 'Menyiapkan...' : 'Preparing...') : isId ? 'Unduh data saya (JSON)' : 'Download my data (JSON)'}
+              </button>
             </div>
           </div>
         </section>

@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { db, schema as s } from '@morphic/db';
-import { eq, and, desc, gte, lte, gt, count } from 'drizzle-orm';
+import { eq, and, desc, gte, lte, gt, count, sql, sum } from 'drizzle-orm';
 import { sessionAuth } from '../middleware/session-auth';
 import { sessionRateLimit } from '../middleware/session-ratelimit';
 
@@ -214,6 +214,111 @@ account.get('/payments', async (c) => {
     })),
     page,
     limit,
+  });
+});
+
+// ── GET /v1/account/export ─────────────────────────────
+// Personal-data export (UU PDP access right): everything held about the signed-in user as
+// one JSON download. Usage is summarised per day and model.
+// ponytail: synchronous; move to a background job + dsar_requests table if exports get large.
+account.get('/export', sessionRateLimit('account-export', 5), async (c) => {
+  const { userId } = c.get('userSession');
+
+  const [profile, balance, apiKeys, ledger, payments, entitlements, redemptions, usage] = await Promise.all([
+    db
+      .select({
+        id: s.users.id,
+        name: s.users.name,
+        email: s.users.email,
+        emailVerified: s.users.emailVerified,
+        role: s.users.role,
+        twoFactorEnabled: s.users.twoFactorEnabled,
+        createdAt: s.users.createdAt,
+      })
+      .from(s.users)
+      .where(eq(s.users.id, userId))
+      .limit(1),
+    db.select({ credits: s.balances.credits }).from(s.balances).where(eq(s.balances.userId, userId)).limit(1),
+    db
+      .select({
+        name: s.apiKeys.name,
+        prefix: s.apiKeys.keyPrefix,
+        status: s.apiKeys.status,
+        createdAt: s.apiKeys.createdAt,
+        lastUsedAt: s.apiKeys.lastUsedAt,
+        expiresAt: s.apiKeys.expiresAt,
+        revokedAt: s.apiKeys.revokedAt,
+      })
+      .from(s.apiKeys)
+      .where(eq(s.apiKeys.userId, userId)),
+    db
+      .select({
+        entryType: s.creditLedger.entryType,
+        amount: s.creditLedger.amount,
+        sourceType: s.creditLedger.sourceType,
+        reference: s.creditLedger.reference,
+        createdAt: s.creditLedger.createdAt,
+      })
+      .from(s.creditLedger)
+      .where(eq(s.creditLedger.userId, userId))
+      .orderBy(desc(s.creditLedger.createdAt)),
+    db
+      .select({
+        provider: s.payments.provider,
+        externalId: s.payments.externalId,
+        amountCents: s.payments.amountCents,
+        currency: s.payments.currency,
+        credits: s.payments.credits,
+        status: s.payments.status,
+        paidAt: s.payments.paidAt,
+        createdAt: s.payments.createdAt,
+      })
+      .from(s.payments)
+      .where(eq(s.payments.userId, userId))
+      .orderBy(desc(s.payments.createdAt)),
+    db
+      .select({
+        allowance: s.entitlements.allowance,
+        remaining: s.entitlements.remaining,
+        source: s.entitlements.source,
+        status: s.entitlements.status,
+        startsAt: s.entitlements.startsAt,
+        expiresAt: s.entitlements.expiresAt,
+      })
+      .from(s.entitlements)
+      .where(eq(s.entitlements.userId, userId)),
+    db
+      .select({ code: s.redeemCodes.code, createdAt: s.redemptions.createdAt })
+      .from(s.redemptions)
+      .innerJoin(s.redeemCodes, eq(s.redeemCodes.id, s.redemptions.codeId))
+      .where(eq(s.redemptions.userId, userId)),
+    db
+      .select({
+        day: sql<string>`to_char(${s.usageRecords.createdAt} at time zone 'UTC', 'YYYY-MM-DD')`,
+        model: s.models.publicModelId,
+        requests: count(),
+        totalTokens: sum(s.usageRecords.totalTokens).mapWith(Number),
+        creditsConsumed: sum(s.usageRecords.creditsConsumed).mapWith(Number),
+      })
+      .from(s.usageRecords)
+      .leftJoin(s.models, eq(s.models.id, s.usageRecords.modelId))
+      .where(eq(s.usageRecords.userId, userId))
+      .groupBy(sql`1`, s.models.publicModelId)
+      .orderBy(sql`1 desc`),
+  ]);
+
+  c.header('Content-Disposition', `attachment; filename="morphic-data-${new Date().toISOString().slice(0, 10)}.json"`);
+  c.header('Cache-Control', 'no-store');
+  return c.json({
+    exported_at: new Date().toISOString(),
+    profile: profile[0] ?? null,
+    balance_credits: balance[0]?.credits ?? 0,
+    api_keys: apiKeys,
+    credit_ledger: ledger,
+    payments,
+    entitlements,
+    redemptions,
+    usage_daily: usage,
   });
 });
 
