@@ -23,7 +23,6 @@ interface KeyItem {
   id: string;
   name: string;
   keyPrefix: string;
-  rawKey?: string | null;
   status: string;
   expiresAt?: Date | null;
   lastUsedAt: Date | null;
@@ -48,25 +47,11 @@ export function KeysView({ initialKeys }: KeysViewProps) {
   const [copiedKey, setCopiedKey] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  const [copiedKeyId, setCopiedKeyId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
 
   const MAX_KEYS = 5;
   const isAtLimit = keys.length >= MAX_KEYS;
-
-  const getFullKey = (k: KeyItem): string | null => k.rawKey ?? null;
-  const unavailableHint = isId
-    ? 'Key ini tetap aktif & berfungsi. Nilai rahasia lengkap disimpan sebagai hash satu arah demi keamanan. Jika Anda lupa kuncinya, buat key baru.'
-    : 'This key remains active and working. Full secret is stored as a secure one-way hash. If you lost the raw secret, create a new key.';
-
-  const handleCopyKey = (k: KeyItem) => {
-    const fullKey = getFullKey(k);
-    const textToCopy = fullKey || k.keyPrefix;
-    navigator.clipboard.writeText(textToCopy);
-    setCopiedKeyId(k.id);
-    setTimeout(() => setCopiedKeyId(null), 2000);
-  };
 
   // Minting goes straight to the gateway through the /api/backend proxy instead of a
   // Server Action: the proxy re-derives the Authorization header from the session, and a
@@ -119,7 +104,6 @@ export function KeysView({ initialKeys }: KeysViewProps) {
           id: body.id,
           name: body.name,
           keyPrefix: body.prefix,
-          rawKey: body.key,
           status: body.status,
           expiresAt: body.expires_at ? new Date(body.expires_at) : null,
           lastUsedAt: null,
@@ -317,30 +301,13 @@ export function KeysView({ initialKeys }: KeysViewProps) {
               </thead>
               <tbody className="divide-y divide-neutral-100">
                 {keys.map((k) => {
-                  const fullKey = getFullKey(k);
                   return (
                   <tr key={k.id} className="hover:bg-neutral-50/50 transition-colors">
                     <td className="px-6 py-4 font-bold text-neutral-900">{k.name}</td>
                     <td className="px-6 py-4 font-mono text-neutral-600">
-                      <div className="inline-flex items-center gap-1.5">
-                        <span className="px-2.5 py-1 rounded-lg border text-xs font-mono select-all bg-neutral-100 text-neutral-600 border-neutral-200">
-                          {k.rawKey ? k.rawKey : maskedKey(k.keyPrefix)}
-                        </span>
-
-                        {/* Copy API Key or Prefix */}
-                        <button
-                          type="button"
-                          onClick={() => handleCopyKey(k)}
-                          title={k.rawKey ? t.dashboard.keyCopyFull : (isId ? 'Salin Prefix Key' : 'Copy Key Prefix')}
-                          aria-label={k.rawKey ? t.dashboard.keyCopyFull : (isId ? 'Salin Prefix Key' : 'Copy Key Prefix')}
-                          className="p-1.5 rounded-lg border border-neutral-200 hover:border-neutral-400 hover:bg-neutral-100 text-neutral-600 hover:text-neutral-900 transition-colors cursor-pointer shrink-0"
-                        >
-                          {copiedKeyId === k.id ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
-                        </button>
-                      </div>
-                      {!fullKey && (
-                        <p className="mt-1 font-sans text-[11px] text-neutral-500">{unavailableHint}</p>
-                      )}
+                      <span className="px-2.5 py-1 rounded-lg border text-xs font-mono bg-neutral-100 text-neutral-600 border-neutral-200">
+                        {maskedKey(k.keyPrefix)}
+                      </span>
                     </td>
                     <td className="px-6 py-4">
                       {k.status === 'active' && k.expiresAt && new Date(k.expiresAt).getTime() < Date.now() ? (
