@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic';
 
 import { headers } from 'next/headers';
-import { auth } from '@/lib/auth';
+import { getSessionSafe } from '@/lib/auth';
 import Navbar from '@/components/Navbar';
 import PricingPlans from '@/components/PricingPlans';
 import PricingCalculator from '@/components/PricingCalculator';
@@ -19,7 +19,7 @@ export const metadata = {
 export default async function PricingPage() {
   let session = null;
   try {
-    session = await auth.api.getSession({ headers: await headers() });
+    session = await getSessionSafe(await headers());
   } catch (err) {
     console.warn('[PricingPage] Session check failed, rendering as guest:', err);
   }

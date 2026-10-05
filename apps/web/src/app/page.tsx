@@ -1,6 +1,6 @@
 export const dynamic = 'force-dynamic';
 
-import { auth } from '@/lib/auth';
+import { getSessionSafe } from '@/lib/auth';
 import { headers } from 'next/headers';
 import Navbar from '@/components/Navbar';
 import HeroOpening from '@/components/HeroOpening';
@@ -15,7 +15,7 @@ import Footer from '@/components/Footer';
 export default async function Home() {
   let session = null;
   try {
-    session = await auth.api.getSession({ headers: await headers() });
+    session = await getSessionSafe(await headers());
   } catch (err) {
     console.warn('[Home] Session check failed, rendering as guest:', err);
   }

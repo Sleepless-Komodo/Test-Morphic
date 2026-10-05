@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic';
 
 import { headers } from 'next/headers';
-import { auth } from '@/lib/auth';
+import { getSessionSafe } from '@/lib/auth';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import DocsView from './docs-view';
@@ -15,7 +15,7 @@ export const metadata = {
 export default async function DocsPage() {
   let session = null;
   try {
-    session = await auth.api.getSession({ headers: await headers() });
+    session = await getSessionSafe(await headers());
   } catch (err) {
     console.warn('[DocsPage] Session check failed, rendering as guest:', err);
   }
