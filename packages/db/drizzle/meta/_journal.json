@@ -57,6 +57,13 @@
       "when": 1791200000000,
       "tag": "0007_drop_api_key_encrypted",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1791166565651,
+      "tag": "0008_two_factor_otp",
+      "breakpoints": true
     }
   ]
 }

@@ -133,6 +133,12 @@ export default function EmailAuthPage() {
           handleAuthFail(isCaptchaErr ? t.login.captchaFailed : t.login.authGenericError);
           return;
         }
+
+        // Email OTP is on for this account: no session yet, finish on the code step.
+        if ((res?.data as { twoFactorRedirect?: boolean } | null)?.twoFactorRedirect) {
+          router.push('/login/otp');
+          return;
+        }
       }
 
       setFailCount(0);

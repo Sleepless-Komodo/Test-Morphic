@@ -1,4 +1,5 @@
 import { createAuthClient } from 'better-auth/react';
+import { twoFactorClient } from 'better-auth/client/plugins';
 
 /**
  * Auth calls from the browser must go to the origin that served the page. Reading
@@ -15,6 +16,9 @@ function resolveBaseURL(): string {
 
 export const authClient = createAuthClient({
   baseURL: resolveBaseURL(),
+  // onTwoFactorRedirect is left unset: the email sign-in form reads `twoFactorRedirect`
+  // from the response itself and routes to /login/otp.
+  plugins: [twoFactorClient()],
 });
 
 export const { signIn, signUp, signOut, useSession } = authClient;

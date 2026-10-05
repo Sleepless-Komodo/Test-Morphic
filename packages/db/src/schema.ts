@@ -25,6 +25,8 @@ export const users = pgTable('users', {
   image: text('image'),
   role: text('role', { enum: ['user', 'admin'] }).notNull().default('user'),
   suspended: boolean('suspended').notNull().default(false),
+  // Better Auth twoFactor plugin: when true, email+password sign-in asks for an emailed OTP.
+  twoFactorEnabled: boolean('two_factor_enabled').notNull().default(false),
   createdAt: now(),
   updatedAt: updatedAt(),
 });
@@ -75,6 +77,24 @@ export const verifications = pgTable('verifications', {
   createdAt: now(),
   updatedAt: updatedAt(),
 });
+
+// Better Auth twoFactor plugin table. Only the email-OTP flow is used, so `secret` and
+// `backupCodes` stay unused; the plugin still reads this row for failed-attempt lockout.
+export const twoFactors = pgTable(
+  'two_factor',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    secret: text('secret').notNull(),
+    backupCodes: text('backup_codes').notNull(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    verified: boolean('verified').default(true),
+    failedVerificationCount: integer('failed_verification_count').default(0),
+    lockedUntil: timestamp('locked_until', { withTimezone: true }),
+  },
+  (t) => [index('two_factor_user_idx').on(t.userId), index('two_factor_secret_idx').on(t.secret)],
+);
 
 // ── API Keys ──────────────────────────────────────────
 

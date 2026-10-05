@@ -2,7 +2,8 @@ import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { db } from '@morphic/db';
 import * as schema from '@morphic/db/schema';
-import { captcha } from 'better-auth/plugins';
+import { captcha, twoFactor } from 'better-auth/plugins';
+import { sendEmail } from '@morphic/shared/email';
 
 const authSecret = process.env.BETTER_AUTH_SECRET;
 // `next build` evaluates this module to collect page data with NODE_ENV=production but
@@ -47,7 +48,27 @@ const trustedOrigins = [
   ),
 ];
 
-const authPlugins: any[] = [];
+const authPlugins: any[] = [
+  // Email OTP as the second step for email+password sign-in. TOTP / authenticator apps and
+  // backup codes are deliberately not exposed in the UI.
+  twoFactor({
+    issuer: 'Morphic',
+    allowPasswordless: true,
+    otpOptions: {
+      period: 5,
+      allowedAttempts: 5,
+      storeOTP: 'hashed',
+      sendOTP: async ({ user, otp }) => {
+        await sendEmail({
+          to: user.email,
+          subject: `Kode login Morphic: ${otp}`,
+          text: `Kode verifikasi Morphic Anda: ${otp}\n\nBerlaku 5 menit. Abaikan email ini jika Anda tidak sedang masuk.`,
+          html: `<p>Kode verifikasi Morphic Anda:</p><p style="font-size:24px;font-weight:700;letter-spacing:4px">${otp}</p><p>Berlaku 5 menit. Abaikan email ini jika Anda tidak sedang masuk.</p>`,
+        });
+      },
+    },
+  }),
+];
 if (process.env.RECAPTCHA_SECRET_KEY) {
   authPlugins.push(
     captcha({
@@ -65,6 +86,7 @@ export const auth = betterAuth({
       session: schema.sessions,
       account: schema.accounts,
       verification: schema.verifications,
+      twoFactor: schema.twoFactors,
     },
   }),
   session: {

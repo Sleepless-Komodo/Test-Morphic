@@ -9,6 +9,7 @@ import { SignOutButton } from '@/app/dashboard/sign-out';
 import { revokeOtherSessions, revokeSessionById, deleteOwnAccount, type ActiveSession } from '@/lib/actions';
 import { signOut } from '@/lib/auth-client';
 import { timeAgo } from '@/lib/utils';
+import { LoginOtpCard } from './login-otp-card';
 import {
   User,
   Mail,
@@ -38,6 +39,7 @@ interface SettingsViewProps {
     role?: string | null;
   };
   sessions: ActiveSession[];
+  loginOtp: { enabled: boolean; hasPassword: boolean };
 }
 
 /** Reads the browser and platform out of a user agent string for the session list. */
@@ -64,7 +66,7 @@ function describeDevice(userAgent: string | null, isId: boolean): string {
   return browser ?? platform ?? (isId ? 'Perangkat tidak dikenal' : 'Unknown device');
 }
 
-export function SettingsView({ user, sessions }: SettingsViewProps) {
+export function SettingsView({ user, sessions, loginOtp }: SettingsViewProps) {
   const { locale } = useTranslation();
   const isId = locale === 'id';
   const router = useRouter();
@@ -442,6 +444,8 @@ export function SettingsView({ user, sessions }: SettingsViewProps) {
                 <span>{sessionError}</span>
               </p>
             )}
+
+            <LoginOtpCard enabled={loginOtp.enabled} hasPassword={loginOtp.hasPassword} />
 
             {/* Security Guarantee Rows */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
