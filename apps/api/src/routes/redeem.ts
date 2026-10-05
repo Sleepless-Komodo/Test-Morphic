@@ -6,7 +6,7 @@ import { sessionRateLimit } from '../middleware/session-ratelimit';
 import { grantCredits, grantEntitlement } from '@morphic/db/billing';
 
 class RedeemError extends Error {
-  constructor(public reason: 'code_fully_redeemed') {
+  constructor(public reason: 'code_fully_redeemed' | 'reward_unavailable') {
     super(reason);
   }
 }
@@ -51,12 +51,18 @@ redeem.post('/', async (c) => {
   }
 
   const upperCode = code.trim().toUpperCase();
+  const withMpPrefix = upperCode.startsWith('MP-') ? upperCode : `MP-${upperCode}`;
 
-  // Fetch the active redeem code
+  // Fetch the active redeem code (match exact or with MP- prefix)
   const [redeemCode] = await db
     .select()
     .from(s.redeemCodes)
-    .where(and(eq(s.redeemCodes.code, upperCode), eq(s.redeemCodes.active, true)))
+    .where(
+      and(
+        or(eq(s.redeemCodes.code, upperCode), eq(s.redeemCodes.code, withMpPrefix)),
+        eq(s.redeemCodes.active, true),
+      ),
+    )
     .limit(1);
 
   if (!redeemCode) {
@@ -74,18 +80,21 @@ redeem.post('/', async (c) => {
     );
   }
 
-  // Redeem atomically. The redemption count is bumped with a CONDITIONAL update so
-  // concurrent redeemers cannot push a capped code past max_redemptions (audit H4):
-  // the WHERE clause re-checks the cap inside the write, and zero rows means the code
-  // is already full. The per-user unique constraint on `redemptions` blocks double-spend.
+  // Redeem atomically: the cap bump, the per-user redemption row and the reward grant all
+  // commit together, so a failed grant can never burn the code (and vice versa).
+  // The redemption count is bumped with a CONDITIONAL update so concurrent redeemers cannot
+  // push a capped code past max_redemptions (audit H4); the per-user unique constraint on
+  // `redemptions` blocks double-spend.
+  let reward: { type: 'credits' | 'package'; credits: number; package: { id: string; name: string } | null };
   try {
-    await db.transaction(async (tx) => {
+    reward = await db.transaction(async (tx) => {
       const bumped = await tx
         .update(s.redeemCodes)
         .set({ redeemedCount: sql`${s.redeemCodes.redeemedCount} + 1` })
         .where(
           and(
             eq(s.redeemCodes.id, redeemCode.id),
+            eq(s.redeemCodes.active, true),
             or(
               isNull(s.redeemCodes.maxRedemptions),
               lt(s.redeemCodes.redeemedCount, s.redeemCodes.maxRedemptions),
@@ -98,14 +107,71 @@ redeem.post('/', async (c) => {
         throw new RedeemError('code_fully_redeemed');
       }
 
-      // Insert redemption (unique (code_id, user_id) throws if this user already redeemed).
-      // This runs after the bump so a re-redeem attempt rolls back the increment too.
+      // Unique (code_id, user_id) throws if this user already redeemed; rolls back the bump too.
       await tx.insert(s.redemptions).values({ codeId: redeemCode.id, userId });
+
+      const reference = `code:${redeemCode.id}`;
+
+      if (redeemCode.rewardType === 'package' && redeemCode.packageId) {
+        const [pkg] = await tx
+          .select()
+          .from(s.packages)
+          .where(eq(s.packages.id, redeemCode.packageId))
+          .limit(1);
+        if (!pkg) throw new RedeemError('reward_unavailable');
+
+        if (pkg.modelId) {
+          await grantEntitlement(
+            {
+              userId,
+              allowance: pkg.creditAllowance,
+              modelId: pkg.modelId,
+              durationHours: pkg.durationHours,
+              source: 'redeem',
+              packageId: pkg.id,
+            },
+            tx,
+          );
+        } else {
+          await grantCredits({ userId, amount: pkg.creditAllowance, entryType: 'redeem', reference }, tx);
+        }
+        return { type: 'package', credits: pkg.creditAllowance, package: { id: pkg.id, name: pkg.name } };
+      }
+
+      // Legacy package codes created before codes pointed at a package: model + allowance + duration.
+      if (redeemCode.rewardType === 'package' && redeemCode.modelId && redeemCode.creditAmount) {
+        await grantEntitlement(
+          {
+            userId,
+            allowance: redeemCode.creditAmount,
+            modelId: redeemCode.modelId,
+            durationHours: redeemCode.durationHours,
+            source: 'redeem',
+          },
+          tx,
+        );
+        return { type: 'package', credits: redeemCode.creditAmount, package: null };
+      }
+
+      if (redeemCode.rewardType === 'credits' && redeemCode.creditAmount && redeemCode.creditAmount > 0) {
+        await grantCredits({ userId, amount: redeemCode.creditAmount, entryType: 'redeem', reference }, tx);
+        return { type: 'credits', credits: redeemCode.creditAmount, package: null };
+      }
+
+      // A code with nothing to grant must not be consumed.
+      throw new RedeemError('reward_unavailable');
     });
   } catch (err: any) {
     if (err instanceof RedeemError && err.reason === 'code_fully_redeemed') {
       return c.json(
         { error: { message: 'code has reached maximum redemptions', type: 'invalid_request_error', code: 'code_fully_redeemed' } },
+        400,
+      );
+    }
+    if (err instanceof RedeemError && err.reason === 'reward_unavailable') {
+      console.error(`[redeem] code ${redeemCode.id} has no grantable reward`);
+      return c.json(
+        { error: { message: 'this code has no valid reward', type: 'invalid_request_error', code: 'reward_unavailable' } },
         400,
       );
     }
@@ -124,61 +190,7 @@ redeem.post('/', async (c) => {
     );
   }
 
-  // If transaction succeeded, grant the rewards
-  let grantedCredits = 0;
-  let packageInfo = null;
-
-  if (redeemCode.rewardType === 'package' && redeemCode.packageId) {
-    // Fetch package details
-    const [pkg] = await db
-      .select()
-      .from(s.packages)
-      .where(eq(s.packages.id, redeemCode.packageId))
-      .limit(1);
-
-    if (pkg) {
-      if (pkg.modelId) {
-        // Model-specific package -> grant entitlement
-        await grantEntitlement({
-          userId,
-          allowance: pkg.creditAllowance,
-          modelId: pkg.modelId,
-          durationHours: pkg.durationHours,
-          source: 'redeem',
-          packageId: pkg.id,
-        });
-      } else {
-        // General credits package -> grant credits
-        await grantCredits({
-          userId,
-          amount: pkg.creditAllowance,
-          entryType: 'redeem',
-          reference: `code:${redeemCode.id}`,
-        });
-      }
-      grantedCredits = pkg.creditAllowance;
-      packageInfo = { id: pkg.id, name: pkg.name };
-    }
-  } else if (redeemCode.rewardType === 'credits' && redeemCode.creditAmount) {
-    // Direct credits
-    await grantCredits({
-      userId,
-      amount: redeemCode.creditAmount,
-      entryType: 'redeem',
-      reference: `code:${redeemCode.id}`,
-    });
-    grantedCredits = redeemCode.creditAmount;
-  }
-
-  return c.json({
-    ok: true,
-    message: 'code redeemed successfully',
-    reward: {
-      type: redeemCode.rewardType,
-      credits: grantedCredits,
-      package: packageInfo,
-    },
-  });
+  return c.json({ ok: true, message: 'code redeemed successfully', reward });
 });
 
 export { redeem };

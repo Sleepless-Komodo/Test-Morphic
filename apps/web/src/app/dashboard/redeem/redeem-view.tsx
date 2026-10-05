@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Gift, Loader2, CheckCircle2, XCircle } from 'lucide-react';
 import { useTranslation } from '@/lib/i18n';
 import { formatCredits } from '@/lib/utils';
@@ -12,6 +13,31 @@ export function RedeemView() {
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [reward, setReward] = useState<any>(null);
+  const router = useRouter();
+
+  const errorText = (code: string | undefined, fallback: string, retryInMinutes?: number) => {
+    const en = locale === 'en';
+    switch (code) {
+      case 'invalid_code':
+        return en ? 'Code not found or no longer active.' : 'Kode tidak ditemukan atau sudah tidak aktif.';
+      case 'code_expired':
+        return en ? 'This code has expired.' : 'Kode ini sudah kedaluwarsa.';
+      case 'code_fully_redeemed':
+        return en ? 'This code has reached its usage limit.' : 'Kuota pemakaian kode ini sudah habis.';
+      case 'code_already_redeemed':
+        return en ? 'You already used this code.' : 'Kamu sudah pernah memakai kode ini.';
+      case 'reward_unavailable':
+        return en ? 'This code has no valid reward. Contact support.' : 'Hadiah kode ini tidak tersedia. Hubungi support.';
+      case 'locked':
+        return en
+          ? `Too many wrong codes. Try again in ${retryInMinutes ?? 10} minutes.`
+          : `Terlalu banyak kode salah. Coba lagi dalam ${retryInMinutes ?? 10} menit.`;
+      case 'service_unavailable':
+        return en ? 'Service is temporarily unavailable. Nothing was charged; try again shortly.' : 'Layanan sedang gangguan. Tidak ada yang terpotong, coba lagi sebentar lagi.';
+      default:
+        return fallback || (en ? 'Failed to redeem code' : 'Gagal menukarkan kode');
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -26,12 +52,13 @@ export function RedeemView() {
       const res = await redeemCodeDirect(code);
 
       if (!res.ok) {
-        throw new Error(res.message || (locale === 'en' ? 'Failed to redeem code' : 'Gagal menukarkan kode'));
+        throw new Error(errorText(res.code, res.message, res.reward?.retryInMinutes));
       }
 
       setStatus('success');
-      setReward(res.reward || { type: 'credits', credits: 0 });
+      setReward(res.reward);
       setCode('');
+      router.refresh(); // update the balance shown in the dashboard shell
     } catch (err: any) {
       setStatus('error');
       setErrorMsg(err.message);
@@ -103,7 +130,7 @@ export function RedeemView() {
                 {locale === 'en' ? 'Redeem Code Applied Successfully!' : 'Redeem Code Berhasil Diklaim!'}
               </h3>
               <p className="text-xs text-emerald-800 mt-1 leading-relaxed">
-                {reward.type === 'credits' 
+ {reward.type === 'credits' || !reward.package?.name
                   ? (locale === 'en' 
                       ? `You received ${formatCredits(reward.credits)} credits.` 
                       : `Kamu mendapatkan tambahan ${formatCredits(reward.credits)} kredit.`)

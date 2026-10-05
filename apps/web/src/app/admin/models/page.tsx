@@ -246,10 +246,8 @@ export default async function AdminModels() {
         </form>
       </div>
 
-      {/* Model Table Card */}
-      <div className="bg-white rounded-2xl border border-neutral-200/90 shadow-xs overflow-hidden">
-        <ModelsTable models={models} providers={providers} />
-      </div>
+      {/* Model Table */}
+      <ModelsTable models={models} providers={providers} />
     </div>
   );
 }

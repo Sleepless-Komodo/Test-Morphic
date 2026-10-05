@@ -1,10 +1,8 @@
 export const dynamic = 'force-dynamic';
 
-import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { getSessionWithRetry } from '@/lib/actions';
+import { getSessionWithRetry, isCurrentUserAdmin } from '@/lib/actions';
 import { getBalance } from '@morphic/db/billing';
-import { fetchBackendApi } from '@/lib/api-client';
 import { DashboardShell } from '@/components/DashboardShell';
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -15,21 +13,21 @@ export default async function DashboardLayout({ children }: { children: React.Re
     return null;
   }
 
-  let balance = 0;
-  try {
-    const balRes = await fetchBackendApi<{ credits: number }>('/v1/account/balance');
-    if (balRes.data?.credits != null) {
-      balance = balRes.data.credits;
-    } else {
-      balance = await getBalance(session.user.id);
-    }
-  } catch {
-    try {
-      balance = await getBalance(session.user.id);
-    } catch {
-      balance = 0;
-    }
-  }
+  // This layout wraps every dashboard page, so the gateway call that used to sit here was
+  // paid on every single navigation. It read the same balances row this does.
+  // Balance and admin role are read in parallel; the role comes from the DB (users.role),
+  // never from the session cookie, and a failed read simply hides the admin link.
+  const [balance, isAdmin] = await Promise.all([
+    getBalance(session.user.id).catch((err) => {
+      console.warn('[DashboardLayout] Balance read failed:', err);
+      return 0;
+    }),
+    isCurrentUserAdmin().catch(() => false),
+  ]);
 
-  return <DashboardShell session={session} balance={balance}>{children}</DashboardShell>;
+  return (
+    <DashboardShell session={session} balance={balance} isAdmin={isAdmin}>
+      {children}
+    </DashboardShell>
+  );
 }

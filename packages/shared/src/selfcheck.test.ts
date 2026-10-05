@@ -50,3 +50,20 @@ test('credits round up, never negative', () => {
   assert.equal(tokensToCredits(1, 100), 1);
   assert.equal(tokensToCredits(0, 100), 0);
 });
+
+test('sendEmail without RESEND_API_KEY logs in dev and throws in production', async () => {
+  const { sendEmail } = await import('./email.ts');
+  const prevKey = process.env.RESEND_API_KEY;
+  const prevEnv = process.env.NODE_ENV;
+  delete process.env.RESEND_API_KEY;
+  const msg = { to: 'a@b.c', subject: 's', html: '<p>x</p>', text: 'x' };
+  try {
+    process.env.NODE_ENV = 'development';
+    await sendEmail(msg);
+    process.env.NODE_ENV = 'production';
+    await assert.rejects(sendEmail(msg), /RESEND_API_KEY/);
+  } finally {
+    process.env.NODE_ENV = prevEnv;
+    if (prevKey) process.env.RESEND_API_KEY = prevKey;
+  }
+});

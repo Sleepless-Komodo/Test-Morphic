@@ -17,17 +17,11 @@ import { useTranslation } from '@/lib/i18n';
 import { formatCredits, formatTokenEstimate, timeAgo, API_BASE_URL } from '@/lib/utils';
 import GatewayStatusPopover from '@/components/GatewayStatusPopover';
 import QuickstartHub from '@/components/QuickstartHub';
-import { ApiKeyPingModal } from '@/components/ApiKeyPingModal';
-import { INFERENCE_MODELS, CapabilityTag, ModelItem } from '@/lib/models-data';
+import { ModelItem } from '@/lib/models-data';
+import { SpendTrend } from '@/components/SpendTrend';
 export type { ModelItem } from '@/lib/models-data';
 
-const BASE_URL = 'https://api.morphic.sh/v1';
-
-const CHEAP_DAILY_PACKAGES = [
-  { id: 'starter', label: 'Starter', labelEn: 'Starter', desc: 'Rp 10.000 / bulan', descEn: 'Rp 10,000 / month', credits: 10000 },
-  { id: 'pro', label: 'Pro', labelEn: 'Pro', desc: 'Rp 25.000 / bulan', descEn: 'Rp 25,000 / month', credits: 25000 },
-  { id: 'power', label: 'Power', labelEn: 'Power', desc: 'Rp 50.000 / bulan', descEn: 'Rp 50,000 / month', credits: 50000 },
-] as const;
+const BASE_URL = API_BASE_URL || 'https://morphic-api.web.id/v1';
 
 interface UsageSummary {
   totalTokens: number;
@@ -57,10 +51,7 @@ interface DeveloperGatewayProps {
   session?: unknown;
   userBalance?: number;
   balanceUpdatedAt?: string | null;
-  /**
-   * Optional initial models passed from the Server Component (fetched from PostgreSQL database).
-   * If not provided or empty, the component will fall back to static default models.
-   */
+  /** Active models from the database, passed in by the Server Component. */
   initialModels?: ModelItem[];
   recentRequests?: RecentRequestItem[];
   /** Pre-computed server-side model stats to avoid client-side string parsing */
@@ -69,6 +60,7 @@ interface DeveloperGatewayProps {
   serverMinInputRate?: number;
   activeKeys?: number;
   serverUsage?: { totalTokens: number; promptTokens: number; completionTokens: number };
+  dailySpend?: Array<{ day: string; credits: number }>;
 }
 
 export default function DeveloperGateway({
@@ -82,110 +74,36 @@ export default function DeveloperGateway({
   serverMinInputRate,
   activeKeys: serverActiveKeys,
   serverUsage,
+  dailySpend = [],
 }: DeveloperGatewayProps) {
   const { t, locale } = useTranslation();
   const isId = locale === 'id';
   const [baseUrlCopied, setBaseUrlCopied] = useState(false);
-  const [isPingModalOpen, setIsPingModalOpen] = useState(false);
 
-  // Filter state
-  const [selectedCapability, setSelectedCapability] = useState<CapabilityTag | 'All'>('All');
-  const [selectedProvider, setSelectedProvider] = useState<string>('All');
-  const [searchQuery, setSearchQuery] = useState('');
-
-  // API Key state
-  const [keyName, setKeyName] = useState('');
-  const [isCreatingKey, setIsCreatingKey] = useState(false);
-  const [keysList, setKeysList] = useState<{ id: string; name: string; key: string; date: string }[]>([]);
-
-  // Voucher / balance state
-  const [voucherCode, setVoucherCode] = useState('');
-  const [voucherSuccess, setVoucherSuccess] = useState<string | null>(null);
-  const [voucherBonus, setVoucherBonus] = useState(0);
-  const [voucherUpdatedAt, setVoucherUpdatedAt] = useState<string | null>(null);
-
-  const balance = userBalance + voucherBonus;
-  const balanceUpdatedAtState = voucherUpdatedAt ?? balanceUpdatedAt;
+  const balance = userBalance;
+  const balanceUpdatedAtState = balanceUpdatedAt;
 
   // Recent requests (may be overridden by real-time data in the future)
   const [recentRequests] = useState<RecentRequestItem[]>(initialRecentRequests);
 
   // Derived metrics from active model list / server data
-  const activeKeys = serverActiveKeys !== undefined ? serverActiveKeys : keysList.length;
+  const activeKeys = serverActiveKeys ?? 0;
 
-  const getPackageDesc = (pkg: (typeof CHEAP_DAILY_PACKAGES)[number]) =>
-    locale === 'en' && pkg.descEn ? pkg.descEn : pkg.desc;
+  // The catalogue shown here is whatever the database returned. It used to fall back to a
+  // static list of six models, so an empty or unreachable catalogue looked fully stocked.
+  const activeModelList = useMemo(() => initialModels ?? [], [initialModels]);
 
-  // Resolve dynamic model list: use database-fetched models if available, fallback to static defaults
-  const activeModelList = useMemo(() => {
-    return initialModels && initialModels.length > 0 ? initialModels : INFERENCE_MODELS;
-  }, [initialModels]);
-
-  // Derived metrics — prefer server-side pre-computed values (accurate, from real DB);
-  // fall back to client-side parsing of dailyRate strings only for static INFERENCE_MODELS.
+  // Every figure below is computed server-side from the catalogue; the client-side estimates
+  // that replaced them parsed a price string that no longer exists.
   const modelCount = serverModelCount ?? activeModelList.length;
-  const minInputRate = useMemo(() => {
-    if (serverMinInputRate !== undefined) return serverMinInputRate;
-    const rates = activeModelList
-      .map((m) => parseInt((m.dailyRate ?? '').replace(/[^0-9]/g, ''), 10))
-      .filter((r) => !isNaN(r) && r > 0);
-    return rates.length > 0 ? Math.min(...rates) : 0;
-  }, [activeModelList, serverMinInputRate]);
-  const avgCreditsPer1m = useMemo(() => {
-    if (serverAvgCreditsPer1m !== undefined) return serverAvgCreditsPer1m;
-    const rates = activeModelList
-      .map((m) => parseInt((m.dailyRate ?? '').replace(/[^0-9]/g, ''), 10))
-      .filter((r) => !isNaN(r) && r > 0);
-    return rates.length > 0 ? rates.reduce((a, b) => a + b, 0) / rates.length : 0;
-  }, [activeModelList, serverAvgCreditsPer1m]);
+  const minInputRate = serverMinInputRate ?? 0;
+  const avgCreditsPer1m = serverAvgCreditsPer1m ?? 0;
 
   // Real or server-provided usage summary
   const usage = useMemo<{ totalTokens: number; promptTokens: number; completionTokens: number }>(
     () => serverUsage ?? { totalTokens: 0, promptTokens: 0, completionTokens: 0 },
     [serverUsage],
   );
-
-  const filteredModels = useMemo(
-    () =>
-      activeModelList.filter((m) => {
-        const matchCap = selectedCapability === 'All' || m.capabilities.includes(selectedCapability as CapabilityTag);
-        const matchProv = selectedProvider === 'All' || m.provider === selectedProvider;
-        const matchSearch =
-          m.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          m.id.toLowerCase().includes(searchQuery.toLowerCase());
-        return matchCap && matchProv && matchSearch;
-      }),
-    [activeModelList, selectedCapability, selectedProvider, searchQuery],
-  );
-
-  const categories = useMemo(() => Array.from(new Set(filteredModels.map((m) => m.category))), [filteredModels]);
-
-  const handleCreateKey = () => {
-    if (!keyName.trim()) return;
-    setIsCreatingKey(true);
-    setTimeout(() => {
-      const hex = Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
-      setKeysList((prev) => [
-        { id: `k-${Date.now()}`, name: keyName, key: `mp-live-${hex}`, date: locale === 'id' ? 'Baru saja' : 'Just now' },
-        ...prev,
-      ]);
-      setKeyName('');
-      setIsCreatingKey(false);
-    }, 400);
-  };
-
-  const handleRedeemVoucher = () => {
-    if (!voucherCode.trim()) return;
-    const msg =
-      locale === 'en'
-        ? `Voucher "${voucherCode.toUpperCase()}" active! +Rp 5,000 balance added.`
-        : `Kupon "${voucherCode.toUpperCase()}" aktif! +Rp 5.000 saldo ditambahkan.`;
-    setVoucherSuccess(msg);
-    setVoucherBonus((p) => p + 5000);
-    setVoucherUpdatedAt(new Date().toISOString());
-    setVoucherCode('');
-    setTimeout(() => setVoucherSuccess(null), 5000);
-  };
 
   const copyBaseUrl = () => {
     navigator.clipboard.writeText(BASE_URL).then(() => {
@@ -233,15 +151,6 @@ export default function DeveloperGateway({
                 {BASE_URL}
               </code>
               <div className="flex items-center gap-2 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setIsPingModalOpen(true)}
-                  className="group px-2.5 py-2 rounded-xl bg-white border border-neutral-200 hover:border-neutral-950 hover:bg-neutral-950 text-neutral-700 hover:text-white transition-all shrink-0 shadow-2xs cursor-pointer flex items-center gap-1.5 text-xs font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
-                  title={locale === 'en' ? 'Test API Key Connectivity' : 'Uji Koneksi API Key'}
-                >
-                  <Activity className="h-3.5 w-3.5 text-neutral-600 group-hover:text-white transition-colors" />
-                  <span className="text-xs font-medium">{locale === 'en' ? 'Test Ping' : 'Uji Ping'}</span>
-                </button>
                 <button
                   type="button"
                   onClick={copyBaseUrl}
@@ -393,162 +302,147 @@ export default function DeveloperGateway({
         </Link>
       </div>
 
-      {/* Row 3: Live Request Telemetry & Logs Preview Table */}
-      <div className="rounded-3xl bg-white border border-neutral-200/90 shadow-xs overflow-hidden">
-        <div className="p-5 sm:p-6 border-b border-neutral-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-neutral-50/40">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="relative flex h-2 w-2">
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
-              </span>
-              <h2 className="font-heading font-bold text-base text-neutral-950 tracking-tight">
-                {t.dashboard.telemetryTitle}
-              </h2>
-            </div>
-            <p className="text-xs text-neutral-500 mt-1">
-              {t.dashboard.telemetryDesc}
-            </p>
-          </div>
+      <SpendTrend days={dailySpend} balance={balance} isId={isId} />
 
-          <Link
-            href="/dashboard/usage"
-            className="inline-flex items-center gap-1.5 text-xs font-semibold text-neutral-700 hover:text-neutral-950 cursor-pointer group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 rounded-lg py-1 px-2.5 hover:bg-neutral-100 transition-colors shrink-0 self-start sm:self-auto"
-          >
-            <span>{t.dashboard.viewFullLogs}</span>
-            <ArrowUpRight className="h-3.5 w-3.5 text-neutral-400 group-hover:text-neutral-950 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all" />
-          </Link>
-        </div>
-
-        {recentRequests.length === 0 ? (
-          <div className="p-10 sm:p-12 text-center space-y-3">
-            <div className="w-12 h-12 rounded-2xl bg-neutral-100 border border-neutral-200 flex items-center justify-center mx-auto text-neutral-400">
-              <Terminal className="h-6 w-6" />
-            </div>
-            <div className="space-y-1">
-              <h3 className="font-heading font-bold text-sm text-neutral-900">
-                {t.dashboard.noRequestsTitle}
-              </h3>
-              <p className="text-xs text-neutral-500 max-w-md mx-auto leading-relaxed">
-                {t.dashboard.noRequestsDesc.replace('{baseUrl}', BASE_URL)}
+      {/* Row 3: 2-Column Split: Telemetry Feed (Left) & Quickstart Hub (Right) */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
+        {/* Left Column: Live Request Telemetry Activity Feed */}
+        <div className="rounded-3xl bg-white border border-neutral-200/90 shadow-xs overflow-hidden flex flex-col h-full">
+          <div className="p-5 sm:p-6 border-b border-neutral-200/80 flex items-center justify-between gap-3 bg-neutral-50/40">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="relative flex h-2 w-2">
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+                </span>
+                <h2 className="font-heading font-bold text-base text-neutral-950 tracking-tight">
+                  {t.dashboard.telemetryTitle}
+                </h2>
+              </div>
+              <p className="text-xs text-neutral-500 mt-1 line-clamp-1">
+                {t.dashboard.telemetryDesc}
               </p>
             </div>
+
+            <Link
+              href="/dashboard/usage"
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-neutral-700 hover:text-neutral-950 cursor-pointer group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 rounded-lg py-1 px-2.5 hover:bg-neutral-100 transition-colors shrink-0"
+            >
+              <span>{t.dashboard.viewFullLogs}</span>
+              <ArrowUpRight className="h-3.5 w-3.5 text-neutral-400 group-hover:text-neutral-950 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all" />
+            </Link>
           </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="border-b border-neutral-200 bg-neutral-50/70 text-[11px] font-mono uppercase text-neutral-500">
-                  <th className="px-5 py-3.5">{t.dashboard.thUsageStatus}</th>
-                  <th className="px-5 py-3.5">{t.dashboard.thUsageTraceId}</th>
-                  <th className="px-5 py-3.5">{t.dashboard.thUsageModel}</th>
-                  <th className="px-5 py-3.5 text-right">{t.dashboard.thUsageTokens}</th>
-                  <th className="px-5 py-3.5 text-right">{t.dashboard.thCost}</th>
-                  <th className="px-5 py-3.5 text-right">{t.dashboard.thUsageLatency}</th>
-                  <th className="px-5 py-3.5 text-right">{t.dashboard.thUsageTime}</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-neutral-100 font-mono text-[11px]">
-                {recentRequests.map((r) => {
-                  const isSuccess = r.status === 'success';
-                  return (
-                    <tr key={r.id} className="hover:bg-neutral-50/60 transition-colors">
-                      {/* Status */}
-                      <td className="px-5 py-3.5 whitespace-nowrap">
+
+          {recentRequests.length === 0 ? (
+            <div className="p-8 sm:p-10 text-center space-y-3 flex-1 flex flex-col justify-center items-center">
+              <div className="w-12 h-12 rounded-2xl bg-neutral-100 border border-neutral-200 flex items-center justify-center mx-auto text-neutral-400">
+                <Terminal className="h-6 w-6" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="font-heading font-bold text-sm text-neutral-900">
+                  {t.dashboard.noRequestsTitle}
+                </h3>
+                <p className="text-xs text-neutral-500 max-w-xs mx-auto leading-relaxed">
+                  {t.dashboard.noRequestsDesc.replace('{baseUrl}', BASE_URL)}
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="divide-y divide-neutral-100 flex-1 overflow-y-auto max-h-[380px]">
+              {recentRequests.map((r) => {
+                const isSuccess = r.status === 'success';
+                return (
+                  <div
+                    key={r.id}
+                    className="p-4 hover:bg-neutral-50/70 transition-colors flex flex-col gap-2"
+                  >
+                    {/* Top Row: Status, Model & Stream badge, Latency & Time */}
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
                         {isSuccess ? (
-                          <span className="inline-flex items-center gap-1.5 text-xs font-mono font-medium text-neutral-700">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
-                            <span>200 OK</span>
+                          <span className="inline-flex items-center gap-1 text-[11px] font-mono font-medium px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 shrink-0">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                            <span>200</span>
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1.5 text-xs font-mono font-medium text-red-600">
-                            <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />
+                          <span className="inline-flex items-center gap-1 text-[11px] font-mono font-medium px-2 py-0.5 rounded-full bg-red-50 text-red-700 border border-red-200 shrink-0">
+                            <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
                             <span>ERR</span>
                           </span>
                         )}
-                      </td>
 
-                      {/* Trace ID */}
-                      <td className="px-5 py-3.5 whitespace-nowrap text-neutral-500">
-                        {r.requestId ? (
-                          <span className="truncate block max-w-[100px]">{r.requestId.slice(0, 12)}…</span>
-                        ) : (
-                          <span className="text-neutral-500">{r.id.slice(0, 8)}…</span>
-                        )}
-                      </td>
-
-                      {/* Model */}
-                      <td className="px-5 py-3.5 font-bold text-neutral-900 font-sans whitespace-nowrap">
-                        <div className="flex items-center gap-2">
-                          <span>{r.model ?? r.publicModelId ?? 'Gateway'}</span>
-                          {r.streamed && (
-                            <span className="px-1.5 py-0.5 rounded text-[9px] bg-neutral-100 text-neutral-600 font-mono font-normal">
-                              stream
-                            </span>
-                          )}
-                        </div>
-                      </td>
-
-                      {/* Tokens */}
-                      <td className="px-5 py-3.5 text-right whitespace-nowrap font-mono tabular-nums">
-                        <span className="font-bold text-neutral-900">
-                          {r.totalTokens != null ? formatCredits(r.totalTokens) : '·'}
+                        <span className="font-bold text-xs text-neutral-900 truncate">
+                          {r.model ?? r.publicModelId ?? 'Gateway'}
                         </span>
-                        {(r.promptTokens != null || r.completionTokens != null) && (
-                          <span className="text-[10px] text-neutral-500 block font-normal">
-                            {r.promptTokens ?? 0} in / {r.completionTokens ?? 0} out
+
+                        {r.streamed && (
+                          <span className="px-1.5 py-0.5 rounded text-[9px] bg-neutral-100 text-neutral-500 font-mono shrink-0">
+                            stream
                           </span>
                         )}
-                      </td>
+                      </div>
 
-                      {/* Cost */}
-                      <td className="px-5 py-3.5 text-right font-bold text-neutral-900 whitespace-nowrap font-mono tabular-nums">
-                        {formatCredits(r.credits)} cr
-                      </td>
-
-                      {/* Latency */}
-                      <td className="px-5 py-3.5 text-right whitespace-nowrap font-mono tabular-nums">
+                      <div className="flex items-center gap-2 text-[11px] font-mono shrink-0">
                         {r.latencyMs != null ? (
                           <span
                             className={
                               r.latencyMs < 300
                                 ? 'text-emerald-700 font-semibold'
                                 : r.latencyMs < 1000
-                                ? 'text-neutral-700'
-                                : 'text-amber-700'
+                                ? 'text-neutral-700 font-medium'
+                                : 'text-amber-700 font-medium'
                             }
                           >
                             {r.latencyMs}ms
                           </span>
                         ) : (
-                          <span className="text-neutral-500">·</span>
+                          <span className="text-neutral-400">·</span>
                         )}
-                      </td>
+                        <span className="text-neutral-300">·</span>
+                        <span
+                          className="text-neutral-500"
+                          title={new Date(r.createdAt).toLocaleString(isId ? 'id-ID' : 'en-US')}
+                        >
+                          {timeAgo(r.createdAt, locale)}
+                        </span>
+                      </div>
+                    </div>
 
-                      {/* Time */}
-                      <td
-                        className="px-5 py-3.5 text-right text-neutral-500 whitespace-nowrap font-mono text-[11px]"
-                        title={new Date(r.createdAt).toLocaleString(isId ? 'id-ID' : 'en-US')}
+                    {/* Bottom Row: Trace ID, Tokens breakdown, Cost */}
+                    <div className="flex items-center justify-between text-[11px] font-mono text-neutral-500 gap-2">
+                      <span
+                        className="truncate max-w-[130px] sm:max-w-[160px] text-neutral-400 hover:text-neutral-600 transition-colors"
+                        title={r.requestId || r.id}
                       >
-                        {timeAgo(r.createdAt, locale)}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
+                        {r.requestId ? `${r.requestId.slice(0, 14)}…` : `${r.id.slice(0, 10)}…`}
+                      </span>
+
+                      <div className="flex items-center gap-2 tabular-nums">
+                        <span>
+                          <strong className="text-neutral-800 font-semibold">
+                            {r.totalTokens != null ? formatCredits(r.totalTokens) : '0'}
+                          </strong>{' '}
+                          <span className="text-[10px] text-neutral-400 hidden sm:inline">
+                            ({r.promptTokens ?? 0} in / {r.completionTokens ?? 0} out)
+                          </span>
+                        </span>
+                        <span className="text-neutral-300">·</span>
+                        <span className="font-semibold text-neutral-900 bg-neutral-100 px-1.5 py-0.5 rounded text-[10px]">
+                          {formatCredits(r.credits)} cr
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Right Column: Quickstart Hub */}
+        <div className="h-full">
+          <QuickstartHub />
+        </div>
       </div>
-
-      {/* Row 4: Quickstart Hub */}
-      <QuickstartHub />
-
-      {/* Test Ping Modal */}
-      <ApiKeyPingModal
-        isOpen={isPingModalOpen}
-        onClose={() => setIsPingModalOpen(false)}
-        availableModels={activeModelList.map((m) => ({ id: m.id, name: m.name }))}
-      />
     </div>
   );
 }

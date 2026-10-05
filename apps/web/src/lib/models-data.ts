@@ -7,10 +7,14 @@ export interface ModelItem {
   category: 'Coding' | 'Reasoning' | 'Chat' | 'Multimodal';
   capabilities: CapabilityTag[];
   contextWindow: string;
-  dailyRate: string;
-  dailyRateEn: string;
-  speed: 'Ultra Fast' | 'Fast' | 'Balanced';
-  estimatedLatency: string;
+  // Marketing fields that only the static landing catalogue carries. Rows coming from the
+  // database leave them out rather than inventing a speed, a latency or a daily price.
+  dailyRate?: string;
+  dailyRateEn?: string;
+  speed?: 'Ultra Fast' | 'Fast' | 'Balanced';
+  estimatedLatency?: string;
+  inputCreditsPer1m?: number;
+  outputCreditsPer1m?: number;
   description: {
     id: string;
     en: string;
@@ -123,9 +127,9 @@ export const INFERENCE_MODELS = ALL_MODELS;
 
 export function getModelDailyRate(model: ModelItem, locale: string): string {
   if (locale === 'en') {
-    return model.dailyRateEn || model.dailyRate.replace('/ hari', '/ day').replace(/\./g, ',');
+    return model.dailyRateEn || (model.dailyRate ?? '').replace('/ hari', '/ day').replace(/\./g, ',');
   }
-  return model.dailyRate;
+  return model.dailyRate ?? '';
 }
 
 export function getModelBadge(model: ModelItem, locale: string): string | undefined {

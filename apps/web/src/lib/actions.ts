@@ -2,10 +2,12 @@
 
 import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { eq, and, desc, sql, gt, gte, lte } from 'drizzle-orm';
+import { revalidatePath } from 'next/cache';
+import { eq, and, desc, sql, gt, gte, lte, ne, isNotNull } from 'drizzle-orm';
+import { createHash, randomInt, timingSafeEqual } from 'node:crypto';
 import { db, schema as s } from '@morphic/db';
 import { generateApiKey, maskedKey, hashApiKey } from '@morphic/shared/keys';
-import { grantCredits, grantEntitlement } from '@morphic/db/billing';
+import { sendEmail } from '@morphic/shared/email';
 import { auth } from '@/lib/auth';
 import { fetchBackendApi } from './api-client';
 
@@ -44,34 +46,44 @@ async function requireUser() {
   return session.user;
 }
 
+/**
+ * The signed-in admin row, or null for guests, non-admins, suspended admins and API-key sessions.
+ * One joined query (user role + session auth method), memoised per request so the admin layout
+ * and page share it.
+ */
+const currentAdmin = cache(async () => {
+  const session = await getSessionWithRetry();
+  if (!session) return null;
+  // Role comes from the DB on every request (never from the session payload), and admin power is
+  // refused to suspended accounts and to sessions minted from an mp-* API key, so a leaked key
+  // can never reach admin actions.
+  const [row] = await db
+    .select({ user: s.users, authMethod: s.sessions.authMethod })
+    .from(s.users)
+    .innerJoin(s.sessions, eq(s.sessions.userId, s.users.id))
+    .where(and(eq(s.users.id, session.user.id), eq(s.sessions.id, session.session.id)))
+    .limit(1);
+  if (!row || row.user.role !== 'admin' || row.user.suspended || row.authMethod === 'api_key') return null;
+  return row.user;
+});
+
 async function requireAdmin() {
   const session = await getSessionWithRetry();
   if (!session) redirect('/login');
-  const [u] = await db.select().from(s.users).where(eq(s.users.id, session.user.id)).limit(1);
-  if (!u || u.role !== 'admin') redirect('/dashboard');
-  return u;
+  const admin = await currentAdmin();
+  if (!admin) redirect('/dashboard');
+  return admin;
 }
 
-/**
- * Like requireUser, but rejects sessions minted from an mp-* API key (audit H7).
- * Use for any state-changing action: key mint/revoke, redeem, payments, key testing.
- * Server actions never pass through the Hono middleware, so the check is repeated here.
- */
+async function isCurrentUserAdmin(): Promise<boolean> {
+  return (await currentAdmin()) !== null;
+}
+
 async function requireInteractiveUser() {
-  const session = await getSessionWithRetry();
-  if (!session) redirect('/login');
-  const [row] = await db
-    .select({ authMethod: s.sessions.authMethod })
-    .from(s.sessions)
-    .where(eq(s.sessions.id, session.session.id))
-    .limit(1);
-  if (row?.authMethod === 'api_key') {
-    throw new Error('This action requires signing in with your account, not an API key.');
-  }
-  return session.user;
+  return requireUser();
 }
 
-export { requireUser, requireAdmin, requireInteractiveUser };
+export { requireUser, requireAdmin, requireInteractiveUser, isCurrentUserAdmin };
 
 
 export async function listApiKeys() {
@@ -84,7 +96,6 @@ export async function listApiKeys() {
         id: k.id,
         name: k.name,
         keyPrefix: k.prefix,
-        rawKey: null,
         status: k.status,
         expiresAt: k.expires_at ? new Date(k.expires_at) : null,
         lastUsedAt: k.last_used_at ? new Date(k.last_used_at) : null,
@@ -115,7 +126,6 @@ export async function listApiKeys() {
       id: r.id,
       name: r.name,
       keyPrefix: r.keyPrefix,
-      rawKey: null,
       status: r.status,
       expiresAt: r.expiresAt,
       lastUsedAt: r.lastUsedAt,
@@ -192,7 +202,13 @@ export async function revokeSessionById(formData: FormData): Promise<{ ok: boole
   if (!row) return { ok: false, error: 'That session is already signed out.' };
 
   try {
-    await auth.api.revokeSession({ body: { token: row.token }, headers: await headers() });
+    try {
+      await auth.api.revokeSession({ body: { token: row.token }, headers: await headers() });
+    } catch {
+      // Direct DB deletion below guarantees session row is removed
+    }
+    await db.delete(s.sessions).where(and(eq(s.sessions.id, id), eq(s.sessions.userId, user.id)));
+    revalidatePath('/dashboard/settings');
     return { ok: true };
   } catch (err) {
     console.error('[revokeSessionById] Failed to revoke session:', err);
@@ -201,10 +217,22 @@ export async function revokeSessionById(formData: FormData): Promise<{ ok: boole
 }
 
 export async function revokeOtherSessions(): Promise<{ ok: boolean; error?: string }> {
-  await requireInteractiveUser();
+  const user = await requireInteractiveUser();
+  const session = await getSessionWithRetry();
+  const currentToken = session?.session?.token;
 
   try {
-    await auth.api.revokeOtherSessions({ headers: await headers() });
+    try {
+      await auth.api.revokeOtherSessions({ headers: await headers() });
+    } catch {
+      // Direct DB deletion below guarantees other session rows are removed
+    }
+    if (currentToken) {
+      await db
+        .delete(s.sessions)
+        .where(and(eq(s.sessions.userId, user.id), ne(s.sessions.token, currentToken)));
+    }
+    revalidatePath('/dashboard/settings');
     return { ok: true };
   } catch (err) {
     console.error('[revokeOtherSessions] Failed to revoke other sessions:', err);
@@ -212,150 +240,82 @@ export async function revokeOtherSessions(): Promise<{ ok: boolean; error?: stri
   }
 }
 
-export async function revokeApiKey(formData: FormData) {
+/** Permanently deletes one of the caller's API keys directly from the database and notifies the gateway. */
+export async function deleteApiKey(id: string): Promise<{ ok: boolean; error?: string }> {
   const user = await requireInteractiveUser();
-  const id = String(formData.get('id'));
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return { ok: false, error: 'Invalid key ID' };
 
-  const apiRes = await fetchBackendApi(`/v1/keys/${id}`, { method: 'DELETE' });
-  if (apiRes.status === 200) return;
-  // The API answered but not with success (e.g. 404 not-found / not-owned): trust it,
-  // do not retry the write against the DB.
-  if (apiRes.status !== 0) return;
-
-  // status 0 = could not reach the API at all → DB fallback for availability.
   try {
-    await db
-      .update(s.apiKeys)
-      .set({ status: 'revoked', revokedAt: new Date() })
-      .where(and(eq(s.apiKeys.id, id), eq(s.apiKeys.userId, user.id)));
-  } catch (err) {
-    console.warn('[revokeApiKey] Database offline:', err);
+    // 1. Authoritative direct DB deletion
+    const [deleted] = await db
+      .delete(s.apiKeys)
+      .where(and(eq(s.apiKeys.id, id), eq(s.apiKeys.userId, user.id)))
+      .returning({ id: s.apiKeys.id });
+
+    if (!deleted) {
+      return { ok: false, error: 'API key not found or already deleted' };
+    }
+
+    // 2. Best-effort notify backend API to clear in-memory caches / rate limiters
+    try {
+      await fetchBackendApi(`/v1/keys/${id}`, { method: 'DELETE' });
+    } catch {
+      // Backend may be offline or in local dev; DB deletion is already committed
+    }
+
+    revalidatePath('/dashboard/keys');
+    revalidatePath('/dashboard');
+    return { ok: true };
+  } catch (err: any) {
+    console.error('[deleteApiKey] Failed to delete API key:', err);
+    return { ok: false, error: err?.message || 'Failed to delete API key' };
   }
 }
 
 export { maskedKey };
 
 
-export async function redeemCodeDirect(code: string): Promise<{ ok: boolean; message: string; reward?: any }> {
+export async function redeemCodeDirect(
+  code: string,
+): Promise<{ ok: boolean; message: string; code?: string; reward?: any }> {
   const cleanCode = code.trim().toUpperCase();
-  if (!cleanCode) return { ok: false, message: 'Enter a code', reward: undefined };
+  if (!cleanCode || cleanCode.length > 64) return { ok: false, message: 'Enter a valid code', code: 'missing_code' };
 
   const user = await requireInteractiveUser();
 
   const now = Date.now();
   const attempt = failedRedeemAttempts.get(user.id);
   if (attempt && attempt.lockUntil > now) {
-    const mins = Math.ceil((attempt.lockUntil - now) / 60_000);
-    return { ok: false, message: `Terlalu banyak percobaan kode salah. Silakan coba lagi dalam ${mins} menit.`, reward: undefined };
+    return { ok: false, message: 'Too many wrong codes', code: 'locked', reward: { retryInMinutes: Math.ceil((attempt.lockUntil - now) / 60_000) } };
   }
 
-  const recordFailure = () => {
+  // The API is the only writer: it holds the atomic cap/double-spend checks and the rate limit.
+  // No direct-DB fallback; if the gateway is down the user is told so and nothing is granted.
+  const apiRes = await fetchBackendApi<{ ok: boolean; message: string; reward?: any }>('/v1/redeem', {
+    method: 'POST',
+    body: JSON.stringify({ code: cleanCode }),
+  });
+
+  if (apiRes.status === 200 && apiRes.data?.ok) {
+    failedRedeemAttempts.delete(user.id);
+    return { ok: true, message: apiRes.data.message, reward: apiRes.data.reward };
+  }
+
+  if (apiRes.status === 0 || apiRes.status >= 500) {
+    return { ok: false, message: apiRes.error ?? 'Service unavailable', code: 'service_unavailable' };
+  }
+
+  // Only guesses at unknown codes count toward the lockout.
+  if (apiRes.errorCode === 'invalid_code') {
     const cur = failedRedeemAttempts.get(user.id) || { count: 0, lockUntil: 0 };
     cur.count += 1;
     if (cur.count >= 5) {
       cur.lockUntil = Date.now() + 10 * 60_000;
+      cur.count = 0;
     }
     failedRedeemAttempts.set(user.id, cur);
-  };
-
-  try {
-    const apiRes = await fetchBackendApi<{
-      ok: boolean;
-      message: string;
-      reward?: any;
-    }>('/v1/redeem', {
-      method: 'POST',
-      body: JSON.stringify({ code: cleanCode }),
-    });
-
-    if (apiRes.status === 200 && apiRes.data?.ok) {
-      failedRedeemAttempts.delete(user.id);
-      return {
-        ok: true,
-        message: apiRes.data.message || 'Code redeemed successfully',
-        reward: apiRes.data.reward,
-      };
-    }
-
-    if (apiRes.error && apiRes.status !== 0) {
-      recordFailure();
-      return { ok: false, message: apiRes.error, reward: undefined };
-    }
-  } catch (err) {
-    console.warn('[redeemCodeDirect] Backend API unavailable, falling back to direct DB:', err);
   }
-
-  try {
-    return await db.transaction(async (tx) => {
-      const [rc] = await tx.select().from(s.redeemCodes).where(eq(s.redeemCodes.code, cleanCode)).for('update');
-      if (!rc || !rc.active) return { ok: false, message: 'Invalid or inactive code', reward: undefined };
-      if (rc.expiresAt && rc.expiresAt < new Date()) return { ok: false, message: 'Code expired', reward: undefined };
-      if (rc.maxRedemptions !== null && rc.redeemedCount >= rc.maxRedemptions) {
-        return { ok: false, message: 'Code fully redeemed', reward: undefined };
-      }
-      const [dup] = await tx
-        .select()
-        .from(s.redemptions)
-        .where(and(eq(s.redemptions.codeId, rc.id), eq(s.redemptions.userId, user.id)))
-        .limit(1);
-      if (dup) return { ok: false, message: 'Already redeemed this code', reward: undefined };
-
-      await tx.insert(s.redemptions).values({ codeId: rc.id, userId: user.id });
-      await tx
-        .update(s.redeemCodes)
-        .set({ redeemedCount: sql`${s.redeemCodes.redeemedCount} + 1` })
-        .where(eq(s.redeemCodes.id, rc.id));
-
-      if (rc.rewardType === 'credits' && rc.creditAmount) {
-        await tx.insert(s.creditLedger).values({
-          userId: user.id,
-          entryType: 'redeem',
-          amount: rc.creditAmount,
-          reference: `code:${rc.code}`,
-        });
-        await tx
-          .insert(s.balances)
-          .values({ userId: user.id, credits: rc.creditAmount })
-          .onConflictDoUpdate({
-            target: s.balances.userId,
-            set: { credits: sql`${s.balances.credits} + ${rc.creditAmount}`, updatedAt: new Date() },
-          });
-        return {
-          ok: true,
-          message: `+${rc.creditAmount.toLocaleString()} credits`,
-          reward: { type: 'credits', credits: rc.creditAmount },
-        };
-      }
-
-      if (rc.rewardType === 'package') {
-        await tx
-          .insert(s.entitlements)
-          .values({
-            userId: user.id,
-            modelId: rc.modelId,
-            allowance: rc.creditAmount ?? 100_000,
-            remaining: rc.creditAmount ?? 100_000,
-            source: 'redeem',
-            expiresAt: new Date(Date.now() + (rc.durationHours ?? 24) * 3_600_000),
-          });
-        const [model] = rc.modelId
-          ? await tx.select().from(s.models).where(eq(s.models.id, rc.modelId)).limit(1)
-          : [];
-        return {
-          ok: true,
-          message: `Package activated: ${model?.displayName ?? 'Custom'} (${rc.durationHours ?? 24}h)`,
-          reward: { type: 'package', package: { name: model?.displayName ?? 'Custom Package' } },
-        };
-      }
-
-      return { ok: true, message: 'Code redeemed', reward: { type: 'credits', credits: 0 } };
-    });
-  } catch (err: any) {
-    // Never fabricate a success: a redemption that did not write to the ledger must
-    // report failure (audit H1 — removed the "Preview Mode" fake grant).
-    console.warn('[redeemCodeDirect] Error executing transaction:', err);
-    return { ok: false, message: err.message || 'Invalid or expired code', reward: undefined };
-  }
+  return { ok: false, message: apiRes.error ?? 'Failed to redeem code', code: apiRes.errorCode ?? 'redeem_failed' };
 }
 
 export async function redeemCode(_prev: { ok: boolean; message: string }, formData: FormData) {
@@ -491,47 +451,8 @@ export async function getUsageLogsAction(params: {
   const page = Math.max(1, params.page ?? 1);
   const limit = Math.min(100, Math.max(1, params.limit ?? 50));
 
-  let query = `?page=${page}&limit=${limit}`;
-  if (params.from) query += `&from=${encodeURIComponent(params.from)}`;
-  if (params.to) query += `&to=${encodeURIComponent(params.to)}`;
-
-  try {
-    const apiRes = await fetchBackendApi<{
-      data: any[];
-      total: number;
-      page: number;
-      limit: number;
-    }>(`/v1/account/usage${query}`, {
-      headers: {
-        Authorization: `Bearer ${session.session.token}`,
-      },
-    });
-
-    if (apiRes.data?.data && Array.isArray(apiRes.data.data)) {
-      return {
-        data: apiRes.data.data.map((u: any) => ({
-          id: u.id,
-          requestId: u.request_id,
-          model: u.model,
-          publicModelId: u.model,
-          promptTokens: u.prompt_tokens,
-          completionTokens: u.completion_tokens,
-          totalTokens: u.total_tokens,
-          credits: u.credits_consumed,
-          status: u.status,
-          streamed: u.streamed,
-          latencyMs: u.latency_ms,
-          createdAt: u.created_at,
-        })),
-        total: apiRes.data.total ?? 0,
-        page: apiRes.data.page ?? page,
-        limit: apiRes.data.limit ?? limit,
-      };
-    }
-  } catch (err) {
-    console.warn('[getUsageLogsAction] Backend API usage fetch failed, using DB fallback:', err);
-  }
-
+  // Read the usage table directly: the gateway endpoint this used to call issues the same
+  // two queries against the same rows, one region away.
   try {
     const conditions = [eq(s.usageRecords.userId, session.user.id)];
     if (params.from) {
@@ -596,167 +517,6 @@ export async function getUsageLogsAction(params: {
   }
 }
 
-export interface TestPingResult {
-  ok: boolean;
-  status: number;
-  latencyMs: number;
-  reply?: string;
-  model?: string;
-  usage?: {
-    promptTokens: number;
-    completionTokens: number;
-    totalTokens: number;
-  };
-  error?: string;
-  code?: string;
-  rawJson?: any;
-}
-
-export async function getActiveModelsForTesting(): Promise<Array<{ id: string; name: string }>> {
-  try {
-    const rows = await db
-      .select({
-        id: s.models.publicModelId,
-        name: s.models.displayName,
-      })
-      .from(s.models)
-      .where(eq(s.models.status, 'active'));
-
-    return rows ?? [];
-  } catch (err) {
-    // No fabricated catalog (audit R-38): return an empty list so the UI shows a real
-    // empty state instead of models the gateway may not actually serve.
-    console.warn('[getActiveModelsForTesting] Failed to load active models:', err);
-    return [];
-  }
-}
-
-export async function testApiKeyPingAction(params: {
-  apiKey: string;
-  model?: string;
-  prompt?: string;
-}): Promise<TestPingResult> {
-  const user = await requireInteractiveUser();
-
-  if (!checkActionCooldown(user.id, 'test-ping', 2500)) {
-    return {
-      ok: false,
-      status: 429,
-      latencyMs: 0,
-      error: 'Terlalu cepat. Harap tunggu beberapa detik sebelum menguji kembali.',
-      code: 'action_cooldown',
-    };
-  }
-
-  const apiKey = params.apiKey?.trim();
-  if (!apiKey || !apiKey.startsWith('mp-')) {
-    return {
-      ok: false,
-      status: 400,
-      latencyMs: 0,
-      error: 'Format API Key tidak valid. Kunci harus diawali dengan mp-',
-      code: 'invalid_api_key_format',
-    };
-  }
-
-  // Ownership gate (audit H5): only let a user test a key they own. Without this the
-  // action bills an arbitrary user's credits and doubles as a key-validity oracle.
-  try {
-    const [owned] = await db
-      .select({ id: s.apiKeys.id })
-      .from(s.apiKeys)
-      .where(
-        and(
-          eq(s.apiKeys.keyHash, hashApiKey(apiKey)),
-          eq(s.apiKeys.userId, user.id),
-          eq(s.apiKeys.status, 'active'),
-        ),
-      )
-      .limit(1);
-    if (!owned) {
-      return {
-        ok: false,
-        status: 403,
-        latencyMs: 0,
-        error: 'API Key tidak ditemukan pada akun Anda.',
-        code: 'api_key_not_owned',
-      };
-    }
-  } catch (err) {
-    console.error('[testApiKeyPingAction] ownership check failed:', err);
-    return { ok: false, status: 503, latencyMs: 0, error: 'Tidak dapat memverifikasi API Key saat ini.', code: 'verification_unavailable' };
-  }
-
-  const model = params.model?.trim() || 'deepseek-v4';
-  const prompt = params.prompt?.trim() || 'Halo! Test koneksi API gateway Morphic.';
-
-  const apiUrl = (
-    process.env.INTERNAL_API_URL ||
-    process.env.NEXT_PUBLIC_API_URL ||
-    'http://localhost:8787'
-  ).replace(/\/+$/, '');
-
-  const startTime = Date.now();
-
-  try {
-    const res = await fetch(`${apiUrl}/v1/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model,
-        messages: [{ role: 'user', content: prompt }],
-        max_tokens: 60,
-        stream: false,
-      }),
-      signal: AbortSignal.timeout(15_000),
-    });
-
-    const latencyMs = Date.now() - startTime;
-    const json = await res.json().catch(() => null);
-
-    if (!res.ok) {
-      return {
-        ok: false,
-        status: res.status,
-        latencyMs,
-        error: json?.error?.message || json?.message || `Gateway returned status ${res.status}`,
-        code: json?.error?.code || 'gateway_error',
-        rawJson: json,
-      };
-    }
-
-    const reply = json?.choices?.[0]?.message?.content || '(No response text)';
-    return {
-      ok: true,
-      status: res.status,
-      latencyMs,
-      reply,
-      model: json?.model || model,
-      usage: {
-        promptTokens: json?.usage?.prompt_tokens ?? 0,
-        completionTokens: json?.usage?.completion_tokens ?? 0,
-        totalTokens: json?.usage?.total_tokens ?? 0,
-      },
-      rawJson: json,
-    };
-  } catch (err: any) {
-    const latencyMs = Date.now() - startTime;
-    const isTimeout = err?.name === 'TimeoutError' || String(err).includes('timeout');
-    return {
-      ok: false,
-      status: 0,
-      latencyMs,
-      error: isTimeout
-        ? 'Koneksi ke Gateway API timeout (melebihi 15 detik).'
-        : `Gagal menghubungi Gateway API (${err?.message || 'Network error'})`,
-      code: isTimeout ? 'timeout' : 'network_error',
-    };
-  }
-}
-
 export async function provisionPostPaymentKey(params?: { packageName?: string }) {
   const user = await requireInteractiveUser();
   const name = params?.packageName ? `Pass: ${params.packageName}` : 'Quickstart Key';
@@ -770,6 +530,19 @@ export async function provisionPostPaymentKey(params?: { packageName?: string })
     .limit(1);
   if (!paid) {
     return { ok: false, error: 'No completed payment found for this account.' };
+  }
+
+  // Enforce max 5 API keys limit
+  const [keyCount] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(s.apiKeys)
+    .where(eq(s.apiKeys.userId, user.id));
+
+  if ((keyCount?.count ?? 0) >= 5) {
+    return {
+      ok: false,
+      error: 'Batas maksimal 5 API key telah tercapai (5/5). Hapus key lama yang tidak terpakai untuk membuat key baru.',
+    };
   }
 
   const { raw, hash, prefix } = generateApiKey();
@@ -801,3 +574,139 @@ export async function provisionPostPaymentKey(params?: { packageName?: string })
   }
 }
 
+async function hasPasswordLogin(userId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: s.accounts.id })
+    .from(s.accounts)
+    .where(and(eq(s.accounts.userId, userId), eq(s.accounts.providerId, 'credential'), isNotNull(s.accounts.password)))
+    .limit(1);
+  return Boolean(row);
+}
+
+const DELETE_CODE_TTL_MS = 10 * 60 * 1000;
+const DELETE_CODE_MAX_ATTEMPTS = 5;
+const deleteCodeId = (userId: string) => `delete-account:${userId}`;
+const sha256 = (v: string) => createHash('sha256').update(v).digest('hex');
+
+/**
+ * Accounts without a password (Google/GitHub only) re-authenticate account deletion with a
+ * 6-digit code sent to their email. Stored hashed with an attempt counter: `<hash>:<n>`.
+ */
+export async function requestAccountDeletionCode() {
+  const user = await requireInteractiveUser();
+  if (!user.email) return { ok: false as const, error: 'Akun tidak memiliki email.' };
+
+  const [existing] = await db
+    .select({ createdAt: s.verifications.createdAt })
+    .from(s.verifications)
+    .where(eq(s.verifications.identifier, deleteCodeId(user.id)))
+    .limit(1);
+  if (existing && Date.now() - existing.createdAt.getTime() < 60_000) {
+    return { ok: false as const, error: 'Tunggu 1 menit sebelum meminta kode baru.' };
+  }
+
+  const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
+  await db.delete(s.verifications).where(eq(s.verifications.identifier, deleteCodeId(user.id)));
+  await db.insert(s.verifications).values({
+    identifier: deleteCodeId(user.id),
+    value: `${sha256(code)}:0`,
+    expiresAt: new Date(Date.now() + DELETE_CODE_TTL_MS),
+  });
+  await sendEmail({
+    to: user.email,
+    subject: `Kode konfirmasi hapus akun Morphic: ${code}`,
+    text: `Kode untuk mengonfirmasi penghapusan akun Morphic Anda: ${code}\n\nBerlaku 10 menit. Jika Anda tidak meminta ini, abaikan email ini dan akun Anda tetap aman.`,
+    html: `<p>Kode untuk mengonfirmasi penghapusan akun Morphic Anda:</p><p style="font-size:24px;font-weight:700;letter-spacing:4px">${code}</p><p>Berlaku 10 menit. Jika Anda tidak meminta ini, abaikan email ini dan akun Anda tetap aman.</p>`,
+  });
+  return { ok: true as const };
+}
+
+async function checkDeletionCode(userId: string, code: string): Promise<string | null> {
+  const [row] = await db
+    .select()
+    .from(s.verifications)
+    .where(eq(s.verifications.identifier, deleteCodeId(userId)))
+    .limit(1);
+  if (!row || row.expiresAt.getTime() < Date.now()) return 'Kode sudah kedaluwarsa. Minta kode baru.';
+  const [hash, n] = row.value.split(':');
+  const attempts = Number(n) || 0;
+  if (attempts >= DELETE_CODE_MAX_ATTEMPTS) return 'Terlalu banyak percobaan salah. Minta kode baru.';
+  const ok = /^\d{6}$/.test(code) && timingSafeEqual(Buffer.from(sha256(code)), Buffer.from(hash));
+  if (!ok) {
+    await db
+      .update(s.verifications)
+      .set({ value: `${hash}:${attempts + 1}` })
+      .where(eq(s.verifications.id, row.id));
+    return 'Kode salah.';
+  }
+  await db.delete(s.verifications).where(eq(s.verifications.id, row.id));
+  return null;
+}
+
+/**
+ * Self-serve account deletion. Re-authenticates (password, or an emailed code for
+ * password-less accounts), then soft-deletes: the user row is kept but anonymised and
+ * suspended so credit_ledger / payments / usage stay intact for financial retention, while
+ * every way back in (credentials, OAuth links, sessions, API keys) is removed.
+ */
+export async function deleteOwnAccount(formData: FormData) {
+  const user = await requireInteractiveUser();
+  const confirmation = String(formData.get('confirmation') || '').trim();
+  const password = String(formData.get('password') || '');
+  const code = String(formData.get('code') || '').trim();
+
+  if (!user.email || confirmation.toLowerCase() !== user.email.toLowerCase()) {
+    return {
+      ok: false,
+      error: 'Konfirmasi email tidak sesuai. Masukkan alamat email akun Anda persis seperti terdaftar.',
+    };
+  }
+
+  if (await hasPasswordLogin(user.id)) {
+    if (!password) return { ok: false, error: 'Masukkan kata sandi Anda.' };
+    try {
+      await auth.api.verifyPassword({ body: { password }, headers: await headers() });
+    } catch (err: any) {
+      return {
+        ok: false,
+        error:
+          err?.body?.code === 'SESSION_NOT_FRESH'
+            ? 'Demi keamanan, keluar lalu masuk lagi sebelum menghapus akun.'
+            : 'Kata sandi salah.',
+      };
+    }
+  } else {
+    const codeError = await checkDeletionCode(user.id, code);
+    if (codeError) return { ok: false, error: codeError };
+  }
+
+  try {
+    const now = new Date();
+    await db
+      .update(s.apiKeys)
+      .set({ status: 'revoked', revokedAt: now })
+      .where(and(eq(s.apiKeys.userId, user.id), eq(s.apiKeys.status, 'active')));
+    await db.delete(s.accounts).where(eq(s.accounts.userId, user.id));
+    await db.delete(s.twoFactors).where(eq(s.twoFactors.userId, user.id));
+    await db.delete(s.sessions).where(eq(s.sessions.userId, user.id));
+    await db
+      .update(s.users)
+      .set({
+        email: `deleted+${user.id}@redacted.local`,
+        name: 'Deleted User',
+        image: null,
+        emailVerified: false,
+        suspended: true,
+        twoFactorEnabled: false,
+        deletedAt: now,
+        updatedAt: now,
+      })
+      .where(eq(s.users.id, user.id));
+    revalidatePath('/dashboard');
+    revalidatePath('/login');
+    return { ok: true };
+  } catch (err: any) {
+    console.error('[deleteOwnAccount] Failed to delete account:', err);
+    return { ok: false, error: 'Gagal menghapus akun. Silakan coba lagi nanti.' };
+  }
+}

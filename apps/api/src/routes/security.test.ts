@@ -307,3 +307,43 @@ test('Fix 1.4: PayPal webhook rejects missing signature and processes valid even
   const dupBody = await dupRes.json();
   assert.equal(dupBody.duplicate, true);
 });
+
+// ── Key rotation ─────────────────────────────────────────────────────────────
+test('key rotation mints a replacement and puts the old key on a grace period', async () => {
+  const { token } = await mkUser('rot');
+  const other = await mkUser('rotother');
+  const auth = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+  const created = await (await app.request('/v1/keys', { method: 'POST', headers: auth, body: '{"name":"prod"}' })).json();
+
+  const bad = await app.request(`/v1/keys/${created.id}/rotate`, { method: 'POST', headers: auth, body: '{"gracePeriodSeconds":5}' });
+  assert.equal(bad.status, 400);
+
+  const foreign = await app.request(`/v1/keys/${created.id}/rotate`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${other.token}`, 'Content-Type': 'application/json' },
+    body: '{"gracePeriodSeconds":3600}',
+  });
+  assert.equal(foreign.status, 404);
+
+  const res = await app.request(`/v1/keys/${created.id}/rotate`, { method: 'POST', headers: auth, body: '{"gracePeriodSeconds":3600}' });
+  assert.equal(res.status, 201);
+  const rotated = await res.json();
+  assert.ok(rotated.key.startsWith('mp-') && rotated.key !== created.key);
+  assert.equal(rotated.name, 'prod');
+  assert.equal(rotated.expires_at, null);
+  const graceMs = new Date(rotated.rotated_from.expires_at).getTime() - Date.now();
+  assert.ok(graceMs > 3500_000 && graceMs <= 3600_000);
+
+  // Both keys authenticate during the grace period.
+  for (const k of [created.key, rotated.key]) {
+    const r = await app.request('/v1/models', { headers: { Authorization: `Bearer ${k}` } });
+    assert.notEqual(r.status, 401);
+  }
+
+  // Once the grace period is over the old key is rejected.
+  await db.update(s.apiKeys).set({ expiresAt: new Date(Date.now() - 1000) }).where(eq(s.apiKeys.id, created.id));
+  const expired = await app.request('/v1/models', { headers: { Authorization: `Bearer ${created.key}` } });
+  assert.equal(expired.status, 401);
+  const again = await app.request(`/v1/keys/${created.id}/rotate`, { method: 'POST', headers: auth, body: '{}' });
+  assert.equal(again.status, 409);
+});

@@ -125,6 +125,8 @@ export function proxy(req: NextRequest) {
   response.headers.set('X-Frame-Options', 'DENY');
   response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
 
+  // 7. Locale: English unless the visitor picked a language (morphic_lang cookie).
+
   return response;
 }
 

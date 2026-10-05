@@ -40,15 +40,36 @@
     {
       "idx": 5,
       "version": "7",
-      "when": 1790500000000,
-      "tag": "0005_sweet_api_key_encrypted",
+      "when": 1791092021986,
+      "tag": "0005_billing_model_set_null",
       "breakpoints": true
     },
     {
       "idx": 6,
       "version": "7",
-      "when": 1791000000000,
-      "tag": "0006_drop_api_key_encrypted",
+      "when": 1791099700151,
+      "tag": "0006_request_logs_api_key_idx",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1791100000000,
+      "tag": "0007_drop_api_key_encrypted",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1791166565651,
+      "tag": "0008_two_factor_otp",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1791167091219,
+      "tag": "0009_user_soft_delete",
       "breakpoints": true
     }
   ]

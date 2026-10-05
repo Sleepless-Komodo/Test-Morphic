@@ -14,9 +14,7 @@ if (fs.existsSync(rootEnv) && typeof process.loadEnvFile === 'function') {
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   transpilePackages: ['@morphic/db', '@morphic/shared'],
-  // 'standalone' is for self-hosting / Docker. On Vercel it breaks the build adapter
-  // (missing next-server.js.nft.json), so let Vercel use its native output there.
-  output: process.env.VERCEL ? undefined : 'standalone',
+  output: process.env.VERCEL || process.env.NETLIFY ? undefined : 'standalone',
   images: {
     remotePatterns: [
       { protocol: 'https', hostname: 'lh3.googleusercontent.com' },
@@ -34,17 +32,20 @@ const nextConfig = {
           key: 'Permissions-Policy',
           value: 'camera=(), microphone=(), geolocation=(), browsing-topics=()',
         },
-        // Report-only first: Next's inline bootstrap and framer-motion need verification
-        // before this is enforced. Tighten to enforcing CSP once report noise is clear.
+        // Enforced. Every browser fetch is same-origin (/api/backend proxies the gateway), so the
+        // only third parties are reCAPTCHA, the PayPal JS SDK and Google Fonts (root layout). 'unsafe-inline' stays for
+        // Next's inline bootstrap (no nonces); 'unsafe-eval' only in dev for React Refresh.
         {
-          key: 'Content-Security-Policy-Report-Only',
+          key: 'Content-Security-Policy',
           value: [
             "default-src 'self'",
-            "script-src 'self' 'unsafe-inline' https://www.google.com https://www.gstatic.com",
-            "style-src 'self' 'unsafe-inline'",
-            "img-src 'self' data: https:",
-            "connect-src 'self'",
+            `script-src 'self' 'unsafe-inline'${process.env.NODE_ENV === 'production' ? '' : " 'unsafe-eval'"} https://www.google.com https://www.gstatic.com https://www.paypal.com https://www.sandbox.paypal.com`,
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+            "img-src 'self' data: blob: https:",
+            "font-src 'self' data: https://fonts.gstatic.com https://www.paypalobjects.com",
+            "connect-src 'self' https://www.paypal.com https://www.sandbox.paypal.com https://*.paypal.com",
             "frame-src https://www.google.com https://www.paypal.com https://www.sandbox.paypal.com",
+            "object-src 'none'",
             "frame-ancestors 'none'",
             "base-uri 'self'",
             "form-action 'self'",

@@ -25,6 +25,11 @@ export const users = pgTable('users', {
   image: text('image'),
   role: text('role', { enum: ['user', 'admin'] }).notNull().default('user'),
   suspended: boolean('suspended').notNull().default(false),
+  // Better Auth twoFactor plugin: when true, email+password sign-in asks for an emailed OTP.
+  twoFactorEnabled: boolean('two_factor_enabled').notNull().default(false),
+  // Set when the owner deletes the account. The row stays (anonymised, suspended) so the
+  // ledger, payments and usage history keep their user_id for financial retention.
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
   createdAt: now(),
   updatedAt: updatedAt(),
 });
@@ -75,6 +80,24 @@ export const verifications = pgTable('verifications', {
   createdAt: now(),
   updatedAt: updatedAt(),
 });
+
+// Better Auth twoFactor plugin table. Only the email-OTP flow is used, so `secret` and
+// `backupCodes` stay unused; the plugin still reads this row for failed-attempt lockout.
+export const twoFactors = pgTable(
+  'two_factor',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    secret: text('secret').notNull(),
+    backupCodes: text('backup_codes').notNull(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    verified: boolean('verified').default(true),
+    failedVerificationCount: integer('failed_verification_count').default(0),
+    lockedUntil: timestamp('locked_until', { withTimezone: true }),
+  },
+  (t) => [index('two_factor_user_idx').on(t.userId), index('two_factor_secret_idx').on(t.secret)],
+);
 
 // ── API Keys ──────────────────────────────────────────
 
@@ -172,6 +195,7 @@ export const requestLogs = pgTable(
   (t) => [
     index('req_logs_user_idx').on(t.userId),
     index('req_logs_created_idx').on(t.createdAt),
+    index('req_logs_api_key_idx').on(t.apiKeyId, t.createdAt),
   ],
 );
 
@@ -226,9 +250,8 @@ export const reservations = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     apiKeyId: uuid('api_key_id').references(() => apiKeys.id, { onDelete: 'set null' }),
-    modelId: uuid('model_id')
-      .notNull()
-      .references(() => models.id, { onDelete: 'restrict' }),
+    // Nullable + set null: deleting a provider/model keeps this billing row, just unlinked.
+    modelId: uuid('model_id').references(() => models.id, { onDelete: 'set null' }),
     sourceType: text('source_type', { enum: ['balance', 'entitlement'] }).notNull(),
     sourceId: uuid('source_id'),
     estimatedCredits: bigint('estimated_credits', { mode: 'number' }).notNull(),
@@ -296,9 +319,8 @@ export const usageRecords = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     apiKeyId: uuid('api_key_id').references(() => apiKeys.id, { onDelete: 'set null' }),
-    modelId: uuid('model_id')
-      .notNull()
-      .references(() => models.id, { onDelete: 'restrict' }),
+    // Nullable + set null: deleting a provider/model keeps this billing row, just unlinked.
+    modelId: uuid('model_id').references(() => models.id, { onDelete: 'set null' }),
     providerId: uuid('provider_id').references(() => providers.id, { onDelete: 'set null' }),
     requestId: text('request_id').notNull().unique(),
     promptTokens: integer('prompt_tokens').notNull().default(0),

@@ -6,8 +6,17 @@ import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { useTranslation } from '@/lib/i18n';
 import { SignOutButton } from '@/app/dashboard/sign-out';
-import { revokeOtherSessions, revokeSessionById, type ActiveSession } from '@/lib/actions';
+import {
+  revokeOtherSessions,
+  revokeSessionById,
+  deleteOwnAccount,
+  requestAccountDeletionCode,
+  type ActiveSession,
+} from '@/lib/actions';
+import { signOut } from '@/lib/auth-client';
 import { timeAgo } from '@/lib/utils';
+import { LoginOtpCard } from './login-otp-card';
+import { downloadBlob } from '@/lib/csv';
 import {
   User,
   Mail,
@@ -37,6 +46,7 @@ interface SettingsViewProps {
     role?: string | null;
   };
   sessions: ActiveSession[];
+  loginOtp: { enabled: boolean; hasPassword: boolean };
 }
 
 /** Reads the browser and platform out of a user agent string for the session list. */
@@ -63,17 +73,93 @@ function describeDevice(userAgent: string | null, isId: boolean): string {
   return browser ?? platform ?? (isId ? 'Perangkat tidak dikenal' : 'Unknown device');
 }
 
-export function SettingsView({ user, sessions }: SettingsViewProps) {
+export function SettingsView({ user, sessions, loginOtp }: SettingsViewProps) {
   const { locale } = useTranslation();
   const isId = locale === 'id';
   const router = useRouter();
 
   const [copiedId, setCopiedId] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleteConfirmation, setDeleteConfirmation] = useState('');
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deleteCode, setDeleteCode] = useState('');
+  const [deleteCodeSent, setDeleteCodeSent] = useState(false);
+  const [sendingDeleteCode, setSendingDeleteCode] = useState(false);
   const [copiedSupport, setCopiedSupport] = useState(false);
   const [revokingId, setRevokingId] = useState<string | null>(null);
   const [sessionError, setSessionError] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
   const [, startTransition] = useTransition();
+
+  const handleExecuteDeleteAccount = async () => {
+    if (isDeletingAccount) return;
+    if (deleteConfirmation.trim().toLowerCase() !== (user.email ?? '').trim().toLowerCase()) {
+      setDeleteError(isId ? 'Email konfirmasi tidak sesuai.' : 'Confirmation email does not match.');
+      return;
+    }
+
+    setIsDeletingAccount(true);
+    setDeleteError(null);
+
+    try {
+      const fd = new FormData();
+      fd.set('confirmation', deleteConfirmation);
+      fd.set('password', deletePassword);
+      fd.set('code', deleteCode);
+      const res = await deleteOwnAccount(fd);
+      if (!res.ok) {
+        setDeleteError(res.error ?? (isId ? 'Gagal menghapus akun.' : 'Failed to delete account.'));
+        setIsDeletingAccount(false);
+        return;
+      }
+      await signOut();
+      window.location.href = '/login?deleted=true';
+    } catch (err: any) {
+      setDeleteError(err?.message || (isId ? 'Terjadi kesalahan sistem.' : 'A system error occurred.'));
+      setIsDeletingAccount(false);
+    }
+  };
+  const closeDeleteModal = () => {
+    setShowDeleteModal(false);
+    setDeleteConfirmation('');
+    setDeletePassword('');
+    setDeleteCode('');
+    setDeleteCodeSent(false);
+    setDeleteError(null);
+  };
+
+  const handleSendDeleteCode = async () => {
+    setSendingDeleteCode(true);
+    setDeleteError(null);
+    const res = await requestAccountDeletionCode();
+    setSendingDeleteCode(false);
+    if (!res.ok) {
+      setDeleteError(res.error);
+      return;
+    }
+    setDeleteCodeSent(true);
+  };
+
+  const emailMatches =
+    deleteConfirmation.trim().toLowerCase() === (user.email ?? '').trim().toLowerCase();
+  const reauthReady = loginOtp.hasPassword ? deletePassword.length > 0 : /^\d{6}$/.test(deleteCode);
+
+  const handleExportData = async () => {
+    setExporting(true);
+    setExportError(null);
+    try {
+      const res = await fetch('/api/backend/v1/account/export', { cache: 'no-store' });
+      if (!res.ok) throw new Error(String(res.status));
+      downloadBlob(await res.blob(), `morphic-data-${new Date().toISOString().slice(0, 10)}.json`);
+    } catch {
+      setExportError(isId ? 'Gagal menyiapkan data. Coba lagi sebentar lagi.' : 'Could not prepare your data. Try again shortly.');
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const otherSessions = sessions.filter((item) => !item.isCurrent);
 
@@ -161,7 +247,7 @@ export function SettingsView({ user, sessions }: SettingsViewProps) {
             <p className="text-xs md:text-sm text-neutral-600 mt-1 max-w-2xl leading-relaxed">
               {isId
                 ? 'Kelola identitas akun pengembang, status otentikasi sesi, dan standar keamanan data gateway Anda.'
-                : 'Manage your developer identity, session authentication status, and gateway data security standards.'}
+                : 'Manage your account, active sessions, and gateway data security standards.'}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -174,7 +260,7 @@ export function SettingsView({ user, sessions }: SettingsViewProps) {
       </div>
 
       <div className="space-y-6">
-        {/* CARD 1: Developer Profile & Identity */}
+        {/* CARD 1: Account Profile & Identity */}
         <section
           aria-labelledby="profile-heading"
           className="rounded-3xl bg-white border border-neutral-200/90 shadow-2xs overflow-hidden"
@@ -186,15 +272,15 @@ export function SettingsView({ user, sessions }: SettingsViewProps) {
               </div>
               <div>
                 <h2 id="profile-heading" className="text-sm sm:text-base font-bold text-neutral-950 font-heading">
-                  {isId ? 'Profil & Identitas Pengembang' : 'Developer Profile & Identity'}
+                  {isId ? 'Profil & Identitas Akun' : 'Account Profile & Identity'}
                 </h2>
                 <p className="text-xs text-neutral-500">
-                  {isId ? 'Informasi dasar identitas pengembang Anda di Morphic' : 'Your core developer profile information on Morphic'}
+                  {isId ? 'Informasi dasar akun Anda di Morphic' : 'Your core account information on Morphic'}
                 </p>
               </div>
             </div>
-            <span className="text-[11px] font-mono px-2.5 py-1 rounded-lg bg-neutral-100 text-neutral-700 font-semibold border border-neutral-200/80">
-              DEVELOPER
+            <span className="text-[11px] font-mono px-2.5 py-1 rounded-lg bg-neutral-100 text-neutral-700 font-semibold border border-neutral-200/80 uppercase">
+              {user.role ?? (isId ? 'pengguna' : 'user')}
             </span>
           </div>
 
@@ -219,12 +305,19 @@ export function SettingsView({ user, sessions }: SettingsViewProps) {
               <div className="min-w-0 flex-1 space-y-1">
                 <div className="flex items-center gap-2 flex-wrap">
                   <h3 className="text-base sm:text-lg font-bold text-neutral-950 truncate">
-                    {user.name || (isId ? 'Pengembang Morphic' : 'Morphic Developer')}
+                    {user.name || user.email || (isId ? 'Tanpa nama' : 'Unnamed account')}
                   </h3>
-                  <span className="inline-flex items-center gap-1 text-[11px] font-medium text-neutral-600">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
-                    <span>{isId ? 'Terverifikasi' : 'Verified'}</span>
-                  </span>
+                  {user.emailVerified ? (
+                    <span className="inline-flex items-center gap-1 text-[11px] font-medium text-neutral-600">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                      <span>{isId ? 'Email terverifikasi' : 'Email verified'}</span>
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 text-[11px] font-medium text-neutral-500">
+                      <span className="w-1.5 h-1.5 rounded-full bg-neutral-400 shrink-0" />
+                      <span>{isId ? 'Email belum terverifikasi' : 'Email not verified'}</span>
+                    </span>
+                  )}
                 </div>
                 <p className="text-xs sm:text-sm text-neutral-600 truncate">{user.email}</p>
                 {memberSince && (
@@ -264,11 +357,11 @@ export function SettingsView({ user, sessions }: SettingsViewProps) {
                 </p>
               </div>
 
-              {/* Developer UUID */}
+              {/* Account UUID */}
               <div className="md:col-span-2 p-4 rounded-2xl bg-neutral-50/60 border border-neutral-200/70 space-y-2">
                 <div className="flex items-center justify-between">
                   <div className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider">
-                    {isId ? 'Developer ID (Account UUID)' : 'Developer ID (Account UUID)'}
+                    {isId ? 'ID Akun (UUID)' : 'Account ID (UUID)'}
                   </div>
                   <button
                     type="button"
@@ -406,6 +499,8 @@ export function SettingsView({ user, sessions }: SettingsViewProps) {
               </p>
             )}
 
+            <LoginOtpCard enabled={loginOtp.enabled} hasPassword={loginOtp.hasPassword} />
+
             {/* Security Guarantee Rows */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
               <div className="p-4 rounded-2xl border border-neutral-200/70 bg-white space-y-1.5">
@@ -498,6 +593,33 @@ export function SettingsView({ user, sessions }: SettingsViewProps) {
                 </p>
               </div>
             </div>
+
+            <div className="p-4 rounded-2xl border border-neutral-200/70 bg-white flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="space-y-1 min-w-0">
+                <h3 className="text-xs font-bold text-neutral-950">
+                  {isId ? 'Salinan data pribadi Anda' : 'Copy of your personal data'}
+                </h3>
+                <p className="text-xs text-neutral-600 leading-relaxed">
+                  {isId
+                    ? 'Satu file JSON berisi profil, prefix API key, saldo, riwayat transaksi dan pembayaran, serta ringkasan pemakaian harian.'
+                    : 'One JSON file with your profile, API key prefixes, balance, transaction and payment history, and a daily usage summary.'}
+                </p>
+                {exportError && (
+                  <p role="alert" className="flex items-start gap-2 text-xs text-red-700">
+                    <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0 text-red-600" />
+                    <span>{exportError}</span>
+                  </p>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={handleExportData}
+                disabled={exporting}
+                className="min-h-11 px-4 rounded-xl bg-neutral-950 hover:bg-neutral-800 text-white text-xs font-semibold shrink-0 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 focus-visible:ring-offset-2"
+              >
+                {exporting ? (isId ? 'Menyiapkan...' : 'Preparing...') : isId ? 'Unduh data saya (JSON)' : 'Download my data (JSON)'}
+              </button>
+            </div>
           </div>
         </section>
 
@@ -548,7 +670,7 @@ export function SettingsView({ user, sessions }: SettingsViewProps) {
             <div className="py-4 last:pb-0 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div className="space-y-1 max-w-lg">
                 <h3 className="text-xs sm:text-sm font-bold text-red-950">
-                  {isId ? 'Hapus Akun Pengembang' : 'Delete Developer Account'}
+                  {isId ? 'Hapus Akun' : 'Delete Account'}
                 </h3>
                 <p className="text-xs text-neutral-600 leading-relaxed">
                   {isId
@@ -568,19 +690,19 @@ export function SettingsView({ user, sessions }: SettingsViewProps) {
         </section>
       </div>
 
-      {/* Confirmation Modal for Delete Account */}
+      {/* Interactive Self-Serve Delete Account Modal */}
       {showDeleteModal && (
         <div
           onClick={(e) => {
-            if (e.target === e.currentTarget) setShowDeleteModal(false);
+            if (e.target === e.currentTarget && !isDeletingAccount) closeDeleteModal();
           }}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs animate-in fade-in duration-150"
         >
           <div
             role="dialog"
             aria-modal="true"
             aria-labelledby="delete-account-title"
-            className="w-full max-w-md rounded-3xl bg-white p-6 shadow-xl border border-neutral-200 space-y-4 animate-in fade-in zoom-in-95 duration-150"
+            className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl border border-red-200 space-y-4 animate-in zoom-in-95 duration-150"
           >
             <div className="flex items-center gap-3 text-red-600">
               <div className="w-10 h-10 rounded-2xl bg-red-50 border border-red-200 flex items-center justify-center shrink-0">
@@ -588,54 +710,132 @@ export function SettingsView({ user, sessions }: SettingsViewProps) {
               </div>
               <div>
                 <h4 id="delete-account-title" className="text-base font-bold text-neutral-950 font-heading">
-                  {isId ? 'Konfirmasi Hapus Akun' : 'Confirm Account Deletion'}
+                  {isId ? 'Hapus Akun Permanen' : 'Delete Account Permanently'}
                 </h4>
                 <p className="text-xs text-neutral-500">{user.email}</p>
               </div>
             </div>
 
-            <p className="text-xs text-neutral-600 leading-relaxed">
+            <div className="p-3.5 rounded-2xl bg-red-50/70 border border-red-200/80 text-xs text-red-900 leading-relaxed">
               {isId
-                ? 'Untuk melindungi saldo kredit dan mencegah pembatalan tak disengaja pada integrasi sistem produksi, penghapusan akun diverifikasi secara manual oleh tim engineering kami.'
-                : 'To protect remaining credit balances and prevent accidental downtime for production workflows, account deletions are processed with engineering verification.'}
-            </p>
+                ? 'Tindakan ini tidak dapat dibatalkan. Akun Anda akan dinonaktifkan dan data profil dihapus. Semua API key dicabut, sesi login diakhiri, dan sisa saldo kredit hangus. Sesuai ketentuan hukum perpajakan dan keuangan, catatan transaksi dan riwayat penggunaan akan dianonimkan dan disimpan selama 5 tahun.'
+                : 'This cannot be undone. Your account will be deactivated and your profile data removed. All API keys are revoked, sessions end, and any remaining credit balance is forfeited. To meet tax and financial record-keeping law, transaction records and usage history are anonymised and kept for 5 years.'}
+            </div>
 
-            <div className="p-3 rounded-xl bg-neutral-50 border border-neutral-200/80 flex items-center justify-between text-xs">
-              <span className="font-mono text-neutral-700 select-all">support@morphic.sh</span>
-              <button
-                type="button"
-                onClick={copySupportEmail}
-                className="inline-flex items-center gap-1 text-[11px] font-semibold text-neutral-700 hover:text-black cursor-pointer"
-              >
-                {copiedSupport ? (
+            {deleteError && (
+              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-700 flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                <span>{deleteError}</span>
+              </div>
+            )}
+
+            <div className="space-y-1.5">
+              <label htmlFor="confirm-email-input" className="block text-xs font-semibold text-neutral-800">
+                {isId ? (
                   <>
-                    <Check className="h-3 w-3 text-emerald-600" />
-                    <span className="text-emerald-700">{isId ? 'Tersalin' : 'Copied'}</span>
+                    Ketik <strong className="font-mono text-neutral-950 select-all">{user.email}</strong> untuk mengonfirmasi:
                   </>
                 ) : (
                   <>
-                    <Copy className="h-3 w-3" />
-                    <span>{isId ? 'Salin' : 'Copy'}</span>
+                    Type <strong className="font-mono text-neutral-950 select-all">{user.email}</strong> to confirm:
                   </>
                 )}
-              </button>
+              </label>
+              <input
+                id="confirm-email-input"
+                type="text"
+                value={deleteConfirmation}
+                onChange={(e) => {
+                  setDeleteConfirmation(e.target.value);
+                  setDeleteError(null);
+                }}
+                disabled={isDeletingAccount}
+                placeholder={user.email ?? ''}
+                className="w-full px-3.5 py-2 text-xs rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 placeholder:text-neutral-400 font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600"
+              />
             </div>
 
-            <div className="flex items-center justify-end gap-3 pt-2">
+            {loginOtp.hasPassword ? (
+              <div className="space-y-1.5">
+                <label htmlFor="delete-password-input" className="block text-xs font-semibold text-neutral-800">
+                  {isId ? 'Kata sandi akun' : 'Account password'}
+                </label>
+                <input
+                  id="delete-password-input"
+                  type="password"
+                  autoComplete="current-password"
+                  value={deletePassword}
+                  onChange={(e) => {
+                    setDeletePassword(e.target.value);
+                    setDeleteError(null);
+                  }}
+                  disabled={isDeletingAccount}
+                  className="w-full px-3.5 py-2 text-xs rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600"
+                />
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                <label htmlFor="delete-code-input" className="block text-xs font-semibold text-neutral-800">
+                  {isId ? 'Kode konfirmasi dari email' : 'Confirmation code from email'}
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    id="delete-code-input"
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    maxLength={6}
+                    value={deleteCode}
+                    onChange={(e) => {
+                      setDeleteCode(e.target.value.replace(/\D/g, '').slice(0, 6));
+                      setDeleteError(null);
+                    }}
+                    disabled={isDeletingAccount || !deleteCodeSent}
+                    placeholder="000000"
+                    className="min-w-0 flex-1 px-3.5 py-2 text-xs rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 placeholder:text-neutral-400 font-mono tracking-widest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 disabled:opacity-60"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleSendDeleteCode}
+                    disabled={sendingDeleteCode || isDeletingAccount}
+                    className="min-h-11 px-3 rounded-xl border border-neutral-200 bg-white hover:bg-neutral-50 text-neutral-800 text-xs font-semibold shrink-0 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
+                  >
+                    {sendingDeleteCode
+                      ? isId ? 'Mengirim...' : 'Sending...'
+                      : deleteCodeSent
+                        ? isId ? 'Kirim ulang' : 'Resend'
+                        : isId ? 'Kirim kode' : 'Send code'}
+                  </button>
+                </div>
+                {deleteCodeSent && (
+                  <p role="status" className="text-[11px] text-neutral-600">
+                    {isId ? `Kode dikirim ke ${user.email}. Berlaku 10 menit.` : `Code sent to ${user.email}. Valid for 10 minutes.`}
+                  </p>
+                )}
+              </div>
+            )}
+
+            <div className="flex items-center justify-end gap-2.5 pt-2">
               <button
                 type="button"
-                onClick={() => setShowDeleteModal(false)}
+                onClick={closeDeleteModal}
+                disabled={isDeletingAccount}
                 className="px-4 py-2 rounded-xl text-xs font-semibold text-neutral-700 hover:bg-neutral-100 transition cursor-pointer"
               >
-                {isId ? 'Tutup' : 'Close'}
+                {isId ? 'Batal' : 'Cancel'}
               </button>
-              <a
-                href={`mailto:support@morphic.sh?subject=Permintaan%20Penghapusan%20Akun%20(${encodeURIComponent(user.id)})`}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition shadow-2xs cursor-pointer"
+              <button
+                type="button"
+                onClick={handleExecuteDeleteAccount}
+                disabled={isDeletingAccount || !emailMatches || !reauthReady}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition shadow-xs cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                <LifeBuoy className="h-3.5 w-3.5" />
-                <span>{isId ? 'Hubungi Tim Support' : 'Contact Support'}</span>
-              </a>
+                {isDeletingAccount ? (
+                  <span>{isId ? 'Menghapus Akun...' : 'Deleting Account...'}</span>
+                ) : (
+                  <span>{isId ? 'Hapus Akun Saya' : 'Delete My Account'}</span>
+                )}
+              </button>
             </div>
           </div>
         </div>

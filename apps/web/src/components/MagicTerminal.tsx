@@ -1,23 +1,17 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import React, { useState, useEffect, useRef } from 'react';
+import { motion, useInView } from 'framer-motion';
 import { Copy, Check, Terminal as TerminalIcon } from 'lucide-react';
 import { useTranslation } from '@/lib/i18n';
 import { useReducedMotionSafe } from '@/lib/use-reduced-motion-safe';
+import { API_BASE_URL, CHAT_COMPLETIONS_URL } from '@/lib/utils';
 
 type TabKey = 'cursor' | 'cline' | 'python' | 'curl';
 
-interface MagicTerminalProps {
-  /** Milliseconds per typed character. Lower = faster typing. */
-  typeSpeed?: number;
-  /** Milliseconds before the first typing cycle starts. */
-  startDelay?: number;
-  /** Milliseconds the finished command + output stays on screen before the loop restarts. */
-  loopDelay?: number;
-  /** Milliseconds between each revealed output line. */
-  outputLineDelay?: number;
-}
+// Characters revealed per frame; a ~200-char command types in about a second.
+const CHARS_PER_FRAME = 3;
+const OUTPUT_LINE_DELAY = 110;
 
 const TERMINAL_SNIPPETS: Record<
   TabKey,
@@ -34,20 +28,20 @@ const TERMINAL_SNIPPETS: Record<
     file: 'cursor.settings.json',
     command: 'cursor settings apply --provider openai',
     outputLines: [
-      '✔ Base URL: https://api.morphic.sh/v1',
+      `✔ Base URL: ${API_BASE_URL}`,
       '✔ API Key:  mp-xxxxxxxxxxxxxxxxxxxx',
-      '✔ Models: deepseek-v4-coder, claude-3.5-sonnet-proxy, qwen-2.5-max, kimi-k1.5-coding',
+      '✔ Models: deepseek-v4, kimi-coding, qwen-max, DeepSeek-V4-Flash-0731',
       '✔ Status: OpenAI-compatible ready for composer',
     ],
     rawSnippet: `// Cursor Settings > Models > OpenAI API:
-Base URL: https://api.morphic.sh/v1
+Base URL: ${API_BASE_URL}
 API Key:  mp-xxxxxxxxxxxxxxxxxxxx
 
 // Models supported:
-- deepseek-v4-coder
-- claude-3.5-sonnet-proxy
-- qwen-2.5-max
-- kimi-k1.5-coding`,
+- deepseek-v4
+- kimi-coding
+- qwen-max
+- DeepSeek-V4-Flash-0731`,
   },
   cline: {
     label: 'Cline / VSCode',
@@ -55,16 +49,16 @@ API Key:  mp-xxxxxxxxxxxxxxxxxxxx
     command: 'cline settings apply cline_mcp_settings.json',
     outputLines: [
       '✔ apiProvider: openai',
-      '✔ openAiBaseUrl: https://api.morphic.sh/v1',
+      `✔ openAiBaseUrl: ${API_BASE_URL}`,
       '✔ openAiApiKey: mp-xxxxxxxxxxxxxxxxxxxx',
-      '✔ openAiModelId: deepseek-v4-coder',
+      '✔ openAiModelId: deepseek-v4',
       '✔ Provider ready. Start chatting in VSCode',
     ],
     rawSnippet: `{
   "apiProvider": "openai",
-  "openAiBaseUrl": "https://api.morphic.sh/v1",
+  "openAiBaseUrl": "${API_BASE_URL}",
   "openAiApiKey": "mp-xxxxxxxxxxxxxxxxxxxx",
-  "openAiModelId": "deepseek-v4-coder"
+  "openAiModelId": "deepseek-v4"
 }`,
   },
   python: {
@@ -73,19 +67,19 @@ API Key:  mp-xxxxxxxxxxxxxxxxxxxx
     command: 'python -m pip install openai -q && python quickstart.py',
     outputLines: [
       '>>> Morphic Client Initialized...',
-      '>>> Sending prompt to model="deepseek-v4-coder"',
+      '>>> Sending prompt to model="deepseek-v4"',
       '<<< [Response 200 OK]: "Here is your clean TypeScript auth module..."',
       '✔ Completed in 184ms | Tokens: 42 in / 158 out',
     ],
     rawSnippet: `from openai import OpenAI
 
 client = OpenAI(
-    base_url="https://api.morphic.sh/v1",
+    base_url="${API_BASE_URL}",
     api_key="mp-xxxxxxxxxxxxxxxxxxxx",
 )
 
 response = client.chat.completions.create(
-    model="deepseek-v4-coder",
+    model="deepseek-v4",
     messages=[{"role": "user", "content": "Write TypeScript auth helper"}]
 )
 print(response.choices[0].message.content)`,
@@ -93,7 +87,7 @@ print(response.choices[0].message.content)`,
   curl: {
     label: 'cURL',
     file: 'request.sh',
-    command: `curl https://api.morphic.sh/v1/chat/completions \\
+    command: `curl ${CHAT_COMPLETIONS_URL} \\
   -H "Authorization: Bearer mp-xxxxxxxx" \\
   -H "Content-Type: application/json" \\
   -d '{"model": "deepseek-v4", "messages": [{"role": "user", "content": "Hello"}]}'`,
@@ -103,70 +97,53 @@ print(response.choices[0].message.content)`,
       'x-morphic-latency: 142ms',
       '{"id":"chatcmpl-9x","choices":[{"message":{"role":"assistant","content":"Hello! How can I help you?"}}]}',
     ],
-    rawSnippet: `curl https://api.morphic.sh/v1/chat/completions \\
+    rawSnippet: `curl ${CHAT_COMPLETIONS_URL} \\
   -H "Authorization: Bearer mp-xxxxxxxx" \\
   -H "Content-Type: application/json" \\
   -d '{"model": "deepseek-v4", "messages": [{"role": "user", "content": "Hello"}]}'`,
   },
 };
 
-export default function MagicTerminal({
-  typeSpeed = 28,
-  startDelay = 400,
-  loopDelay = 2400,
-  outputLineDelay = 170,
-}: MagicTerminalProps = {}) {
+export default function MagicTerminal() {
   const { t } = useTranslation();
+  const reduced = useReducedMotionSafe();
   const [activeTab, setActiveTab] = useState<TabKey>('curl');
   const [copied, setCopied] = useState(false);
-  const [typedCount, setTypedCount] = useState(0);
-  const [visibleLines, setVisibleLines] = useState(0);
+  const [typed, setTypedCount] = useState(0);
+  const [shownLines, setVisibleLines] = useState(0);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const inView = useInView(bodyRef, { once: true, margin: '-80px' });
 
   const snippet = TERMINAL_SNIPPETS[activeTab];
   const command = snippet.command;
   const outputLines = snippet.outputLines;
+  // Reduced motion: show everything at once.
+  const typedCount = reduced ? command.length : typed;
+  const visibleLines = reduced ? outputLines.length : shownLines;
+  const typing = typedCount < command.length;
 
-  // Looping typing animation: type command -> reveal output lines -> hold -> reset -> repeat
+  // Types the command once per tab (no loop), then reveals the output lines.
   useEffect(() => {
-    let cancelled = false;
-    let id = 0;
-
-    const later = (fn: () => void, delay: number) => {
-      id = window.setTimeout(fn, delay);
-    };
-
-    function revealOutputs(n: number) {
-      if (cancelled) return;
-      setVisibleLines(n);
-      if (n < outputLines.length) {
-        later(() => revealOutputs(n + 1), outputLineDelay);
-      } else {
-        later(() => {
-          if (cancelled) return;
-          setTypedCount(0);
-          setVisibleLines(0);
-          later(() => typeFrom(1), typeSpeed);
-        }, loopDelay);
-      }
-    }
-
-    function typeFrom(n: number) {
-      if (cancelled) return;
+    if (!inView || reduced) return;
+    let raf = 0;
+    let timer = 0;
+    let n = 0;
+    const type = () => {
+      n = Math.min(n + CHARS_PER_FRAME, command.length);
       setTypedCount(n);
-      if (n < command.length) {
-        later(() => typeFrom(n + 1), typeSpeed);
-      } else {
-        later(() => revealOutputs(1), outputLineDelay);
-      }
-    }
-
-    later(() => typeFrom(1), startDelay);
-
-    return () => {
-      cancelled = true;
-      window.clearTimeout(id);
+      if (n < command.length) raf = requestAnimationFrame(type);
+      else reveal(1);
     };
-  }, [command, outputLines, typeSpeed, startDelay, loopDelay, outputLineDelay]);
+    const reveal = (line: number) => {
+      setVisibleLines(line);
+      if (line < outputLines.length) timer = window.setTimeout(() => reveal(line + 1), OUTPUT_LINE_DELAY);
+    };
+    raf = requestAnimationFrame(type);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.clearTimeout(timer);
+    };
+  }, [inView, reduced, command, outputLines]);
 
   const handleTabChange = (tab: TabKey) => {
     setActiveTab(tab);
@@ -180,15 +157,13 @@ export default function MagicTerminal({
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const reduced = useReducedMotionSafe();
-
   return (
     <section id="terminal" className="relative z-10 py-14 lg:py-20 px-6 bg-white text-neutral-900 border-t border-neutral-200/70 scroll-mt-20 sm:scroll-mt-24">
       <div className="max-w-6xl mx-auto grid lg:grid-cols-[0.9fr_1.1fr] gap-10 lg:gap-14 items-center">
         {/* Left Column: Editorial Value Proposition */}
         <motion.div
-          initial={reduced ? false : { opacity: 0, y: 14, filter: 'blur(4px)' }}
-          whileInView={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+          initial={reduced ? false : { opacity: 0, y: 14 }}
+          whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, margin: '-50px' }}
           transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
           className="flex flex-col items-start"
@@ -220,8 +195,8 @@ export default function MagicTerminal({
 
         {/* Right Column: Interactive Terminal Mockup */}
         <motion.div
-          initial={reduced ? false : { opacity: 0, y: 16, filter: 'blur(4px)' }}
-          whileInView={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+          initial={reduced ? false : { opacity: 0, y: 16 }}
+          whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, margin: '-50px' }}
           transition={{ duration: 0.55, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
           className="relative group w-full"
@@ -274,22 +249,26 @@ export default function MagicTerminal({
             </div>
 
             {/* Terminal Body - Light Surface */}
-            <div className="bg-neutral-50 p-4 sm:p-5">
-              {/* Typing command */}
-              <div className="font-mono text-xs sm:text-[13px] leading-relaxed mb-4 min-h-[100px]">
+            <div ref={bodyRef} className="bg-neutral-50 p-4 sm:p-5">
+              {/* Typing command; untyped rest is laid out invisibly so the box never grows while typing */}
+              <div className="font-mono text-xs sm:text-[13px] leading-relaxed mb-4 min-h-[100px] whitespace-pre-wrap break-words">
                 <span className="text-emerald-600 select-none">$ </span>
-                <span className="text-neutral-800 font-semibold whitespace-pre-wrap break-words">
-                  {command.slice(0, typedCount)}
-                </span>
-                <span className="inline-block w-[7px] h-[15px] bg-neutral-800/80 align-middle ml-0.5 animate-pulse" />
+                <span className="text-neutral-800 font-semibold">{command.slice(0, typedCount)}</span>
+                <span
+                  className={`inline-block w-[7px] h-[15px] bg-neutral-800/80 align-middle ml-0.5 ${typing ? '' : 'animate-pulse'}`}
+                  aria-hidden="true"
+                />
+                <span className="text-transparent select-none" aria-hidden="true">{command.slice(typedCount)}</span>
               </div>
 
               {/* Animated Output Lines */}
               <div className="space-y-1.5 min-h-[100px]">
-                {outputLines.slice(0, visibleLines).map((line, idx) => (
+                {outputLines.map((line, idx) => (
                   <div
                     key={idx}
-                    className="animate-in fade-in slide-in-from-bottom-1 duration-150 flex items-start gap-2"
+                    className={`flex items-start gap-2 transition-[opacity,transform] duration-300 ease-out ${
+                      idx < visibleLines ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-1'
+                    }`}
                   >
                     <span className="text-neutral-300 text-[11px] select-none shrink-0">{idx + 1}</span>
                     <span

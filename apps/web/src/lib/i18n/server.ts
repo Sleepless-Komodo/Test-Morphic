@@ -11,11 +11,15 @@ const DICTIONARIES: Record<Locale, TranslationDictionary> = {
 export async function getServerTranslation(): Promise<{ locale: Locale; t: TranslationDictionary }> {
   try {
     const cookieStore = await cookies();
-    const cookieVal = cookieStore.get('morphic_locale')?.value as Locale | undefined;
-    const locale: Locale = cookieVal === 'en' || cookieVal === 'id' ? cookieVal : 'id';
-    return { locale, t: DICTIONARIES[locale] || DICTIONARIES.id };
+    const cookieVal = cookieStore.get('morphic_lang')?.value as Locale | undefined;
+    if (cookieVal === 'en' || cookieVal === 'id') {
+      return { locale: cookieVal, t: DICTIONARIES[cookieVal] };
+    }
+
+    // English unless the visitor picked a language with the toggle.
+    return { locale: 'en', t: DICTIONARIES.en };
   } catch {
-    return { locale: 'id', t: DICTIONARIES.id };
+    return { locale: 'en', t: DICTIONARIES.en };
   }
 }
 

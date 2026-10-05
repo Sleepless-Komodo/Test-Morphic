@@ -1,5 +1,5 @@
 import { db, schema as s } from '@morphic/db';
-import { and, inArray, lt } from 'drizzle-orm';
+import { and, eq, inArray, lt } from 'drizzle-orm';
 import { markPaymentIfOpen, processPaymentSuccess } from '@morphic/db/billing';
 import { getOrder, capturedAmountMatches } from './paypal';
 import { checkTransactionStatus } from './duitku';
@@ -8,6 +8,63 @@ import { checkTransactionStatus } from './duitku';
 const STALE_THRESHOLD_MS = 15 * 60_000; // 15 minutes cutoff for stale rows
 const MAX_EXPIRY_MS = 24 * 60 * 60_000; // 24 hours maximum lifetime for open payments
 const MAX_PER_RUN = 50; // Maximum payments to reconcile per run to prevent query timeouts
+
+// A Duitku QR is only payable for this long; open rows past it are cancelled so they never sit in
+// "pending" and one user cannot keep piling up live invoices on the gateway.
+export const DUITKU_PAYMENT_TTL_MINUTES = 5;
+// Small grace past the gateway expiry so a payment completed in the last seconds is not cancelled first.
+export const DUITKU_EXPIRE_AFTER_MS = DUITKU_PAYMENT_TTL_MINUTES * 60_000 + 30_000;
+
+type PaymentRow = typeof s.payments.$inferSelect;
+
+/**
+ * Asks Duitku for the real status of an open payment. Grants credits on '00' (amount verified),
+ * marks it expired on '02' or when `expireIfUnpaid` is set. Returns the new status, or null if unchanged.
+ */
+export async function settleDuitkuPayment(
+  payment: PaymentRow,
+  { expireIfUnpaid }: { expireIfUnpaid: boolean },
+): Promise<'paid' | 'expired' | null> {
+  const status = await checkTransactionStatus(payment.externalId);
+  if (status.statusCode === '00') {
+    if (Number(status.amount) !== payment.amountCents) {
+      console.error(`[duitku-settle] NEEDS REVIEW: ${payment.id} got=${status.amount} expected=${payment.amountCents}`);
+      return null;
+    }
+    return (await processPaymentSuccess(payment.id)).success ? 'paid' : null;
+  }
+  if (status.statusCode === '02' || expireIfUnpaid) {
+    return (await markPaymentIfOpen(payment.id, 'expired')) ? 'expired' : null;
+  }
+  return null;
+}
+
+/** Cancels (or settles, if actually paid) every Duitku payment still pending past its TTL. */
+export async function sweepStaleDuitkuPayments(): Promise<number> {
+  const stale = await db
+    .select()
+    .from(s.payments)
+    .where(
+      and(
+        eq(s.payments.provider, 'duitku'),
+        eq(s.payments.status, 'pending'),
+        lt(s.payments.createdAt, new Date(Date.now() - DUITKU_EXPIRE_AFTER_MS)),
+      ),
+    )
+    .orderBy(s.payments.createdAt)
+    .limit(MAX_PER_RUN);
+
+  let changed = 0;
+  for (const payment of stale) {
+    try {
+      if (await settleDuitkuPayment(payment, { expireIfUnpaid: true })) changed++;
+    } catch (err) {
+      // Gateway unreachable: leave it open and retry next sweep rather than cancel a possibly-paid row.
+      console.error(`[duitku-sweep] error processing payment ${payment.id}:`, err);
+    }
+  }
+  return changed;
+}
 
 /**
  * Periodically reconciles open payments (PayPal & Duitku).
@@ -106,6 +163,11 @@ export async function reconcilePaypalPayments(): Promise<number> {
       }
     } catch (err) {
       console.error(`[payment-reconcile] error processing payment ${payment.id}:`, err);
+      // A plain 'pending' row the gateway can no longer answer for (order gone, sandbox purged)
+      // would otherwise sit open forever. Past 24h, cancel it; a late webhook can still rescue it.
+      if (payment.status === 'pending' && payment.createdAt < cutoff24h) {
+        await markPaymentIfOpen(payment.id, 'expired').catch(() => {});
+      }
     }
   }
 

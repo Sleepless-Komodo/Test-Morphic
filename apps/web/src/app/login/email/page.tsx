@@ -133,6 +133,12 @@ export default function EmailAuthPage() {
           handleAuthFail(isCaptchaErr ? t.login.captchaFailed : t.login.authGenericError);
           return;
         }
+
+        // Email OTP is on for this account: no session yet, finish on the code step.
+        if ((res?.data as { twoFactorRedirect?: boolean } | null)?.twoFactorRedirect) {
+          router.push('/login/otp');
+          return;
+        }
       }
 
       setFailCount(0);
@@ -297,6 +303,17 @@ export default function EmailAuthPage() {
                 </button>
               </div>
             </div>
+
+            {!isSignUpMode && (
+              <div className="flex justify-end -mt-1">
+                <Link
+                  href="/forgot-password"
+                  className="inline-flex items-center min-h-11 text-xs font-semibold text-neutral-700 hover:text-neutral-950 underline-offset-2 hover:underline"
+                >
+                  <span suppressHydrationWarning>{t.login.forgotLink}</span>
+                </Link>
+              </div>
+            )}
 
             {/* Google reCAPTCHA Verification */}
             <RecaptchaWidget

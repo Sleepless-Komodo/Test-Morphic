@@ -1,9 +1,10 @@
 'use client';
 
 import { useState } from 'react';
+import { downloadCsv } from '@/lib/csv';
 import { useTranslation } from '@/lib/i18n';
 import { formatCredits, cn } from '@/lib/utils';
-import { Zap, CreditCard, Clock, Wallet, QrCode, Coins, Sparkles } from 'lucide-react';
+import { Zap, CreditCard, Clock, Wallet, QrCode, Coins, Sparkles, Download, Loader2, FileText } from 'lucide-react';
 import {
   ModelProviderLogo,
   ClaudeLogo,
@@ -23,6 +24,18 @@ interface BillingViewProps {
   ledger: any[];
 }
 
+const LEDGER_TYPE_LABELS: Record<string, { en: string; id: string }> = {
+  purchase: { en: 'Top-up', id: 'Top up' },
+  redeem: { en: 'Redeem code', id: 'Redeem code' },
+  usage: { en: 'Usage', id: 'Pemakaian' },
+  reservation: { en: 'Reserved', id: 'Dicadangkan' },
+  settlement: { en: 'Usage', id: 'Pemakaian' },
+  release: { en: 'Released', id: 'Dikembalikan' },
+  refund: { en: 'Refund', id: 'Refund' },
+  admin_adjustment: { en: 'Adjustment', id: 'Penyesuaian' },
+  promotion: { en: 'Promo', id: 'Promo' },
+};
+
 export function BillingView({
   balance: initialBalance,
   packages: initialPackages,
@@ -34,20 +47,76 @@ export function BillingView({
   const [balance, setBalance] = useState(initialBalance);
   const [selectedPkg, setSelectedPkg] = useState<any>(null);
   const [resumePayment, setResumePayment] = useState<any>(null);
-  const [selectedCurrency, setSelectedCurrency] = useState<'IDR' | 'USD'>(locale === 'id' ? 'IDR' : 'USD');
   const paymentsList = payments ?? [];
+  const [exporting, setExporting] = useState<'payments' | 'ledger' | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
 
-  // Keep currency tab synced when user toggles website language. Adjusted during render
-  // rather than in an effect, so the tab never paints with the previous locale's currency.
-  const [prevLocale, setPrevLocale] = useState(locale);
-  if (locale !== prevLocale) {
-    setPrevLocale(locale);
-    setSelectedCurrency(locale === 'id' ? 'IDR' : 'USD');
-  }
+  // The page only loads the latest rows, so exports page through the API for the full history.
+  // ponytail: capped at 10k rows per export.
+  const fetchAll = async (path: string) => {
+    const rows: any[] = [];
+    for (let page = 1; page <= 100; page++) {
+      const res = await fetch(`/api/backend/v1/account/${path}?page=${page}&limit=100`, { cache: 'no-store' });
+      if (!res.ok) throw new Error(String(res.status));
+      const batch: any[] = (await res.json())?.data ?? [];
+      rows.push(...batch);
+      if (batch.length < 100) break;
+    }
+    return rows;
+  };
+
+  const exportCsv = async (kind: 'payments' | 'ledger') => {
+    setExporting(kind);
+    setExportError(null);
+    const day = new Date().toISOString().slice(0, 10);
+    try {
+      if (kind === 'payments') {
+        const rows = await fetchAll('payments');
+        downloadCsv(
+          `morphic-payments-${day}.csv`,
+          ['created_at', 'paid_at', 'provider', 'currency', 'amount', 'credits', 'status', 'id'],
+          rows.map((p) => [
+            p.created_at,
+            p.paid_at,
+            p.provider,
+            p.currency,
+            p.currency === 'USD' ? (p.amount_cents / 100).toFixed(2) : p.amount_cents,
+            p.credits,
+            p.status,
+            p.id,
+          ]),
+        );
+      } else {
+        const rows = await fetchAll('transactions');
+        downloadCsv(
+          `morphic-credit-ledger-${day}.csv`,
+          ['created_at', 'type', 'amount', 'source', 'reference'],
+          rows.map((e) => [e.created_at, e.entry_type, e.amount, e.source_type, e.reference]),
+        );
+      }
+    } catch {
+      setExportError(locale === 'en' ? 'Export failed. Try again.' : 'Gagal mengekspor. Coba lagi.');
+    } finally {
+      setExporting(null);
+    }
+  };
+
+  const exportButton = (kind: 'payments' | 'ledger') => (
+    <button
+      type="button"
+      onClick={() => exportCsv(kind)}
+      disabled={exporting !== null}
+      className="inline-flex items-center gap-1.5 min-h-9 px-3 rounded-xl border border-neutral-200 bg-white hover:bg-neutral-50 text-[11px] font-semibold text-neutral-800 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
+    >
+      {exporting === kind ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+      <span>{locale === 'en' ? 'Export CSV' : 'Ekspor CSV'}</span>
+    </button>
+  );
+  const currentCurrency = locale === 'id' ? 'IDR' : 'USD';
 
   const displayedPackages = initialPackages.filter((p) => {
     const pkgCurr = p.currency === 'USD' ? 'USD' : 'IDR';
-    return pkgCurr === selectedCurrency;
+    return pkgCurr === currentCurrency;
   });
 
   const handleSuccess = (creditsAdded: number) => {
@@ -93,36 +162,11 @@ export function BillingView({
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Currency Selector Tab */}
-            <div className="inline-flex p-1 bg-neutral-100 rounded-xl border border-neutral-200/90 text-xs font-mono font-bold">
-              <button
-                type="button"
-                onClick={() => setSelectedCurrency('IDR')}
-                className={cn(
-                  "px-3 py-1 rounded-lg transition-all cursor-pointer",
-                  selectedCurrency === 'IDR'
-                    ? "bg-white text-neutral-950 shadow-2xs font-extrabold"
-                    : "text-neutral-500 hover:text-neutral-900"
-                )}
-              >
-                🇮🇩 IDR (Rp)
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelectedCurrency('USD')}
-                className={cn(
-                  "px-3 py-1 rounded-lg transition-all cursor-pointer",
-                  selectedCurrency === 'USD'
-                    ? "bg-white text-neutral-950 shadow-2xs font-extrabold"
-                    : "text-neutral-500 hover:text-neutral-900"
-                )}
-              >
-                🌐 USD ($)
-              </button>
-            </div>
-
-            <span className="hidden sm:inline-block text-[11px] font-mono font-bold text-neutral-700 bg-neutral-100 px-2.5 py-1 rounded-md border border-neutral-200">
-              {selectedCurrency === 'IDR' ? 'QRIS & Duitku' : 'PayPal & Cards'}
+            <span className="inline-flex items-center gap-2 text-xs font-mono font-bold text-neutral-800 bg-neutral-100/90 px-3 py-1.5 rounded-xl border border-neutral-200/90 shadow-2xs">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              <span>
+                {currentCurrency === 'IDR' ? '🇮🇩 IDR · QRIS & Duitku' : '🌐 USD · PayPal & Cards'}
+              </span>
             </span>
           </div>
         </div>
@@ -131,13 +175,13 @@ export function BillingView({
           <div className="rounded-2xl border border-dashed border-neutral-300 bg-white/60 p-8 text-center">
             <p className="text-sm font-semibold text-neutral-800">
               {locale === 'en'
-                ? `No ${selectedCurrency} packages available right now.`
-                : `Paket dalam mata uang ${selectedCurrency} sedang tidak tersedia.`}
+                ? `No ${currentCurrency} packages available right now.`
+                : `Paket dalam mata uang ${currentCurrency} sedang tidak tersedia.`}
             </p>
             <p className="mt-1.5 text-xs text-neutral-500 max-w-sm mx-auto leading-relaxed">
               {locale === 'en'
-                ? 'Try switching to the other currency tab above or check back shortly.'
-                : 'Coba pilih tab mata uang lainnya di atas atau coba lagi nanti.'}
+                ? 'Check back shortly or change language in the sidebar to view other currency plans.'
+                : 'Silakan periksa kembali nanti atau ganti bahasa di sidebar untuk melihat paket lainnya.'}
             </p>
           </div>
         )}
@@ -332,7 +376,13 @@ export function BillingView({
 
         {/* Payment History */}
         <div className="space-y-3">
-          <h2 suppressHydrationWarning className="font-heading font-bold text-base text-neutral-950">{t.dashboard.qrisHistoryTitle}</h2>
+          <div className="flex items-center justify-between gap-3">
+            <h2 suppressHydrationWarning className="font-heading font-bold text-base text-neutral-950">{t.dashboard.qrisHistoryTitle}</h2>
+            {paymentsList.length > 0 && exportButton('payments')}
+          </div>
+          {exportError && exporting === null && (
+            <p role="alert" className="text-xs text-red-700">{exportError}</p>
+          )}
           <div className="rounded-2xl bg-white border border-neutral-200/90 shadow-2xs overflow-hidden">
             {paymentsList.length === 0 ? (
               <div suppressHydrationWarning className="p-8 text-center text-xs text-neutral-500 font-mono">
@@ -350,7 +400,15 @@ export function BillingView({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-neutral-100">
-                    {payments.map((p) => (
+                    {payments.map((p) => {
+                      // QRIS invoices live 5 minutes, other open payments 24 hours; the API cancels them after that,
+                      // so a stale row reads as cancelled and never offers "Pay now".
+                      const age = Date.now() - new Date(p.createdAt).getTime();
+                      const status =
+                        p.status === 'pending' && (age > 24 * 3_600_000 || (p.provider === 'duitku' && age > 5.5 * 60_000))
+                          ? 'expired'
+                          : p.status;
+                      return (
                       <tr key={p.id}>
                         <td className="px-5 py-3 text-neutral-500">
                           {new Date(p.createdAt).toLocaleDateString(locale === 'en' ? 'en-US' : 'id-ID')}
@@ -365,23 +423,39 @@ export function BillingView({
                           <div className="flex items-center gap-2">
                             <span
                               suppressHydrationWarning
-                              className={`px-2 py-0.5 rounded-md text-[10px] font-mono font-bold ${p.status === 'paid' || p.status === 'success' || p.status === 'settlement'
+                              className={`px-2 py-0.5 rounded-md text-[10px] font-mono font-bold ${status === 'paid' || status === 'success' || status === 'settlement'
                                   ? 'bg-emerald-100 text-emerald-800'
-                                  : p.status === 'pending' || p.status === 'pending_paypal'
+                                  : status === 'pending' || status === 'pending_paypal'
                                     ? 'bg-amber-100 text-amber-800 border border-amber-200'
                                     : 'bg-neutral-100 text-neutral-800'
                                 }`}
                             >
-                              {p.status === 'success' || p.status === 'settlement' || p.status === 'paid'
+                              {status === 'success' || status === 'settlement' || status === 'paid'
                                 ? (locale === 'en' ? 'Success' : 'Berhasil')
-                                : p.status === 'pending_paypal'
+                                : status === 'pending_paypal'
                                   ? (locale === 'en' ? 'Under Review' : 'Sedang Ditinjau')
-                                  : p.status === 'pending'
+                                  : status === 'pending'
                                     ? (locale === 'en' ? 'Pending' : 'Menunggu')
-                                    : p.status}
+                                    : status === 'expired'
+                                      ? (locale === 'en' ? 'Cancelled' : 'Dibatalkan')
+                                      : status === 'failed'
+                                        ? (locale === 'en' ? 'Failed' : 'Gagal')
+                                        : status}
                             </span>
 
-                            {(p.status === 'pending' || p.status === 'pending_paypal') && (
+                            {status === 'paid' && (
+                              <a
+                                href={`/receipt/${p.id}`}
+                                target="_blank"
+                                rel="noopener"
+                                className="inline-flex items-center gap-1 min-h-8 px-2.5 rounded-lg border border-neutral-200 bg-white hover:bg-neutral-50 text-neutral-800 text-[11px] font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
+                              >
+                                <FileText className="h-3 w-3" />
+                                <span suppressHydrationWarning>{locale === 'en' ? 'Receipt' : 'Kuitansi'}</span>
+                              </a>
+                            )}
+
+                            {(status === 'pending' || status === 'pending_paypal') && (
                               <button
                                 id={`continue-pay-btn-${p.id}`}
                                 onClick={() => {
@@ -397,7 +471,7 @@ export function BillingView({
                                     id: p.id,
                                     externalId: p.externalId,
                                     provider: p.provider,
-                                    status: p.status,
+                                    status: status,
                                   });
                                 }}
                                 className="px-2.5 py-1 rounded-lg bg-neutral-950 hover:bg-neutral-800 text-white text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1 shadow-2xs"
@@ -409,7 +483,8 @@ export function BillingView({
                           </div>
                         </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -418,9 +493,12 @@ export function BillingView({
         </div>
         {/* Credit Ledger History */}
         <div className="space-y-3">
-          <h2 suppressHydrationWarning className="font-heading font-bold text-base text-neutral-950">
-            {t.dashboard.ledgerHistoryTitle}
-          </h2>
+          <div className="flex items-center justify-between gap-3">
+            <h2 suppressHydrationWarning className="font-heading font-bold text-base text-neutral-950">
+              {t.dashboard.ledgerHistoryTitle}
+            </h2>
+            {ledger.length > 0 && exportButton('ledger')}
+          </div>
           <div className="rounded-2xl bg-white border border-neutral-200/90 shadow-2xs overflow-hidden">
             {ledger.length === 0 ? (
               <div suppressHydrationWarning className="p-8 text-center text-xs text-neutral-500 font-mono">
@@ -440,18 +518,28 @@ export function BillingView({
                   <tbody className="divide-y divide-neutral-100">
                     {ledger.map((entry) => (
                       <tr key={entry.id}>
-                        <td className="px-5 py-3 font-mono font-bold text-neutral-800">
-                          {entry.entry_type}
+                        <td className="px-5 py-3 font-bold text-neutral-800 whitespace-nowrap">
+                          {(LEDGER_TYPE_LABELS[entry.entryType] ?? { en: entry.entryType, id: entry.entryType })[locale === 'en' ? 'en' : 'id']}
                         </td>
                         <td className={`px-5 py-3 font-mono font-bold ${entry.amount >= 0 ? 'text-emerald-600' : 'text-rose-600'
                           }`}>
                           {entry.amount >= 0 ? '+' : ''}{entry.amount.toLocaleString()}
                         </td>
-                        <td className="px-5 py-3 text-neutral-500 max-w-[200px] truncate">
-                          {entry.reference ?? '—'}
+                        <td className="px-5 py-3 text-neutral-600 max-w-[260px] truncate" title={entry.reference ?? undefined}>
+                          {entry.redeemCode
+                            ? `${locale === 'en' ? 'Code' : 'Kode'} ${entry.redeemCode}`
+                            : entry.packageName
+                              ? entry.packageName
+                              : entry.reference?.startsWith('code:')
+                                ? `${locale === 'en' ? 'Code' : 'Kode'} ${entry.reference.slice(5)}`
+                                : entry.entryType === 'admin_adjustment'
+                                  ? (locale === 'en' ? 'Adjusted by admin' : 'Disesuaikan admin')
+                                  : entry.reference
+                                    ? `${locale === 'en' ? 'Request' : 'Request'} ${entry.reference.slice(0, 12)}`
+                                    : '—'}
                         </td>
                         <td className="px-5 py-3 text-neutral-500 font-mono whitespace-nowrap">
-                          {new Date(entry.created_at).toLocaleString(
+                          {new Date(entry.createdAt).toLocaleString(
                             locale === 'en' ? 'en-US' : 'id-ID',
                             { dateStyle: 'short', timeStyle: 'short' }
                           )}

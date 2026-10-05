@@ -16,16 +16,17 @@ import {
 } from 'lucide-react';
 import { useTranslation } from '@/lib/i18n';
 import { useReducedMotionSafe } from '@/lib/use-reduced-motion-safe';
+import { API_BASE_URL } from '@/lib/utils';
 
 interface HowItWorksStepsProps {
   isLoggedIn?: boolean;
 }
 
 const ROUTER_MODELS = [
-  { id: 'deepseek-v4', label: 'DeepSeek V4 Coder', latency: '138ms', costId: 'Hemat 70%', costEn: 'Save 70%' },
-  { id: 'claude-3.5-sonnet-proxy', label: 'Claude 3.5 Sonnet', latency: '152ms', costId: 'Auto-Routing', costEn: 'Auto-Routing' },
-  { id: 'qwen-2.5-max', label: 'Qwen 2.5 Max', latency: '144ms', costId: '128K Konteks', costEn: '128K Context' },
-  { id: 'kimi-coding', label: 'Kimi Coding 256K', latency: '146ms', costId: 'Long Horizon', costEn: 'Long Horizon' },
+  { id: 'deepseek-v4', label: 'DeepSeek V4', costId: '64K Konteks', costEn: '64K context' },
+  { id: 'kimi-coding', label: 'Kimi Coding', costId: '256K Konteks', costEn: '256K context' },
+  { id: 'qwen-max', label: 'Qwen Max', costId: '32K Konteks', costEn: '32K context' },
+  { id: 'DeepSeek-V4-Flash-0731', label: 'DeepSeek V4 Flash', costId: '64K Konteks', costEn: '64K context' },
 ];
 
 function RouterSwitcher({ locale }: { locale: string }) {
@@ -56,11 +57,7 @@ function RouterSwitcher({ locale }: { locale: string }) {
           </span>
         </div>
         <div className="flex justify-between items-center text-neutral-400">
-          <span>upstream_latency:</span>
-          <span className="text-neutral-200 font-bold">{cur.latency}</span>
-        </div>
-        <div className="flex justify-between items-center text-neutral-400">
-          <span>efficiency:</span>
+          <span>context_window:</span>
           <span className="text-neutral-200">{locale === 'en' ? cur.costEn : cur.costId}</span>
         </div>
       </div>
@@ -186,7 +183,7 @@ function CodeConnectionPreview({ locale }: { locale: string }) {
             client = OpenAI(
           </div>
           <div className="pl-4">
-            base_url=<span className="text-emerald-400">&quot;https://api.morphic.sh/v1&quot;</span>,
+            base_url=<span className="text-emerald-400">&quot;{API_BASE_URL}&quot;</span>,
           </div>
           <div className="pl-4">
             api_key=<span className="text-emerald-400">&quot;mp-live-xxxxxx&quot;</span>,
@@ -197,13 +194,13 @@ function CodeConnectionPreview({ locale }: { locale: string }) {
         <div className="rounded-xl bg-neutral-950 p-3.5 font-mono text-[11px] leading-relaxed text-neutral-300 shadow-inner overflow-x-auto">
           <div>{'{'}</div>
           <div className="pl-4">
-            &quot;override_base_url&quot;: <span className="text-emerald-400">&quot;https://api.morphic.sh/v1&quot;</span>,
+            &quot;override_base_url&quot;: <span className="text-emerald-400">&quot;{API_BASE_URL}&quot;</span>,
           </div>
           <div className="pl-4">
             &quot;api_key&quot;: <span className="text-emerald-400">&quot;mp-live-xxxxxx&quot;</span>,
           </div>
           <div className="pl-4">
-            &quot;model&quot;: <span className="text-neutral-400">&quot;deepseek-v4-coder&quot;</span>
+            &quot;model&quot;: <span className="text-neutral-400">&quot;deepseek-v4&quot;</span>
           </div>
           <div>{'}'}</div>
         </div>
@@ -371,8 +368,8 @@ export default function HowItWorksSteps({ isLoggedIn = false }: HowItWorksStepsP
       icon: TerminalSquare,
       bullets: [
         locale === 'en'
-          ? 'Point base_url to https://api.morphic.sh/v1 with standard OpenAI API schema'
-          : 'Arahkan base_url ke https://api.morphic.sh/v1 dengan skema OpenAI standar',
+          ? `Point base_url to ${API_BASE_URL} with standard OpenAI API schema`
+          : `Arahkan base_url ke ${API_BASE_URL} dengan skema OpenAI standar`,
         locale === 'en'
           ? 'Zero code changes needed: compatible with Cursor, Cline, Windsurf & Python/Node SDK'
           : 'Tanpa bongkar kode: langsung jalan di Cursor, Cline, Windsurf & SDK resmi',
@@ -413,8 +410,8 @@ export default function HowItWorksSteps({ isLoggedIn = false }: HowItWorksStepsP
           <div className="max-w-5xl mx-auto w-full">
             {/* Desktop Section Header with Micro Blur-Fade Up */}
             <motion.div
-              initial={reduced ? false : { opacity: 0, y: 14, filter: 'blur(4px)' }}
-              whileInView={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+              initial={reduced ? false : { opacity: 0, y: 14 }}
+              whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true, margin: '-50px' }}
               transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
               className="text-center max-w-3xl mx-auto mb-5"
@@ -627,8 +624,8 @@ export default function HowItWorksSteps({ isLoggedIn = false }: HowItWorksStepsP
         <div className="max-w-xl mx-auto">
           {/* Mobile Section Header with Micro Blur-Fade Up */}
           <motion.div
-            initial={reduced ? false : { opacity: 0, y: 14, filter: 'blur(4px)' }}
-            whileInView={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+            initial={reduced ? false : { opacity: 0, y: 14 }}
+            whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true, margin: '-50px' }}
             transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
             className="text-center max-w-xl mx-auto mb-10"

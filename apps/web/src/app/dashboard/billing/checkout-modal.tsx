@@ -15,7 +15,6 @@ import {
   Copy,
   Check,
   KeyRound,
-  Play,
   Terminal,
   Code2,
   BookOpen,
@@ -26,12 +25,11 @@ import { useTranslation } from '@/lib/i18n';
 import { formatCredits, API_BASE_URL, cn } from '@/lib/utils';
 import { PayPalButton } from '@/components/PayPalButton';
 import { provisionPostPaymentKey } from '@/lib/actions';
-import { ApiKeyPingModal } from '@/components/ApiKeyPingModal';
 import { ModelProviderLogo } from '@/components/ProviderLogos';
 
 const API_URL = '/api/backend';
 const POLL_INTERVAL_MS = 3000;
-const MAX_POLL_ATTEMPTS = 60; // 3 min max polling
+const MAX_POLL_ATTEMPTS = 60; // ~6 min with backoff, past the 5-minute invoice lifetime
 
 type PaymentStatus = 'idle' | 'creating' | 'waiting' | 'pending_paypal' | 'paid' | 'failed' | 'error';
 type IdeTab = 'cursor' | 'cline' | 'claudecode' | 'curl';
@@ -155,6 +153,7 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollAttemptsRef = useRef(0);
+  const pollNowRef = useRef<(() => void) | null>(null);
   const mountedRef = useRef(true);
 
   const [provisionedToken, setProvisionedToken] = useState<string | null>(null);
@@ -164,7 +163,6 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
   const [copiedKey, setCopiedKey] = useState(false);
   const [copiedBaseUrl, setCopiedBaseUrl] = useState(false);
   const [copiedSnippet, setCopiedSnippet] = useState(false);
-  const [isPingModalOpen, setIsPingModalOpen] = useState(false);
 
   const [selectedMethod, setSelectedMethod] = useState<string>('SP');
   const [categoryFilter, setCategoryFilter] = useState<PaymentCategory>('all');
@@ -192,6 +190,15 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
       if (pollRef.current) clearTimeout(pollRef.current);
     };
   }, []);
+
+  // Countdown to invoice expiry (the server cancels it right after).
+  useEffect(() => {
+    if (!expiresAt) return;
+    const tick = () => setSecondsLeft(Math.max(0, Math.round((expiresAt.getTime() - Date.now()) / 1000)));
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [expiresAt]);
 
   const fetchPostPaymentToken = useCallback(() => {
     setIsProvisioningToken(true);
@@ -279,6 +286,10 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
       }
     };
 
+    pollNowRef.current = () => {
+      if (pollRef.current) clearTimeout(pollRef.current);
+      void poll();
+    };
     pollRef.current = setTimeout(poll, POLL_INTERVAL_MS);
   }, [pkg.creditAllowance, onSuccess, fetchPostPaymentToken]);
 
@@ -318,7 +329,11 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
             } else if (data.status === 'failed' || data.status === 'expired') {
               setStatus('failed');
             } else {
-              setStatus('idle');
+              // Still inside its 5-minute window: keep watching it instead of dropping back to idle.
+              if (data.expiresAt) setExpiresAt(new Date(data.expiresAt));
+              setStatus('waiting');
+              pollAttemptsRef.current = 0;
+              startPolling(existingPayment.id);
             }
           })
           .catch(() => {
@@ -326,7 +341,7 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
           });
       }
     }
-  }, [existingPayment, onSuccess, pkg.creditAllowance, fetchPostPaymentToken]);
+  }, [existingPayment, onSuccess, pkg.creditAllowance, fetchPostPaymentToken, startPolling]);
 
   const handleCreateDuitkuPayment = async () => {
     // Open new window synchronously on user gesture to avoid popup blocker
@@ -883,15 +898,6 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
 
                 {/* Direct Live Ping action & Docs link */}
                 <div className="flex flex-col sm:flex-row items-center gap-2 pt-1 border-t border-neutral-200/70">
-                  <button
-                    type="button"
-                    onClick={() => setIsPingModalOpen(true)}
-                    disabled={!provisionedToken}
-                    className="w-full sm:flex-1 py-2 px-3 rounded-xl bg-neutral-950 hover:bg-neutral-800 disabled:opacity-50 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
-                  >
-                    <Play className="h-3.5 w-3.5 fill-current text-emerald-400" />
-                    <span>{locale === 'en' ? 'Quick Ping Test (Live)' : 'Uji Coba Sekarang (Quick Ping)'}</span>
-                  </button>
 
                   <a
                     href="/docs#ide-setup"
@@ -956,6 +962,7 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
               onClick={() => {
                 if (paymentId) {
                   pollAttemptsRef.current = Math.max(0, pollAttemptsRef.current - 5);
+                  pollNowRef.current?.();
                 }
               }}
               className="w-full py-2.5 rounded-xl border border-neutral-200 hover:border-neutral-300 text-neutral-700 text-xs font-medium transition-all cursor-pointer flex items-center justify-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
@@ -996,14 +1003,6 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
           )}
         </div>
       </div>
-
-      {/* Test API Key Ping Modal on top of checkout success */}
-      <ApiKeyPingModal
-        isOpen={isPingModalOpen}
-        onClose={() => setIsPingModalOpen(false)}
-        initialApiKey={provisionedToken || ''}
-        zIndex="z-[70]"
-      />
     </div>
   );
 }

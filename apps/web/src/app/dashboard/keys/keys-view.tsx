@@ -2,8 +2,9 @@
 
 import { useRef, useState, useTransition } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useTranslation } from '@/lib/i18n';
-import { revokeApiKey } from '@/lib/actions';
+import { deleteApiKey } from '@/lib/actions';
 import { timeAgo } from '@/lib/utils';
 import {
   ArrowUpRight,
@@ -13,10 +14,9 @@ import {
   ShieldAlert,
   ShieldCheck,
   Trash2,
-  Activity,
   Zap,
+  RefreshCw,
 } from 'lucide-react';
-import { ApiKeyPingModal } from '@/components/ApiKeyPingModal';
 
 const maskedKey = (prefix: string) => `${(prefix || 'mp-live-').slice(0, 10)}••••••••••••••••`;
 
@@ -24,7 +24,6 @@ interface KeyItem {
   id: string;
   name: string;
   keyPrefix: string;
-  rawKey?: string | null;
   status: string;
   expiresAt?: Date | null;
   lastUsedAt: Date | null;
@@ -33,10 +32,10 @@ interface KeyItem {
 
 interface KeysViewProps {
   initialKeys: KeyItem[];
-  availableModels?: Array<{ id: string; name: string }>;
 }
 
-export function KeysView({ initialKeys, availableModels }: KeysViewProps) {
+export function KeysView({ initialKeys }: KeysViewProps) {
+  const router = useRouter();
   const { t, locale } = useTranslation();
   const isId = locale === 'id';
   const [keys, setKeys] = useState<KeyItem[]>(initialKeys);
@@ -47,31 +46,60 @@ export function KeysView({ initialKeys, availableModels }: KeysViewProps) {
   const [isCreating, setIsCreating] = useState(false);
   const nameInputRef = useRef<HTMLInputElement>(null);
   const [copiedKey, setCopiedKey] = useState(false);
-  const [confirmRevokeId, setConfirmRevokeId] = useState<string | null>(null);
-  const [revealedKeys, setRevealedKeys] = useState<Record<string, boolean>>({});
-  const [copiedKeyId, setCopiedKeyId] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [rotateId, setRotateId] = useState<string | null>(null);
+  const [rotateGrace, setRotateGrace] = useState(86_400);
+  const [isRotating, setIsRotating] = useState(false);
+  const [rotateError, setRotateError] = useState<string | null>(null);
+  const [rotatingIds, setRotatingIds] = useState<Set<string>>(() => new Set());
 
-  // Test API Key / Quick Ping modal state
-  const [isPingModalOpen, setIsPingModalOpen] = useState(false);
-  const [testKey, setTestKey] = useState('');
-
-  const getFullKey = (k: KeyItem): string | null => k.rawKey ?? null;
-
-  const toggleReveal = (id: string) => {
-    setRevealedKeys((prev) => ({
-      ...prev,
-      [id]: !prev[id],
-    }));
+  // Replacement is shown once in the same banner as a new key; the old key keeps working
+  // until the chosen grace period ends so deployed clients can switch over.
+  const handleRotate = async (id: string) => {
+    if (isRotating) return;
+    setIsRotating(true);
+    setRotateError(null);
+    try {
+      const res = await fetch(`/api/backend/v1/keys/${id}/rotate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ gracePeriodSeconds: rotateGrace }),
+      });
+      const body = await res.json().catch(() => null);
+      if (!res.ok || !body?.key) {
+        setRotateError(body?.error?.message || (isId ? 'Gagal merotasi key. Coba lagi.' : 'Could not rotate the key. Try again.'));
+        return;
+      }
+      setCreatedRawKey(body.key);
+      setKeys((prev) => [
+        {
+          id: body.id,
+          name: body.name,
+          keyPrefix: body.prefix,
+          status: body.status,
+          expiresAt: body.expires_at ? new Date(body.expires_at) : null,
+          lastUsedAt: null,
+          createdAt: new Date(body.created_at),
+        },
+        ...prev.map((k) => (k.id === id ? { ...k, expiresAt: new Date(body.rotated_from.expires_at) } : k)),
+      ]);
+      setRotatingIds((prev) => new Set(prev).add(id));
+      setRotateId(null);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } catch {
+      setRotateError(isId ? 'Tidak bisa menghubungi server.' : 'Could not reach the server.');
+    } finally {
+      setIsRotating(false);
+    }
   };
 
-  const handleCopyKey = (k: KeyItem) => {
-    const fullKey = getFullKey(k);
-    const textToCopy = fullKey || k.keyPrefix;
-    navigator.clipboard.writeText(textToCopy);
-    setCopiedKeyId(k.id);
-    setTimeout(() => setCopiedKeyId(null), 2000);
-  };
+  const hoursLeft = (d: Date) => Math.max(1, Math.ceil((new Date(d).getTime() - Date.now()) / 3_600_000));
+
+
+  const MAX_KEYS = 5;
+  const isAtLimit = keys.length >= MAX_KEYS;
 
   // Minting goes straight to the gateway through the /api/backend proxy instead of a
   // Server Action: the proxy re-derives the Authorization header from the session, and a
@@ -79,6 +107,15 @@ export function KeysView({ initialKeys, availableModels }: KeysViewProps) {
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isCreating) return;
+
+    if (isAtLimit) {
+      setCreateError(
+        isId
+          ? `Batas kuota tercapai: Anda sudah memiliki ${MAX_KEYS}/${MAX_KEYS} API key. Hapus key yang tidak terpakai jika ingin membuat yang baru.`
+          : `Quota reached: You already have ${MAX_KEYS}/${MAX_KEYS} API keys. Delete an unused key if you need to create a new one.`
+      );
+      return;
+    }
 
     const name = newKeyName.trim();
     if (!name) {
@@ -110,13 +147,11 @@ export function KeysView({ initialKeys, availableModels }: KeysViewProps) {
       }
 
       setCreatedRawKey(body.key);
-      setTestKey(body.key);
       setKeys((prev) => [
         {
           id: body.id,
           name: body.name,
           keyPrefix: body.prefix,
-          rawKey: body.key,
           status: body.status,
           expiresAt: body.expires_at ? new Date(body.expires_at) : null,
           lastUsedAt: null,
@@ -124,7 +159,6 @@ export function KeysView({ initialKeys, availableModels }: KeysViewProps) {
         },
         ...prev,
       ]);
-      setRevealedKeys((prev) => ({ ...prev, [body.id]: true }));
       setNewKeyName('');
     } catch {
       setCreateError(
@@ -137,12 +171,17 @@ export function KeysView({ initialKeys, availableModels }: KeysViewProps) {
     }
   };
 
-  const handleRevoke = (id: string) => {
+  // Permanent delete: the row is gone, so the gateway rejects the key on its very next request.
+  const handleDelete = (id: string) => {
+    setDeleteError(null);
     startTransition(async () => {
-      const fd = new FormData();
-      fd.set('id', id);
-      await revokeApiKey(fd);
-      setKeys((prev) => prev.filter((k) => k.id !== id));
+      const res = await deleteApiKey(id);
+      if (res.ok) {
+        setKeys((prev) => prev.filter((k) => k.id !== id));
+        router.refresh();
+      } else {
+        setDeleteError(res.error || (isId ? 'Gagal menghapus key. Coba lagi.' : 'Could not delete the key. Try again.'));
+      }
     });
   };
 
@@ -154,49 +193,59 @@ export function KeysView({ initialKeys, availableModels }: KeysViewProps) {
 
   return (
     <div className="w-full space-y-8">
-      {/* Header with Quick Ping Button */}
+      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-neutral-200/70 pb-4">
         <div>
-          <h1 suppressHydrationWarning className="text-2xl md:text-3xl font-heading font-extrabold text-neutral-950 tracking-tight">
-            {t.dashboard.keysPageTitle}
-          </h1>
+          <div className="flex items-center gap-3">
+            <h1 suppressHydrationWarning className="text-2xl md:text-3xl font-heading font-extrabold text-neutral-950 tracking-tight">
+              {t.dashboard.keysPageTitle}
+            </h1>
+            <span className={`px-2.5 py-0.5 rounded-full text-xs font-mono font-semibold border ${
+              isAtLimit
+                ? 'bg-amber-50 text-amber-800 border-amber-200'
+                : 'bg-neutral-100 text-neutral-700 border-neutral-200'
+            }`}>
+              {keys.length}/{MAX_KEYS} Keys
+            </span>
+          </div>
           <p suppressHydrationWarning className="text-xs md:text-sm text-neutral-600 mt-1 max-w-2xl leading-relaxed">
             {t.dashboard.keysPageSubtitle}
           </p>
         </div>
-
-        <button
-          type="button"
-          onClick={() => {
-            setTestKey(createdRawKey || '');
-            setIsPingModalOpen(true);
-          }}
-          className="group inline-flex items-center gap-2 px-3.5 py-2 rounded-xl border border-neutral-300 hover:border-neutral-950 bg-white hover:bg-neutral-950 text-neutral-800 hover:text-white text-xs font-semibold transition-all shadow-2xs shrink-0 self-start sm:self-auto cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
-        >
-          <Activity className="h-3.5 w-3.5 text-neutral-500 group-hover:text-white transition-colors" />
-          <span>{isId ? 'Uji Koneksi Key' : 'Test API Key'}</span>
-        </button>
       </div>
 
       {/* Create Key Card */}
       <div className="p-6 rounded-3xl bg-white border border-neutral-200/90 shadow-xs space-y-4">
+        {isAtLimit && (
+          <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200/90 text-xs text-amber-900 flex items-center gap-2">
+            <ShieldAlert className="h-4 w-4 text-amber-600 shrink-0" />
+            <span>
+              {isId
+                ? `Batas maksimal 5 API key telah tercapai (${keys.length}/${MAX_KEYS}). Hapus key lama di bawah untuk membuat key baru.`
+                : `Maximum limit of 5 API keys reached (${keys.length}/${MAX_KEYS}). Delete an unused key below to create a new one.`}
+            </span>
+          </div>
+        )}
+
         <form onSubmit={handleCreate} className="flex flex-col sm:flex-row gap-3">
           <input
             ref={nameInputRef}
             type="text"
             value={newKeyName}
             onChange={(e) => setNewKeyName(e.target.value)}
-            placeholder={t.dashboard.keyNameInputPlaceholder}
+            disabled={isCreating || isAtLimit}
+            placeholder={isAtLimit ? (isId ? 'Batas maksimal 5 key tercapai' : 'Max 5 keys limit reached') : t.dashboard.keyNameInputPlaceholder}
             aria-label={t.dashboard.keyNameInputPlaceholder}
             aria-invalid={createError ? true : undefined}
             aria-describedby={createError ? 'create-key-error' : undefined}
-            className="flex-1 bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-2.5 text-xs text-neutral-900 focus:outline-none focus:border-neutral-950 focus-visible:ring-2 focus-visible:ring-neutral-950 transition-colors"
+            className="flex-1 bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-2.5 text-xs text-neutral-900 focus:outline-none focus:border-neutral-950 focus-visible:ring-2 focus-visible:ring-neutral-950 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           />
           <select
             value={expiresIn}
             onChange={(e) => setExpiresIn(e.target.value as any)}
+            disabled={isCreating || isAtLimit}
             aria-label={locale === 'en' ? 'API key expiration duration' : 'Masa berlaku kunci API'}
-            className="bg-neutral-50 border border-neutral-200 rounded-xl px-3 py-2.5 text-xs text-neutral-800 focus:outline-none focus:border-neutral-950 focus-visible:ring-2 focus-visible:ring-neutral-950 transition-colors shrink-0 cursor-pointer"
+            className="bg-neutral-50 border border-neutral-200 rounded-xl px-3 py-2.5 text-xs text-neutral-800 focus:outline-none focus:border-neutral-950 focus-visible:ring-2 focus-visible:ring-neutral-950 transition-colors shrink-0 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <option value="none">{t.dashboard.expiryNever}</option>
             <option value="30d">{t.dashboard.expiry30Days}</option>
@@ -204,8 +253,8 @@ export function KeysView({ initialKeys, availableModels }: KeysViewProps) {
           </select>
           <button
             type="submit"
-            disabled={isCreating}
-            className="px-5 py-2.5 rounded-xl bg-neutral-950 hover:bg-neutral-800 disabled:opacity-50 text-white text-xs font-bold transition-all shadow-xs shrink-0 flex items-center justify-center gap-1.5 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 focus-visible:ring-offset-2 active:scale-95"
+            disabled={isCreating || isAtLimit}
+            className="px-5 py-2.5 rounded-xl bg-neutral-950 hover:bg-neutral-800 disabled:opacity-50 text-white text-xs font-bold transition-all shadow-xs shrink-0 flex items-center justify-center gap-1.5 cursor-pointer disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 focus-visible:ring-offset-2 active:scale-95"
           >
             <KeyRound className="h-3.5 w-3.5" />
             <span>{isCreating ? t.dashboard.creatingKeyBtn : t.dashboard.createKeyBtn}</span>
@@ -219,7 +268,7 @@ export function KeysView({ initialKeys, availableModels }: KeysViewProps) {
           </p>
         )}
 
-        {/* Revealed Key Banner with Instant Test Button */}
+        {/* Revealed Key Banner */}
         {createdRawKey && (
           <div className="p-4 rounded-2xl bg-neutral-900 text-white border border-neutral-800 shadow-md space-y-3 animate-in fade-in slide-in-from-top-3 duration-250 ease-out">
             <div className="flex items-center gap-2 text-xs font-mono text-emerald-400 font-bold">
@@ -231,17 +280,6 @@ export function KeysView({ initialKeys, availableModels }: KeysViewProps) {
                 {createdRawKey}
               </code>
               <div className="flex items-center gap-2 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setTestKey(createdRawKey);
-                    setIsPingModalOpen(true);
-                  }}
-                  className="px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-200 hover:text-white border border-neutral-700 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
-                >
-                  <Activity className="h-3.5 w-3.5 text-neutral-500" />
-                  <span>{isId ? 'Uji Kunci' : 'Test Key'}</span>
-                </button>
                 <button
                   onClick={() => copyToClipboard(createdRawKey)}
                   className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
@@ -267,6 +305,22 @@ export function KeysView({ initialKeys, availableModels }: KeysViewProps) {
           </div>
         )}
       </div>
+
+      {deleteError && (
+        <div role="alert" className="p-3.5 rounded-2xl bg-red-50 border border-red-200 text-xs text-red-700 flex items-center justify-between shadow-2xs">
+          <div className="flex items-center gap-2">
+            <ShieldAlert className="h-4 w-4 text-red-600 shrink-0" />
+            <span>{deleteError}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setDeleteError(null)}
+            className="text-red-500 hover:text-red-700 p-1 text-xs font-bold cursor-pointer"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* Keys Table Card */}
       <div className="rounded-3xl bg-white border border-neutral-200/90 shadow-xs overflow-hidden">
@@ -294,33 +348,29 @@ export function KeysView({ initialKeys, availableModels }: KeysViewProps) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100">
-                {keys.map((k) => (
+                {keys.map((k) => {
+                  return (
                   <tr key={k.id} className="hover:bg-neutral-50/50 transition-colors">
                     <td className="px-6 py-4 font-bold text-neutral-900">{k.name}</td>
                     <td className="px-6 py-4 font-mono text-neutral-600">
-                      <div className="inline-flex items-center gap-1.5">
-                        <span className="px-2.5 py-1 rounded-lg border text-xs font-mono select-all bg-neutral-100 text-neutral-600 border-neutral-200">
-                          {k.rawKey ? k.rawKey : maskedKey(k.keyPrefix)}
-                        </span>
-
-                        {/* Copy API Key or Prefix */}
-                        <button
-                          type="button"
-                          onClick={() => handleCopyKey(k)}
-                          title={k.rawKey ? t.dashboard.keyCopyFull : (isId ? 'Salin Prefix Key' : 'Copy Key Prefix')}
-                          aria-label={k.rawKey ? t.dashboard.keyCopyFull : (isId ? 'Salin Prefix Key' : 'Copy Key Prefix')}
-                          className="p-1.5 rounded-lg border border-neutral-200 hover:border-neutral-400 hover:bg-neutral-100 text-neutral-600 hover:text-neutral-900 transition-colors cursor-pointer shrink-0"
-                        >
-                          {copiedKeyId === k.id ? (
-                            <Check className="h-3.5 w-3.5 text-emerald-600" />
-                          ) : (
-                            <Copy className="h-3.5 w-3.5 text-neutral-600" />
-                          )}
-                        </button>
-                      </div>
+                      <span className="whitespace-nowrap px-2.5 py-1 rounded-lg border text-xs font-mono bg-neutral-100 text-neutral-600 border-neutral-200">
+                        {maskedKey(k.keyPrefix)}
+                      </span>
                     </td>
                     <td className="px-6 py-4">
-                      {k.status === 'active' ? (
+                      {k.status === 'active' && k.expiresAt && new Date(k.expiresAt).getTime() < Date.now() ? (
+                        <span className="inline-flex items-center gap-1.5 text-xs font-mono font-medium text-red-600">
+                          <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />
+                          <span suppressHydrationWarning>{t.dashboard.keyStatusExpired}</span>
+                        </span>
+                      ) : k.status === 'active' && rotatingIds.has(k.id) && k.expiresAt ? (
+                        <span className="inline-flex items-center gap-1.5 text-xs font-mono font-medium text-amber-800">
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
+                          <span>
+                            {isId ? `Dirotasi · habis dalam ${hoursLeft(k.expiresAt)} jam` : `Rotating · expires in ${hoursLeft(k.expiresAt)}h`}
+                          </span>
+                        </span>
+                      ) : k.status === 'active' ? (
                         <span className="inline-flex items-center gap-1.5 text-xs font-mono font-medium text-neutral-700">
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
                           <span suppressHydrationWarning>{t.dashboard.keyStatusActive}</span>
@@ -355,7 +405,48 @@ export function KeysView({ initialKeys, availableModels }: KeysViewProps) {
                       {new Date(k.createdAt).toLocaleDateString(locale === 'en' ? 'en-US' : 'id-ID')}
                     </td>
                     <td className="px-6 py-4 text-right">
-                      {confirmRevokeId === k.id ? (
+                      {rotateId === k.id ? (
+                        <div className="inline-flex flex-wrap items-center gap-1.5 justify-end">
+                          <label htmlFor={`grace-${k.id}`} className="text-[11px] text-neutral-700 font-semibold">
+                            {isId ? 'Key lama tetap aktif' : 'Keep old key for'}
+                          </label>
+                          <select
+                            id={`grace-${k.id}`}
+                            value={rotateGrace}
+                            onChange={(e) => setRotateGrace(Number(e.target.value))}
+                            disabled={isRotating}
+                            className="min-h-8 rounded-md border border-neutral-300 bg-white px-1.5 text-[11px] text-neutral-900 focus:outline-none focus:ring-2 focus:ring-neutral-950"
+                          >
+                            <option value={3600}>{isId ? '1 jam' : '1 hour'}</option>
+                            <option value={86400}>{isId ? '24 jam' : '24 hours'}</option>
+                            <option value={604800}>{isId ? '7 hari' : '7 days'}</option>
+                          </select>
+                          <button
+                            type="button"
+                            onClick={() => handleRotate(k.id)}
+                            disabled={isRotating}
+                            className="min-h-8 px-2.5 rounded-md bg-neutral-950 hover:bg-neutral-800 text-white text-[11px] font-bold cursor-pointer disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 focus-visible:ring-offset-1"
+                          >
+                            {isRotating ? '...' : isId ? 'Rotasi' : 'Rotate'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setRotateId(null);
+                              setRotateError(null);
+                            }}
+                            disabled={isRotating}
+                            className="min-h-8 px-2 rounded-md bg-neutral-100 hover:bg-neutral-200 text-neutral-700 text-[11px] font-semibold cursor-pointer disabled:opacity-50"
+                          >
+                            {t.dashboard.revokeCancel}
+                          </button>
+                          {rotateError && (
+                            <p role="alert" className="basis-full text-right text-[11px] text-red-700">
+                              {rotateError}
+                            </p>
+                          )}
+                        </div>
+                      ) : confirmDeleteId === k.id ? (
                         <div className="inline-flex items-center gap-1.5 justify-end">
                           <span className="text-[11px] text-red-600 font-bold">
                             {t.dashboard.revokeConfirm}
@@ -363,36 +454,54 @@ export function KeysView({ initialKeys, availableModels }: KeysViewProps) {
                           <button
                             type="button"
                             onClick={() => {
-                              handleRevoke(k.id);
-                              setConfirmRevokeId(null);
+                              handleDelete(k.id);
+                              setConfirmDeleteId(null);
                             }}
                             disabled={isPending}
-                            className="px-2 py-0.5 rounded-md bg-red-600 hover:bg-red-700 text-white text-[10px] font-bold transition-all active:scale-95 shadow-2xs cursor-pointer"
+                            className="px-2 py-0.5 rounded-md bg-red-600 hover:bg-red-700 text-white text-[10px] font-bold transition-all active:scale-95 shadow-2xs cursor-pointer disabled:opacity-50"
                           >
-                            {t.dashboard.revokeYes}
+                            {isPending ? '...' : t.dashboard.revokeYes}
                           </button>
                           <button
                             type="button"
-                            onClick={() => setConfirmRevokeId(null)}
+                            onClick={() => setConfirmDeleteId(null)}
                             disabled={isPending}
-                            className="px-2 py-0.5 rounded-md bg-neutral-100 hover:bg-neutral-200 text-neutral-700 text-[10px] font-semibold transition-all active:scale-95 cursor-pointer"
+                            className="px-2 py-0.5 rounded-md bg-neutral-100 hover:bg-neutral-200 text-neutral-700 text-[10px] font-semibold transition-all active:scale-95 cursor-pointer disabled:opacity-50"
                           >
                             {t.dashboard.revokeCancel}
                           </button>
                         </div>
                       ) : (
-                        <button
-                          type="button"
-                          onClick={() => setConfirmRevokeId(k.id)}
-                          className="px-2.5 py-1 rounded-lg border border-neutral-200 hover:border-red-300 hover:bg-red-50 text-neutral-600 hover:text-red-700 text-[11px] font-semibold transition-colors cursor-pointer inline-flex items-center gap-1"
-                        >
-                          <Trash2 className="h-3 w-3" />
-                          <span suppressHydrationWarning>{t.dashboard.revokeBtn}</span>
-                        </button>
+                        <div className="inline-flex items-center gap-1.5 justify-end">
+                          {k.status === 'active' && !(k.expiresAt && new Date(k.expiresAt).getTime() < Date.now()) && !rotatingIds.has(k.id) && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setConfirmDeleteId(null);
+                                setRotateId(k.id);
+                              }}
+                              disabled={isPending}
+                              className="px-2.5 py-1 rounded-lg border border-neutral-200 hover:border-neutral-400 hover:bg-neutral-50 text-neutral-700 text-[11px] font-semibold transition-colors cursor-pointer inline-flex items-center gap-1 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
+                            >
+                              <RefreshCw className="h-3 w-3" />
+                              <span>{isId ? 'Rotasi' : 'Rotate'}</span>
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDeleteId(k.id)}
+                            disabled={isPending}
+                            className="px-2.5 py-1 rounded-lg border border-neutral-200 hover:border-red-300 hover:bg-red-50 text-neutral-600 hover:text-red-700 text-[11px] font-semibold transition-colors cursor-pointer inline-flex items-center gap-1 disabled:opacity-50"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                            <span suppressHydrationWarning>{t.dashboard.revokeBtn}</span>
+                          </button>
+                        </div>
                       )}
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -423,14 +532,6 @@ export function KeysView({ initialKeys, availableModels }: KeysViewProps) {
           <ArrowUpRight className="h-3.5 w-3.5 text-neutral-500" />
         </Link>
       </div>
-
-      {/* Test API Key Modal */}
-      <ApiKeyPingModal
-        isOpen={isPingModalOpen}
-        onClose={() => setIsPingModalOpen(false)}
-        initialApiKey={testKey}
-        availableModels={availableModels}
-      />
     </div>
   );
 }

@@ -38,8 +38,9 @@ export function timeAgo(date: Date | string | null, locale: string = 'en'): stri
   return isId ? `${days} hari lalu` : `${days}d ago`;
 }
 
-export const API_BASE_URL =
-  (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_API_URL)
-    ? `${process.env.NEXT_PUBLIC_API_URL.replace(/\/+$/, '')}/v1`
-    : 'https://api.morphic.sh/v1';
+// Public gateway URL shown to users and put in copy-paste snippets. Deliberately separate from
+// NEXT_PUBLIC_API_URL, which is the internal backend address (localhost:8787 in development).
+export const API_BASE_URL = `${(process.env.NEXT_PUBLIC_GATEWAY_URL || 'https://morphic-api.web.id').replace(/\/+$/, '')}/v1`;
+
+export const CHAT_COMPLETIONS_URL = `${API_BASE_URL}/chat/completions`;
 

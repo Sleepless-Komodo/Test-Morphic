@@ -5,6 +5,9 @@ import { db, schema as s } from '@morphic/db';
 import { requireAdmin } from '@/lib/actions';
 import { getServerTranslation } from '@/lib/i18n/server';
 import { formatCredits } from '@/lib/utils';
+import { AutoRefresh } from '@/components/AutoRefresh';
+import { IDR_PER_USD } from '@/lib/money';
+import { memo } from '@/lib/memo';
 import { Activity, AlertTriangle, Users, Cpu, DollarSign, Zap, ServerCrash } from 'lucide-react';
 
 function StatsCardsSkeleton() {
@@ -37,7 +40,7 @@ async function AlertBannerSection({ t }: { t: any }) {
   const fiveMinCutoff = new Date(Date.now() - 5 * 60_000);
   let fiveMinStats: { providerName: string | null; total: number; errors: number }[] = [];
   try {
-    fiveMinStats = await db
+    fiveMinStats = await memo('admin:overview:alerts', 15_000, () => db
       .select({
         providerName: s.requestLogs.providerName,
         total: sql<number>`count(*)::int`,
@@ -45,7 +48,7 @@ async function AlertBannerSection({ t }: { t: any }) {
       })
       .from(s.requestLogs)
       .where(gte(s.requestLogs.createdAt, fiveMinCutoff))
-      .groupBy(s.requestLogs.providerName);
+      .groupBy(s.requestLogs.providerName));
   } catch {
     return null;
   }
@@ -96,13 +99,13 @@ async function CoreStatsCardsSection({ t }: { t: any }) {
   let usage: { requests: number; credits: number } | undefined;
 
   try {
-    [[users], [models], [payments], [usage]] = await Promise.all([
+    [[users], [models], [payments], [usage]] = await memo('admin:overview:core', 20_000, () => Promise.all([
       db.select({ count: sql<number>`count(*)::int` }).from(s.users),
-      db.select({ count: sql<number>`count(*)::int` }).from(s.models),
+      db.select({ count: sql<number>`count(*)::int` }).from(s.models).where(eq(s.models.status, 'active')),
       db
         .select({
           count: sql<number>`count(*)::int`,
-          total: sql<number>`coalesce(sum(${s.payments.amountCents}),0)::int`,
+          total: sql<number>`coalesce(sum(case when ${s.payments.currency} = 'USD' then ${s.payments.amountCents}::numeric / 100 * ${IDR_PER_USD} else ${s.payments.amountCents} end),0)::float8`,
         })
         .from(s.payments)
         .where(eq(s.payments.status, 'paid')),
@@ -112,7 +115,7 @@ async function CoreStatsCardsSection({ t }: { t: any }) {
           credits: sql<number>`coalesce(sum(${s.usageRecords.creditsConsumed}),0)::bigint`,
         })
         .from(s.usageRecords),
-    ]);
+    ]));
   } catch {
     // DB timeout — render cards with zero values so page still loads
   }
@@ -132,7 +135,7 @@ async function CoreStatsCardsSection({ t }: { t: any }) {
     },
     {
       title: t.admin.overview.revenuePaid,
-      value: `Rp${formatCredits(payments?.total ?? 0)}`,
+      value: `Rp${formatCredits(Math.round(payments?.total ?? 0))}`,
       detail: `${formatCredits(payments?.count ?? 0)} ${t.admin.overview.successfulTxs}`,
       icon: DollarSign,
     },
@@ -179,7 +182,7 @@ async function CoreStatsCardsSection({ t }: { t: any }) {
 async function ProviderHealth24hSection({ t }: { t: any }) {
   let healthStats: any[] = [];
   try {
-    healthStats = await db
+    healthStats = await memo('admin:overview:health', 30_000, () => db
       .select({
         providerName: s.requestLogs.providerName,
         total: sql<number>`count(*)::int`,
@@ -191,7 +194,7 @@ async function ProviderHealth24hSection({ t }: { t: any }) {
       })
       .from(s.requestLogs)
       .where(sql`${s.requestLogs.createdAt} > now() - interval '24 hours'`)
-      .groupBy(s.requestLogs.providerName);
+      .groupBy(s.requestLogs.providerName));
   } catch {
     // Graceful fallback for DB timeout
   }
@@ -254,13 +257,13 @@ async function ProviderHealth24hSection({ t }: { t: any }) {
 async function CircuitBreakersSection({ t }: { t: any }) {
   let providers: { name: string; status: string; circuitBreaker: any }[] = [];
   try {
-    providers = await db
+    providers = await memo('admin:overview:breakers', 10_000, () => db
       .select({
         name: s.providers.name,
         status: s.providers.status,
         circuitBreaker: s.providers.circuitBreakerState,
       })
-      .from(s.providers);
+      .from(s.providers));
   } catch {
     // Graceful fallback for DB timeout
   }
@@ -329,6 +332,7 @@ export default async function AdminOverview() {
 
   return (
     <div className="space-y-6 max-w-6xl">
+      <AutoRefresh />
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pb-5 border-b border-neutral-200/80">
         <div>

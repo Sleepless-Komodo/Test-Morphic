@@ -1,0 +1,19 @@
+# Netlify site settings: Base directory = (empty, repo root), Package directory = apps/web.
+# Only the Next.js dashboard deploys here. The Hono API (apps/api) runs background jobs
+# (payment sweeps, webhooks) and needs a long-running server; point NEXT_PUBLIC_API_URL at it.
+
+[build]
+  # `pnpm --filter` finds the workspace root on its own, so this works from any directory.
+  # NODE_ENV is forced for the build step only: a "development" value copied from .env makes
+  # `next build` mix React dev/prod builds and fail prerendering. Setting it here instead of in
+  # [build.environment] keeps devDependencies installed.
+  command = "NODE_ENV=production pnpm --filter @morphic/web run build"
+  # Resolved from the repo root (the base directory).
+  publish = "apps/web/.next"
+
+[build.environment]
+  NEXT_TELEMETRY_DISABLED = "1"
+  # Plain configuration (ports, limits, public URLs, sandbox/production switch), not secrets.
+  # Their values also appear in .env.example and docs, which trips Netlify's secret scan.
+  # Real secrets are deliberately NOT listed here so the scan still guards them.
+  SECRETS_SCAN_OMIT_KEYS = "API_PORT,HARD_RESERVE_CAP,UPSTREAM_TIMEOUT_MS,RESERVATION_TTL_MINUTES,DUITKU_ENV,PAYPAL_ENVIRONMENT,NEXT_PUBLIC_PAYPAL_ENVIRONMENT,BETTER_AUTH_URL,NEXT_PUBLIC_APP_URL,NEXT_PUBLIC_API_URL,NEXT_PUBLIC_GATEWAY_URL"

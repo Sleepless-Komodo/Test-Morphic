@@ -3,18 +3,21 @@ import { db, schema as s } from '@morphic/db';
 import { requireAdmin } from '@/lib/actions';
 import { formatCredits } from '@/lib/utils';
 import { getServerTranslation } from '@/lib/i18n/server';
+import { AutoRefresh } from '@/components/AutoRefresh';
+import { memo } from '@/lib/memo';
 import { CreditCard } from 'lucide-react';
 
 export default async function AdminTransactions() {
   await requireAdmin();
   const { t } = await getServerTranslation();
 
-  const payments = await db
+  const payments = await memo('admin:transactions', 10_000, () => db
     .select({
       id: s.payments.id,
       userEmail: s.users.email,
       provider: s.payments.provider,
       amountCents: s.payments.amountCents,
+      currency: s.payments.currency,
       credits: s.payments.credits,
       status: s.payments.status,
       createdAt: s.payments.createdAt,
@@ -23,10 +26,11 @@ export default async function AdminTransactions() {
     .from(s.payments)
     .leftJoin(s.users, eq(s.payments.userId, s.users.id))
     .orderBy(desc(s.payments.createdAt))
-    .limit(100);
+    .limit(100));
 
   return (
     <div className="space-y-6 max-w-6xl">
+      <AutoRefresh />
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pb-5 border-b border-neutral-200/80">
         <div>
@@ -70,7 +74,7 @@ export default async function AdminTransactions() {
                       {p.provider}
                     </td>
                     <td className="py-3 px-3 text-right font-mono font-semibold text-neutral-950">
-                      Rp{formatCredits(p.amountCents)}
+                      {p.currency === 'USD' ? `$${(p.amountCents / 100).toFixed(2)}` : `Rp${formatCredits(p.amountCents)}`}
                     </td>
                     <td className="py-3 px-3 text-right font-mono font-semibold text-neutral-900">
                       +{formatCredits(p.credits)}

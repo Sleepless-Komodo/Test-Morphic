@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tsx watch --env-file-if-exists=../../.env src/index.ts",
     "seed:dahl": "tsx --env-file-if-exists=../../.env scripts/seed-dahl.ts",
-    "build": "tsc --noEmit && tsup",
+    "build": "tsc --noEmit && tsup && cp -r scripts dist/scripts",
     "start": "node --env-file-if-exists=../../.env dist/index.js",
     "lint": "eslint src",
     "typecheck": "tsc --noEmit",
@@ -18,8 +18,7 @@
     "@morphic/shared": "workspace:*",
     "drizzle-orm": "^0.45.3",
     "hono": "^4.9.0",
-    "ioredis": "^6.0.0",
-    "zod": "^4.1.0"
+    "ioredis": "^6.0.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.30.0",

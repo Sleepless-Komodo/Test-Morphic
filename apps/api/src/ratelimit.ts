@@ -1,4 +1,4 @@
-import { Redis } from 'ioredis';
+import Redis from 'ioredis';
 import { RedisRateLimitStore } from './lib/redis-store';
 
 export interface IRateLimitStore {

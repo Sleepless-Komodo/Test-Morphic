@@ -9,7 +9,6 @@ import { formatCredits } from '@/lib/utils';
 import { LanguageToggle } from '@/components/LanguageToggle';
 import { SignOutButton } from '@/app/dashboard/sign-out';
 import {
-  ArrowUpRight,
   BarChart3,
   BookOpen,
   CreditCard,
@@ -22,6 +21,7 @@ import {
   Ticket,
   X,
   Coins,
+  ShieldCheck,
 } from 'lucide-react';
 
 interface DashboardShellProps {
@@ -33,10 +33,13 @@ interface DashboardShellProps {
     };
   };
   balance: number;
+  /** Resolved on the server from the DB role; only controls whether the link is shown.
+   *  /admin itself is guarded by requireAdmin on every request. */
+  isAdmin?: boolean;
   children: React.ReactNode;
 }
 
-export function DashboardShell({ session, balance, children }: DashboardShellProps) {
+export function DashboardShell({ session, balance, isAdmin = false, children }: DashboardShellProps) {
   const { t, locale } = useTranslation();
   const pathname = usePathname();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -162,6 +165,20 @@ export function DashboardShell({ session, balance, children }: DashboardShellPro
           </div>
           {renderNavList(managementNavItems)}
         </div>
+
+        {isAdmin && (
+          <div>
+            <div className="px-3 text-[10px] font-mono font-bold uppercase tracking-wider text-neutral-500 mb-1.5">Admin</div>
+            <Link
+              href="/admin"
+              onClick={() => setMobileNavOpen(false)}
+              className="flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-xs sm:text-sm font-semibold text-neutral-600 hover:text-neutral-950 hover:bg-neutral-100/80 transition-all"
+            >
+              <ShieldCheck className="h-4 w-4 shrink-0 text-neutral-500" />
+              <span suppressHydrationWarning>{locale === 'en' ? 'Admin panel' : 'Panel admin'}</span>
+            </Link>
+          </div>
+        )}
       </div>
 
       {/* Utility links & Language selector (Bottom Section) */}
@@ -173,16 +190,6 @@ export function DashboardShell({ session, balance, children }: DashboardShellPro
         >
           <BookOpen className="h-3.5 w-3.5 shrink-0 text-neutral-500" />
           <span suppressHydrationWarning>{t.nav.docs}</span>
-        </Link>
-        <Link
-          href="/"
-          onClick={() => setMobileNavOpen(false)}
-          className="flex items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-semibold text-neutral-600 hover:text-neutral-950 hover:bg-neutral-100 transition-colors"
-        >
-          <ArrowUpRight className="h-3.5 w-3.5 shrink-0 text-neutral-500" />
-          <span suppressHydrationWarning>
-            {t.dashboard.backToSite}
-          </span>
         </Link>
 
         {/* Language Selection Row */}

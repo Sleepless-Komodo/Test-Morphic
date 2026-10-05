@@ -1,183 +1,192 @@
 import { Hono } from 'hono';
+import { db, schema as s } from '@morphic/db';
+import { eq } from 'drizzle-orm';
 
+/**
+ * Public install scripts: `curl -fsSL <url> | bash` (macOS/Linux) and `irm <url> | iex`
+ * (Windows PowerShell). They contain no secrets: the API key is read from the caller's own
+ * environment ($MORPHIC_API_KEY) and only ever written to a local file on their machine.
+ *
+ * Only MORPHIC_-prefixed variables choose the gateway. A generic BASE_URL is often set by other
+ * tools (one user's pointed at another AI service), and following it would send the Morphic key
+ * there. API_KEY is still accepted as a fallback for the key, but only if it looks like mp-...
+ */
 const quickstart = new Hono();
 
-quickstart.get('/opencode.sh', (c) => {
-  const host = c.req.header('host') || 'morphic-api.web.id';
-  const proto = c.req.header('x-forwarded-proto') || (host.includes('localhost') ? 'http' : 'https');
-  const apiRootUrl = `${proto}://${host}`;
-  const baseUrl = `${apiRootUrl}/v1`;
+const CACHE_MS = 60_000;
+let cached: { at: number; models: Array<{ id: string; name: string }> } | null = null;
+
+async function activeModels() {
+  if (cached && Date.now() - cached.at < CACHE_MS) return cached.models;
+  const models = await db
+    .select({ id: s.models.publicModelId, name: s.models.displayName })
+    .from(s.models)
+    .where(eq(s.models.status, 'active'));
+  cached = { at: Date.now(), models };
+  return models;
+}
+
+const gatewayBase = (reqUrl: string) =>
+  `${(process.env.NEXT_PUBLIC_GATEWAY_URL || new URL(reqUrl).origin).replace(/\/+$/, '')}/v1`;
+const modelsMap = (models: Array<{ id: string; name: string }>) =>
+  Object.fromEntries(models.map((m) => [m.id, { name: m.name }]));
+
+quickstart.get('/opencode.sh', async (c) => {
+  const models = await activeModels();
+  const modelsJson = JSON.stringify(modelsMap(models), null, 2)
+    .split('\n')
+    .join('\n      ')
+    // Goes inside an unquoted heredoc: keep $, ` and \ literal.
+    .replace(/[\\$`]/g, '\\$&');
+  const defaultBase = gatewayBase(c.req.url);
 
   const script = `#!/usr/bin/env bash
-set -e
+# Morphic x opencode quickstart. Writes ~/.config/opencode/opencode.json for the Morphic provider.
+# Usage:
+#   export MORPHIC_API_KEY=mp-...
+#   curl -fsSL ${defaultBase.replace(/\/v1$/, '')}/quickstart/opencode.sh | bash
+set -euo pipefail
 
-# Morphic API Quickstart for OpenCode
-# Target endpoint: ${baseUrl}
-
-BOLD='\\033[1m'
-GREEN='\\033[0;32m'
-CYAN='\\033[0;36m'
-YELLOW='\\033[0;33m'
-RED='\\033[0;31m'
-NC='\\033[0m'
-
-echo -e "\${CYAN}\${BOLD}=== Morphic API Quickstart for OpenCode ===\${NC}\\n"
-
-BASE_URL="${baseUrl}"
-
-# Determine API Key from environment or prompt user
+BASE_URL="\${MORPHIC_BASE_URL:-${defaultBase}}"
+BASE_URL="\${BASE_URL%/}"
 API_KEY="\${MORPHIC_API_KEY:-\${API_KEY:-}}"
 
-if [ -z "\$API_KEY" ]; then
-  if [ -t 0 ]; then
-    read -p "Enter your Morphic API Key (press Enter to skip): " USER_KEY
-    API_KEY="\$USER_KEY"
-  elif [ -e /dev/tty ]; then
-    read -p "Enter your Morphic API Key (press Enter to skip): " USER_KEY < /dev/tty 2>/dev/null || true
-    API_KEY="\$USER_KEY"
-  fi
+if [ -z "$API_KEY" ]; then
+  echo "x MORPHIC_API_KEY is not set. Run: export MORPHIC_API_KEY=mp-your-key" >&2
+  exit 1
+fi
+case "$API_KEY" in
+  mp-*) ;;
+  *) echo "x MORPHIC_API_KEY should start with mp-. Copy it from your Morphic dashboard (API Keys)." >&2; exit 1 ;;
+esac
+# Keys are [A-Za-z0-9_-] only; anything else would break the JSON written below.
+if ! printf '%s' "$API_KEY" | grep -Eq '^mp-[A-Za-z0-9_-]+$'; then
+  echo "x MORPHIC_API_KEY contains unexpected characters." >&2
+  exit 1
 fi
 
-KEY_IS_PLACEHOLDER=0
-if [ -z "\$API_KEY" ]; then
-  API_KEY="{env:MORPHIC_API_KEY}"
-  KEY_IS_PLACEHOLDER=1
+echo "> Checking your key against $BASE_URL ..."
+if ! curl -fsS -o /dev/null -H "Authorization: Bearer $API_KEY" "$BASE_URL/models"; then
+  echo "x The gateway rejected this key (or is unreachable). Check the key." >&2
+  exit 1
 fi
 
-CONFIG_DIR="\$HOME/.config/opencode"
-mkdir -p "\$CONFIG_DIR"
-CONFIG_FILE="\$CONFIG_DIR/opencode.json"
+CONFIG_DIR="\${XDG_CONFIG_HOME:-$HOME/.config}/opencode"
+CONFIG="$CONFIG_DIR/opencode.json"
+mkdir -p "$CONFIG_DIR"
+if [ -f "$CONFIG" ]; then
+  BACKUP="$CONFIG.bak.$(date +%Y%m%d%H%M%S)"
+  cp "$CONFIG" "$BACKUP"
+  echo "> Existing config saved to $BACKUP"
+fi
 
-echo -e "Configuring OpenCode in \${BOLD}\${CONFIG_FILE}\${NC}..."
-
-if command -v node >/dev/null 2>&1; then
-  node -e "
-const fs = require('fs');
-const filePath = process.argv[1];
-const baseUrl = process.argv[2];
-const apiKey = process.argv[3];
-
-let config = {};
-try {
-  if (fs.existsSync(filePath)) {
-    config = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-  }
-} catch (e) {
-  config = {};
-}
-
-if (typeof config !== 'object' || !config) config = {};
-config['\$schema'] = config['\$schema'] || 'https://opencode.ai/config.json';
-config.provider = config.provider || {};
-config.provider.morphic = {
-  npm: '@ai-sdk/openai-compatible',
-  name: 'Morphic API',
-  options: {
-    baseURL: baseUrl,
-    apiKey: apiKey
-  },
-  models: {
-    'deepseek-v4': { name: 'DeepSeek V4' },
-    'deepseek-r1': { name: 'DeepSeek R1' },
-    'qwen-2.5-coder-32b': { name: 'Qwen 2.5 Coder 32B' },
-    'claude-3-5-sonnet': { name: 'Claude 3.5 Sonnet' },
-    'gpt-4o': { name: 'GPT-4o' }
-  }
-};
-config.model = 'morphic/deepseek-v4';
-
-fs.writeFileSync(filePath, JSON.stringify(config, null, 2) + '\\n');
-" "\$CONFIG_FILE" "\$BASE_URL" "\$API_KEY"
-elif command -v python3 >/dev/null 2>&1; then
-  python3 -c "
-import json, sys, os
-file_path, base_url, api_key = sys.argv[1], sys.argv[2], sys.argv[3]
-config = {}
-if os.path.exists(file_path):
-    try:
-        with open(file_path, 'r') as f:
-            config = json.load(f)
-    except Exception:
-        config = {}
-
-if not isinstance(config, dict): config = {};
-config['\$schema'] = config.get('\$schema', 'https://opencode.ai/config.json')
-if 'provider' not in config or not isinstance(config['provider'], dict):
-    config['provider'] = {}
-
-config['provider']['morphic'] = {
-    'npm': '@ai-sdk/openai-compatible',
-    'name': 'Morphic API',
-    'options': {
-        'baseURL': base_url,
-        'apiKey': api_key
-    },
-    'models': {
-        'deepseek-v4': {'name': 'DeepSeek V4'},
-        'deepseek-r1': {'name': 'DeepSeek R1'},
-        'qwen-2.5-coder-32b': {'name': 'Qwen 2.5 Coder 32B'},
-        'claude-3-5-sonnet': {'name': 'Claude 3.5 Sonnet'},
-        'gpt-4o': {'name': 'GPT-4o'}
-    }
-}
-config['model'] = 'morphic/deepseek-v4'
-
-with open(file_path, 'w') as f:
-    json.dump(config, f, indent=2)
-    f.write('\\n')
-" "\$CONFIG_FILE" "\$BASE_URL" "\$API_KEY"
-else
-  cat <<EOF > "\$CONFIG_FILE"
+umask 077
+cat > "$CONFIG" <<JSON
 {
-  "\$schema": "https://opencode.ai/config.json",
+  "\\$schema": "https://opencode.ai/config.json",
   "provider": {
     "morphic": {
       "npm": "@ai-sdk/openai-compatible",
-      "name": "Morphic API",
+      "name": "Morphic AI",
       "options": {
         "baseURL": "$BASE_URL",
         "apiKey": "$API_KEY"
       },
-      "models": {
-        "deepseek-v4": { "name": "DeepSeek V4" },
-        "deepseek-r1": { "name": "DeepSeek R1" },
-        "qwen-2.5-coder-32b": { "name": "Qwen 2.5 Coder 32B" },
-        "claude-3-5-sonnet": { "name": "Claude 3.5 Sonnet" },
-        "gpt-4o": { "name": "GPT-4o" }
-      }
+      "models": ${modelsJson}
     }
-  },
-  "model": "morphic/deepseek-v4"
+  }
 }
-EOF
-fi
+JSON
+chmod 600 "$CONFIG"
 
-if [ -d "\$HOME/.opencode" ]; then
-  cp "\$CONFIG_FILE" "\$HOME/.opencode/config.json" 2>/dev/null || true
-fi
-
-echo -e "\${GREEN}\${BOLD}✔ OpenCode successfully configured for Morphic!\${NC}\\n"
-echo -e "  Config File   : \${CYAN}\${CONFIG_FILE}\${NC}"
-echo -e "  Base URL      : \${CYAN}\${BASE_URL}\${NC}"
-echo -e "  Default Model : \${CYAN}morphic/deepseek-v4\${NC}\\n"
-
-if [ "\$KEY_IS_PLACEHOLDER" -eq 1 ]; then
-  echo -e "\${YELLOW}\${BOLD}⚠️  API Key Notice:\${NC}"
-  echo -e "  No API key was entered or found in \\$MORPHIC_API_KEY."
-  echo -e "  Configured to use environment variable \${BOLD}{env:MORPHIC_API_KEY}\${NC}."
-  echo -e "  To connect, run:"
-  echo -e "    \${BOLD}export MORPHIC_API_KEY=\"mp-live-your-key-here\"\${NC}"
-  echo -e "  or edit \${BOLD}\${CONFIG_FILE}\${NC} directly.\\n"
-else
-  echo -e "\${GREEN}API Key configured! You're ready to use OpenCode with Morphic.\${NC}\\n"
-fi
-
-echo -e "Run \${BOLD}opencode\${NC} in your terminal to start coding with Morphic!"
+echo "OK opencode is connected to Morphic (${models.length} models)."
+echo "  Config: $CONFIG"
+echo "  Run: opencode   then pick a model with /models"
 `;
 
-  return c.text(script, 200, {
+  return c.body(script, 200, {
+    'Content-Type': 'text/x-shellscript; charset=utf-8',
+    'Cache-Control': 'public, max-age=60',
+  });
+});
+
+// Windows: same job as opencode.sh. Runs inside the user's own PowerShell session via
+// `irm ... | iex`, so it must never call `exit` (that would close their window): errors stop the
+// script block with `return`. Works on Windows PowerShell 5.1 and PowerShell 7.
+quickstart.get('/opencode.ps1', async (c) => {
+  const models = await activeModels();
+  // Single-quoted here-string: PowerShell expands nothing inside it. The only terminator is a
+  // line starting with '@, which JSON.stringify output can never produce.
+  const modelsJson = JSON.stringify(modelsMap(models), null, 2);
+  const defaultBase = gatewayBase(c.req.url);
+
+  const script = `# Morphic x opencode quickstart for Windows. Writes %USERPROFILE%\\.config\\opencode\\opencode.json.
+# Usage (PowerShell):
+#   $env:MORPHIC_API_KEY = "mp-..."
+#   irm ${defaultBase.replace(/\/v1$/, '')}/quickstart/opencode.ps1 | iex
+& {
+  $ErrorActionPreference = 'Stop'
+  # Windows PowerShell 5.1 on older builds defaults to TLS 1.0/1.1.
+  [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+
+  $BaseUrl = if ($env:MORPHIC_BASE_URL) { $env:MORPHIC_BASE_URL } else { '${defaultBase}' }
+  $BaseUrl = $BaseUrl.TrimEnd('/')
+  $ApiKey = if ($env:MORPHIC_API_KEY) { $env:MORPHIC_API_KEY } else { $env:API_KEY }
+
+  if (-not $ApiKey) {
+    Write-Host 'x MORPHIC_API_KEY is not set. Run: $env:MORPHIC_API_KEY = "mp-your-key"' -ForegroundColor Red
+    return
+  }
+  if ($ApiKey -notmatch '^mp-[A-Za-z0-9_-]+$') {
+    Write-Host 'x MORPHIC_API_KEY should look like mp-... Copy it from your Morphic dashboard (API Keys).' -ForegroundColor Red
+    return
+  }
+
+  Write-Host "> Checking your key against $BaseUrl ..."
+  try {
+    Invoke-RestMethod -Uri "$BaseUrl/models" -Headers @{ Authorization = "Bearer $ApiKey" } | Out-Null
+  } catch {
+    Write-Host 'x The gateway rejected this key (or is unreachable). Check the key.' -ForegroundColor Red
+    return
+  }
+
+  $ConfigRoot = if ($env:XDG_CONFIG_HOME) { $env:XDG_CONFIG_HOME } else { Join-Path $HOME '.config' }
+  $ConfigDir = Join-Path $ConfigRoot 'opencode'
+  $Config = Join-Path $ConfigDir 'opencode.json'
+  New-Item -ItemType Directory -Force -Path $ConfigDir | Out-Null
+  if (Test-Path $Config) {
+    $Backup = "$Config.bak.$(Get-Date -Format yyyyMMddHHmmss)"
+    Copy-Item $Config $Backup
+    Write-Host "> Existing config saved to $Backup"
+  }
+
+  $Models = @'
+${modelsJson}
+'@ | ConvertFrom-Json
+
+  $Body = [ordered]@{
+    '$schema' = 'https://opencode.ai/config.json'
+    provider = [ordered]@{
+      morphic = [ordered]@{
+        npm = '@ai-sdk/openai-compatible'
+        name = 'Morphic AI'
+        options = [ordered]@{ baseURL = $BaseUrl; apiKey = $ApiKey }
+        models = $Models
+      }
+    }
+  }
+  # UTF-8 without BOM: Set-Content -Encoding UTF8 on 5.1 adds a BOM some JSON readers reject.
+  [IO.File]::WriteAllText($Config, ($Body | ConvertTo-Json -Depth 10), (New-Object Text.UTF8Encoding $false))
+
+  Write-Host 'OK opencode is connected to Morphic (${models.length} models).' -ForegroundColor Green
+  Write-Host "  Config: $Config"
+  Write-Host '  Run: opencode   then pick a model with /models'
+}
+`;
+
+  return c.body(script, 200, {
     'Content-Type': 'text/plain; charset=utf-8',
-    'Cache-Control': 'public, max-age=3600',
+    'Cache-Control': 'public, max-age=60',
   });
 });
 

@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from 'next';
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import { LanguageProvider, Locale } from '@/lib/i18n';
 import './globals.css';
 
@@ -17,8 +17,10 @@ export const viewport: Viewport = {
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const cookieStore = await cookies();
-  const cookieVal = cookieStore.get('morphic_locale')?.value as Locale | undefined;
-  const initialLocale: Locale = cookieVal === 'en' || cookieVal === 'id' ? cookieVal : 'en';
+  const cookieVal = cookieStore.get('morphic_lang')?.value as Locale | undefined;
+
+  // English by default; Indonesian only when the visitor chose it with the language toggle.
+  const initialLocale: Locale = cookieVal === 'id' ? 'id' : 'en';
 
   return (
     <html lang={initialLocale} className="scroll-smooth" suppressHydrationWarning>

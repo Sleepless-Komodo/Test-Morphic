@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useTranslation } from '@/lib/i18n';
 import { useReducedMotionSafe } from '@/lib/use-reduced-motion-safe';
+import { API_BASE_URL } from '@/lib/utils';
 import { Plus } from 'lucide-react';
 
 const EASE = [0.16, 1, 0.3, 1] as const;
@@ -14,55 +15,39 @@ interface FaqItem {
 }
 
 const FAQS: FaqItem[] = [
-
   {
-    q: {
-      id: 'Mengapa saya membutuhkan gateway API Key dari Morphic?',
-      en: 'Why do I need the Morphic AI API Gateway?',
-    },
+    q: { id: 'Kenapa pakai Morphic, bukan langsung ke provider?', en: 'Why Morphic instead of going to each provider?' },
     a: {
-      id: 'Sebagian besar provider AI resmi mewajibkan kartu kredit internasional dengan kurs USD dan rate-limit yang ketat. Morphic menyediakan pembayaran lokal QRIS instan dalam Rupiah, endpoint tunggal OpenAI-compatible, rate limit tinggi untuk coding agent, serta saldo gabungan (Unified Credits).',
-      en: 'Most official AI providers require international credit cards in USD and impose restrictive rate limits. Morphic offers instant local QRIS payments in IDR, a unified OpenAI-compatible endpoint, high burst rate limits for coding agents, and combined Unified Credits.',
+      id: 'Provider resmi biasanya minta kartu kredit internasional dan bayar dalam USD. Di Morphic Anda top up Rupiah via QRIS, pakai satu key untuk semua model, dan cek satu saldo saja.',
+      en: 'Official providers usually want an international card and bill in USD. With Morphic you top up in Rupiah with QRIS, use one key for every model, and track a single balance.',
     },
   },
   {
-    q: {
-      id: 'Bagaimana cara memasang API Key di Cursor atau Cline?',
-      en: 'How do I configure my API Key in Cursor or Cline?',
-    },
+    q: { id: 'Bagaimana cara pasang di Cursor atau Cline?', en: 'How do I set it up in Cursor or Cline?' },
     a: {
-      id: 'Sangat mudah! Di pengaturan Cursor atau ekstensi Cline, pilih provider "OpenAI Compatible", ubah Base URL menjadi https://api.morphic.sh/v1, dan masukkan API Key Morphic (mp-xxxx) Anda. Semua request langsung diteruskan dengan latensi rendah.',
-      en: 'Super simple! In Cursor Settings or Cline extension, select "OpenAI Compatible", set the Base URL to https://api.morphic.sh/v1, and enter your Morphic API key (mp-xxxx). All requests route instantly with minimal latency.',
+      id: `Pilih provider "OpenAI Compatible", isi Base URL dengan ${API_BASE_URL}, lalu tempel API key Morphic Anda (mp-...). Selesai.`,
+      en: `Choose the "OpenAI Compatible" provider, set the Base URL to ${API_BASE_URL}, and paste your Morphic API key (mp-...). That's it.`,
     },
   },
   {
-    q: {
-      id: 'Apakah pembayaran mendukung QRIS otomatis instan?',
-      en: 'Does payment support instant automatic QRIS?',
-    },
+    q: { id: 'Bayar pakai apa? Berapa lama saldo masuk?', en: 'How do I pay, and how fast do credits arrive?' },
     a: {
-      id: 'Ya, 100% otomatis dan instan. Anda dapat membayar menggunakan GoPay, OVO, Dana, ShopeePay, BCA Mobile, Livin Mandiri, atau aplikasi perbankan apa pun yang mendukung QRIS. Saldo aktif seketika.',
-      en: 'Yes, 100% automated and instant. You can pay with GoPay, OVO, Dana, ShopeePay, BCA, Mandiri, or any QRIS-supported banking app. Your credits become available in seconds.',
+      id: 'Scan QRIS dari GoPay, OVO, Dana, ShopeePay, BCA, Mandiri, atau m-banking lain. Pembayaran terkonfirmasi otomatis dan saldo masuk dalam hitungan detik.',
+      en: 'Scan the QRIS code with GoPay, OVO, Dana, ShopeePay, BCA, Mandiri or any banking app. Payment confirms automatically and credits land in seconds.',
     },
   },
   {
-    q: {
-      id: 'Apakah kode dan prompt saya aman dan privat?',
-      en: 'Are my code and prompt data safe and private?',
-    },
+    q: { id: 'Apakah kode dan prompt saya disimpan?', en: 'Do you store my code or prompts?' },
     a: {
-      id: 'Morphic beroperasi sebagai proxy gateway berperforma tinggi tanpa menyimpan atau melatih ulang data prompt Anda ke pihak ketiga mana pun. Kunci API Anda dienkripsi secara aman dan Anda memiliki kendali penuh untuk mencabut (revoke) key kapan saja.',
-      en: 'Morphic operates as a high-performance proxy gateway without storing or retraining on your prompts or code. Your keys are securely encrypted, and you can revoke any API key anytime from your dashboard.',
+      id: 'Tidak. Request diteruskan ke provider tanpa disimpan dan tidak dipakai untuk melatih model. API key dienkripsi, dan Anda bisa revoke key kapan saja dari dashboard.',
+      en: 'No. Requests pass through to the provider without being stored or used for training. API keys are encrypted, and you can revoke any key from the dashboard.',
     },
   },
   {
-    q: {
-      id: 'Berapa banyak API Key yang bisa saya buat?',
-      en: 'How many API Keys can I generate?',
-    },
+    q: { id: 'Berapa banyak API key yang bisa dibuat?', en: 'How many API keys can I create?' },
     a: {
-      id: 'Anda bebas membuat banyak API Key dengan label terpisah (misal: "Cursor Work", "Cline Laptop", "Production") langsung melalui dashboard tanpa biaya tambahan.',
-      en: 'You can generate unlimited API keys with distinct labels (e.g., "Cursor Work", "Cline Laptop", "Production") directly via your dashboard at no extra charge.',
+      id: 'Paket Starter Dev sampai 3 key. Paket Pro Agent ke atas tanpa batas. Beri label tiap key, misalnya "Cursor" atau "Production", supaya mudah dilacak.',
+      en: 'Starter Dev allows up to 3 keys. Pro Agent and above are unlimited. Label each one, say "Cursor" or "Production", so usage stays easy to track.',
     },
   },
 ];
@@ -81,8 +66,8 @@ export default function MarketingFaq() {
       <div className="max-w-6xl mx-auto grid gap-12 lg:grid-cols-[0.7fr_1.3fr] items-start">
         {/* Left Column: Sticky Header */}
         <motion.div
-          initial={reduced ? false : { opacity: 0, y: 14, filter: 'blur(4px)' }}
-          whileInView={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+          initial={reduced ? false : { opacity: 0, y: 14 }}
+          whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, margin: '-50px' }}
           transition={{ duration: 0.5, ease: EASE }}
           className="lg:sticky lg:top-32 lg:self-start"
@@ -102,8 +87,8 @@ export default function MarketingFaq() {
 
         {/* Right Column: Numbered Hairline Accordion List */}
         <motion.div
-          initial={reduced ? false : { opacity: 0, y: 16, filter: 'blur(4px)' }}
-          whileInView={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+          initial={reduced ? false : { opacity: 0, y: 16 }}
+          whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, margin: '-40px' }}
           transition={{ duration: 0.55, delay: 0.1, ease: EASE }}
           className="border-t border-neutral-200 divide-y divide-neutral-200"
