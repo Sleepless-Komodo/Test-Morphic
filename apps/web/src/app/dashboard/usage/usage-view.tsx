@@ -21,8 +21,10 @@ import {
   Loader2,
   Calendar,
   X,
+  Download,
 } from 'lucide-react';
 import { getUsageLogsAction } from '@/lib/actions';
+import { downloadCsv } from '@/lib/csv';
 
 interface RecentRecord {
   id: string;
@@ -75,6 +77,21 @@ function CopyTraceId({ id }: { id: string }) {
 
 type DateRangePreset = 'all' | 'today' | '7d' | '30d' | 'custom';
 
+const toRecord = (u: any): RecentRecord => ({
+  id: u.id,
+  requestId: u.requestId,
+  model: u.model,
+  publicModelId: u.publicModelId,
+  promptTokens: u.promptTokens,
+  completionTokens: u.completionTokens,
+  totalTokens: u.totalTokens,
+  credits: u.credits,
+  status: u.status,
+  streamed: u.streamed,
+  latencyMs: u.latencyMs,
+  createdAt: new Date(u.createdAt),
+});
+
 export function UsageView({ today, month, total, topModels, recent }: UsageViewProps) {
   const { t, locale } = useTranslation();
   const isId = locale === 'id';
@@ -88,6 +105,8 @@ export function UsageView({ today, month, total, topModels, recent }: UsageViewP
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'success' | 'error'>('all');
   const [totalCount, setTotalCount] = useState(total?.requests ?? items.length);
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   const totalPages = Math.max(1, Math.ceil(totalCount / 50));
 
@@ -99,50 +118,10 @@ export function UsageView({ today, month, total, topModels, recent }: UsageViewP
   ) => {
     setIsLoadingPage(true);
     try {
-      let from: string | undefined;
-      let to: string | undefined;
-
-      if (range === 'today') {
-        const start = new Date();
-        start.setHours(0, 0, 0, 0);
-        from = start.toISOString();
-      } else if (range === '7d') {
-        const d = new Date(Date.now() - 7 * 86_400_000);
-        from = d.toISOString();
-      } else if (range === '30d') {
-        const d = new Date(Date.now() - 30 * 86_400_000);
-        from = d.toISOString();
-      } else if (range === 'custom') {
-        const f = rangeFrom !== undefined ? rangeFrom : customFrom;
-        const t = rangeTo !== undefined ? rangeTo : customTo;
-        if (f) {
-          const fromDate = new Date(`${f}T00:00:00`);
-          if (!isNaN(fromDate.getTime())) from = fromDate.toISOString();
-        }
-        if (t) {
-          const toDate = new Date(`${t}T23:59:59.999`);
-          if (!isNaN(toDate.getTime())) to = toDate.toISOString();
-        }
-      }
-
+      const { from, to } = rangeBounds(range, rangeFrom, rangeTo);
       const res = await getUsageLogsAction({ page: targetPage, limit: 50, from, to });
       if (res?.data && Array.isArray(res.data)) {
-        setItems(
-          res.data.map((u: any) => ({
-            id: u.id,
-            requestId: u.requestId,
-            model: u.model,
-            publicModelId: u.publicModelId,
-            promptTokens: u.promptTokens,
-            completionTokens: u.completionTokens,
-            totalTokens: u.totalTokens,
-            credits: u.credits,
-            status: u.status,
-            streamed: u.streamed,
-            latencyMs: u.latencyMs,
-            createdAt: new Date(u.createdAt),
-          }))
-        );
+        setItems(res.data.map(toRecord));
         setPage(res.page || targetPage);
         setTotalCount(res.total);
       }
@@ -151,6 +130,36 @@ export function UsageView({ today, month, total, topModels, recent }: UsageViewP
     } finally {
       setIsLoadingPage(false);
     }
+  };
+
+  const rangeBounds = (range: DateRangePreset, rangeFrom?: string, rangeTo?: string) => {
+    let from: string | undefined;
+    let to: string | undefined;
+
+    if (range === 'today') {
+      const start = new Date();
+      start.setHours(0, 0, 0, 0);
+      from = start.toISOString();
+    } else if (range === '7d') {
+      const d = new Date(Date.now() - 7 * 86_400_000);
+      from = d.toISOString();
+    } else if (range === '30d') {
+      const d = new Date(Date.now() - 30 * 86_400_000);
+      from = d.toISOString();
+    } else if (range === 'custom') {
+      const f = rangeFrom !== undefined ? rangeFrom : customFrom;
+      const t = rangeTo !== undefined ? rangeTo : customTo;
+      if (f) {
+        const fromDate = new Date(`${f}T00:00:00`);
+        if (!isNaN(fromDate.getTime())) from = fromDate.toISOString();
+      }
+      if (t) {
+        const toDate = new Date(`${t}T23:59:59.999`);
+        if (!isNaN(toDate.getTime())) to = toDate.toISOString();
+      }
+    }
+
+    return { from, to };
   };
 
   const handlePageChange = (newPage: number) => {
@@ -179,7 +188,7 @@ export function UsageView({ today, month, total, topModels, recent }: UsageViewP
     fetchUsage(1, 'all');
   };
 
-  const filteredRecent = items.filter((r) => {
+  const matchesFilters = (r: RecentRecord) => {
     const matchesSearch =
       searchTerm === '' ||
       (r.model && r.model.toLowerCase().includes(searchTerm.toLowerCase())) ||
@@ -192,7 +201,37 @@ export function UsageView({ today, month, total, topModels, recent }: UsageViewP
       (statusFilter === 'error' && r.status !== 'success');
 
     return matchesSearch && matchesStatus;
-  });
+  };
+  const filteredRecent = items.filter(matchesFilters);
+
+  // Exports every row in the active date range (not just the visible page), with the
+  // same search and status filters as the table. ponytail: capped at 10k rows; move to a
+  // server-side CSV stream if accounts routinely exceed that.
+  const handleExportCsv = async () => {
+    setIsExporting(true);
+    setExportError(null);
+    try {
+      const { from, to } = rangeBounds(dateFilter);
+      const rows: RecentRecord[] = [];
+      for (let p = 1; p <= 100; p++) {
+        const res = await getUsageLogsAction({ page: p, limit: 100, from, to });
+        const batch = Array.isArray(res?.data) ? res.data.map(toRecord) : [];
+        rows.push(...batch);
+        if (batch.length < 100 || rows.length >= (res?.total ?? 0)) break;
+      }
+      downloadCsv(
+        `morphic-usage-${new Date().toISOString().slice(0, 10)}.csv`,
+        ['time', 'request_id', 'model', 'status', 'prompt_tokens', 'completion_tokens', 'total_tokens', 'credits', 'latency_ms', 'streamed'],
+        rows
+          .filter(matchesFilters)
+          .map((r) => [r.createdAt, r.requestId, r.publicModelId ?? r.model, r.status, r.promptTokens, r.completionTokens, r.totalTokens, r.credits, r.latencyMs, r.streamed]),
+      );
+    } catch {
+      setExportError(isId ? 'Gagal mengekspor. Coba lagi.' : 'Export failed. Try again.');
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   return (
     <div className="w-full space-y-8">
@@ -288,6 +327,12 @@ export function UsageView({ today, month, total, topModels, recent }: UsageViewP
 
       {/* Recent Activity Table with Filter & Observability Columns */}
       <div className="space-y-4">
+        {exportError && (
+          <p role="alert" className="flex items-center gap-2 text-xs text-red-700">
+            <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+            <span>{exportError}</span>
+          </p>
+        )}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <Clock className="h-4 w-4 text-neutral-950" />
@@ -298,6 +343,15 @@ export function UsageView({ today, month, total, topModels, recent }: UsageViewP
 
           {/* Search & Filter Controls */}
           <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={handleExportCsv}
+              disabled={isExporting}
+              className="inline-flex items-center gap-1.5 min-h-9 px-3 rounded-xl border border-neutral-200 bg-white hover:bg-neutral-50 text-[11px] font-semibold text-neutral-800 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
+            >
+              {isExporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+              <span>{isId ? 'Ekspor CSV' : 'Export CSV'}</span>
+            </button>
             {/* Date Range Chips */}
             <div className="flex items-center bg-neutral-100 p-1 rounded-xl text-[11px] font-semibold">
               <button

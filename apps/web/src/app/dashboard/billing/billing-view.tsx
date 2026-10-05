@@ -1,9 +1,10 @@
 'use client';
 
 import { useState } from 'react';
+import { downloadCsv } from '@/lib/csv';
 import { useTranslation } from '@/lib/i18n';
 import { formatCredits, cn } from '@/lib/utils';
-import { Zap, CreditCard, Clock, Wallet, QrCode, Coins, Sparkles } from 'lucide-react';
+import { Zap, CreditCard, Clock, Wallet, QrCode, Coins, Sparkles, Download, Loader2 } from 'lucide-react';
 import {
   ModelProviderLogo,
   ClaudeLogo,
@@ -47,6 +48,70 @@ export function BillingView({
   const [selectedPkg, setSelectedPkg] = useState<any>(null);
   const [resumePayment, setResumePayment] = useState<any>(null);
   const paymentsList = payments ?? [];
+  const [exporting, setExporting] = useState<'payments' | 'ledger' | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
+
+  // The page only loads the latest rows, so exports page through the API for the full history.
+  // ponytail: capped at 10k rows per export.
+  const fetchAll = async (path: string) => {
+    const rows: any[] = [];
+    for (let page = 1; page <= 100; page++) {
+      const res = await fetch(`/api/backend/v1/account/${path}?page=${page}&limit=100`, { cache: 'no-store' });
+      if (!res.ok) throw new Error(String(res.status));
+      const batch: any[] = (await res.json())?.data ?? [];
+      rows.push(...batch);
+      if (batch.length < 100) break;
+    }
+    return rows;
+  };
+
+  const exportCsv = async (kind: 'payments' | 'ledger') => {
+    setExporting(kind);
+    setExportError(null);
+    const day = new Date().toISOString().slice(0, 10);
+    try {
+      if (kind === 'payments') {
+        const rows = await fetchAll('payments');
+        downloadCsv(
+          `morphic-payments-${day}.csv`,
+          ['created_at', 'paid_at', 'provider', 'currency', 'amount', 'credits', 'status', 'id'],
+          rows.map((p) => [
+            p.created_at,
+            p.paid_at,
+            p.provider,
+            p.currency,
+            p.currency === 'USD' ? (p.amount_cents / 100).toFixed(2) : p.amount_cents,
+            p.credits,
+            p.status,
+            p.id,
+          ]),
+        );
+      } else {
+        const rows = await fetchAll('transactions');
+        downloadCsv(
+          `morphic-credit-ledger-${day}.csv`,
+          ['created_at', 'type', 'amount', 'source', 'reference'],
+          rows.map((e) => [e.created_at, e.entry_type, e.amount, e.source_type, e.reference]),
+        );
+      }
+    } catch {
+      setExportError(locale === 'en' ? 'Export failed. Try again.' : 'Gagal mengekspor. Coba lagi.');
+    } finally {
+      setExporting(null);
+    }
+  };
+
+  const exportButton = (kind: 'payments' | 'ledger') => (
+    <button
+      type="button"
+      onClick={() => exportCsv(kind)}
+      disabled={exporting !== null}
+      className="inline-flex items-center gap-1.5 min-h-9 px-3 rounded-xl border border-neutral-200 bg-white hover:bg-neutral-50 text-[11px] font-semibold text-neutral-800 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
+    >
+      {exporting === kind ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+      <span>{locale === 'en' ? 'Export CSV' : 'Ekspor CSV'}</span>
+    </button>
+  );
   const currentCurrency = locale === 'id' ? 'IDR' : 'USD';
 
   const displayedPackages = initialPackages.filter((p) => {
@@ -311,7 +376,13 @@ export function BillingView({
 
         {/* Payment History */}
         <div className="space-y-3">
-          <h2 suppressHydrationWarning className="font-heading font-bold text-base text-neutral-950">{t.dashboard.qrisHistoryTitle}</h2>
+          <div className="flex items-center justify-between gap-3">
+            <h2 suppressHydrationWarning className="font-heading font-bold text-base text-neutral-950">{t.dashboard.qrisHistoryTitle}</h2>
+            {paymentsList.length > 0 && exportButton('payments')}
+          </div>
+          {exportError && exporting === null && (
+            <p role="alert" className="text-xs text-red-700">{exportError}</p>
+          )}
           <div className="rounded-2xl bg-white border border-neutral-200/90 shadow-2xs overflow-hidden">
             {paymentsList.length === 0 ? (
               <div suppressHydrationWarning className="p-8 text-center text-xs text-neutral-500 font-mono">
@@ -410,9 +481,12 @@ export function BillingView({
         </div>
         {/* Credit Ledger History */}
         <div className="space-y-3">
-          <h2 suppressHydrationWarning className="font-heading font-bold text-base text-neutral-950">
-            {t.dashboard.ledgerHistoryTitle}
-          </h2>
+          <div className="flex items-center justify-between gap-3">
+            <h2 suppressHydrationWarning className="font-heading font-bold text-base text-neutral-950">
+              {t.dashboard.ledgerHistoryTitle}
+            </h2>
+            {ledger.length > 0 && exportButton('ledger')}
+          </div>
           <div className="rounded-2xl bg-white border border-neutral-200/90 shadow-2xs overflow-hidden">
             {ledger.length === 0 ? (
               <div suppressHydrationWarning className="p-8 text-center text-xs text-neutral-500 font-mono">
