@@ -155,6 +155,29 @@ async function loadRecentRequests(userId: string): Promise<any[]> {
   }
 }
 
+const TREND_DAYS = 14;
+
+/** Credits spent per WIB calendar day over the last 14 days, oldest first, zero-filled. */
+async function loadDailySpend(userId: string): Promise<Array<{ day: string; credits: number }>> {
+  const dayKey = (d: Date) => new Date(d.getTime() + 7 * 3_600_000).toISOString().slice(0, 10);
+  const days = Array.from({ length: TREND_DAYS }, (_, i) => dayKey(new Date(Date.now() - (TREND_DAYS - 1 - i) * 86_400_000)));
+  try {
+    const rows = await db
+      .select({
+        day: sql<string>`to_char(${s.usageRecords.createdAt} at time zone 'Asia/Jakarta', 'YYYY-MM-DD')`,
+        credits: sql<number>`coalesce(sum(${s.usageRecords.creditsConsumed}),0)::bigint`,
+      })
+      .from(s.usageRecords)
+      .where(and(eq(s.usageRecords.userId, userId), gt(s.usageRecords.createdAt, new Date(Date.now() - (TREND_DAYS + 1) * 86_400_000))))
+      .groupBy(sql`1`);
+    const byDay = new Map(rows.map((r) => [r.day, Number(r.credits)]));
+    return days.map((day) => ({ day, credits: byDay.get(day) ?? 0 }));
+  } catch (err) {
+    console.warn('[DashboardPage] Daily spend read failed:', err);
+    return [];
+  }
+}
+
 async function loadModelStats() {
   try {
     const [row] = await db
@@ -183,7 +206,7 @@ export default async function DashboardPage() {
   // Every load below is independent of the others. They used to be awaited one after
   // another, so the page's TTFB was the sum of six round trips (two of them to the gateway)
   // instead of the slowest one.
-  const [balance, activeKeys, usage, recentRequests, modelStats, initialModels] = await Promise.all([
+  const [balance, activeKeys, usage, recentRequests, modelStats, initialModels, dailySpend] = await Promise.all([
     userId ? loadBalance(userId) : Promise.resolve<BalanceSnapshot>({ credits: 0, updatedAt: null }),
     userId ? loadActiveKeyCount(userId) : Promise.resolve(0),
     userId
@@ -192,6 +215,7 @@ export default async function DashboardPage() {
     userId ? loadRecentRequests(userId) : Promise.resolve<any[]>([]),
     loadModelStats(),
     getModelsFromDb(),
+    userId ? loadDailySpend(userId) : Promise.resolve([]),
   ]);
 
   return (
@@ -206,6 +230,7 @@ export default async function DashboardPage() {
       serverMinInputRate={modelStats.minInputRate}
       activeKeys={activeKeys}
       serverUsage={usage}
+      dailySpend={dailySpend}
     />
   );
 }

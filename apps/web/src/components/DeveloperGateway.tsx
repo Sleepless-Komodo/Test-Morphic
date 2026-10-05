@@ -18,6 +18,7 @@ import { formatCredits, formatTokenEstimate, timeAgo, API_BASE_URL } from '@/lib
 import GatewayStatusPopover from '@/components/GatewayStatusPopover';
 import QuickstartHub from '@/components/QuickstartHub';
 import { ModelItem } from '@/lib/models-data';
+import { SpendTrend } from '@/components/SpendTrend';
 export type { ModelItem } from '@/lib/models-data';
 
 const BASE_URL = API_BASE_URL || 'https://morphic-api.web.id/v1';
@@ -59,6 +60,7 @@ interface DeveloperGatewayProps {
   serverMinInputRate?: number;
   activeKeys?: number;
   serverUsage?: { totalTokens: number; promptTokens: number; completionTokens: number };
+  dailySpend?: Array<{ day: string; credits: number }>;
 }
 
 export default function DeveloperGateway({
@@ -72,6 +74,7 @@ export default function DeveloperGateway({
   serverMinInputRate,
   activeKeys: serverActiveKeys,
   serverUsage,
+  dailySpend = [],
 }: DeveloperGatewayProps) {
   const { t, locale } = useTranslation();
   const isId = locale === 'id';
@@ -298,6 +301,8 @@ export default function DeveloperGateway({
           </div>
         </Link>
       </div>
+
+      <SpendTrend days={dailySpend} balance={balance} isId={isId} />
 
       {/* Row 3: 2-Column Split: Telemetry Feed (Left) & Quickstart Hub (Right) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
