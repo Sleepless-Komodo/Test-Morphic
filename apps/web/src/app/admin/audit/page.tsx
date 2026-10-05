@@ -1,27 +1,26 @@
-import { desc, eq } from 'drizzle-orm';
-import { db, schema as s } from '@morphic/db';
+import Link from 'next/link';
 import { requireAdmin } from '@/lib/actions';
 import { getServerTranslation } from '@/lib/i18n/server';
-import { History } from 'lucide-react';
+import { Download, History } from 'lucide-react';
+import { listAuditActions, queryAuditLog, readAuditFilters } from './query';
 
-export default async function AdminAudit() {
+const PAGE_LIMIT = 200;
+const fieldClass =
+  'min-h-10 w-full rounded-xl border border-neutral-300 bg-white px-3 text-xs text-neutral-900 focus:outline-none focus:ring-2 focus:ring-neutral-950';
+
+export default async function AdminAudit({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   await requireAdmin();
   const { t } = await getServerTranslation();
-
-  const entries = await db
-    .select({
-      id: s.adminAuditLog.id,
-      action: s.adminAuditLog.action,
-      entity: s.adminAuditLog.entity,
-      entityId: s.adminAuditLog.entityId,
-      detail: s.adminAuditLog.detail,
-      createdAt: s.adminAuditLog.createdAt,
-      adminEmail: s.users.email,
-    })
-    .from(s.adminAuditLog)
-    .leftJoin(s.users, eq(s.adminAuditLog.adminId, s.users.id))
-    .orderBy(desc(s.adminAuditLog.createdAt))
-    .limit(100);
+  const filters = readAuditFilters(await searchParams);
+  const filtered = Boolean(filters.q || filters.action || filters.from || filters.to);
+  const [entries, actions] = await Promise.all([queryAuditLog(filters, PAGE_LIMIT), listAuditActions()]);
+  const exportQuery = new URLSearchParams(
+    Object.entries(filters).filter((kv): kv is [string, string] => Boolean(kv[1])),
+  ).toString();
 
   return (
     <div className="space-y-6 max-w-6xl">
@@ -36,12 +35,65 @@ export default async function AdminAudit() {
             {t.admin.audit.desc} ({entries.length} {t.admin.audit.recentLogs}).
           </p>
         </div>
+        <a
+          href={`/admin/audit/export${exportQuery ? `?${exportQuery}` : ''}`}
+          className="inline-flex items-center gap-1.5 min-h-10 px-3 rounded-xl border border-neutral-200 bg-white hover:bg-neutral-50 text-xs font-semibold text-neutral-800 shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
+        >
+          <Download className="h-3.5 w-3.5" />
+          {t.admin.audit.exportCsv}
+        </a>
       </div>
+
+      <form method="get" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[2fr_1.2fr_1fr_1fr_auto] gap-3 items-end">
+        <label className="space-y-1">
+          <span className="text-[11px] font-semibold text-neutral-700">{t.admin.audit.filterSearch}</span>
+          <input type="search" name="q" defaultValue={filters.q} className={fieldClass} />
+        </label>
+        <label className="space-y-1">
+          <span className="text-[11px] font-semibold text-neutral-700">{t.admin.audit.filterAction}</span>
+          <select name="action" defaultValue={filters.action ?? ''} className={fieldClass}>
+            <option value="">{t.admin.audit.allActions}</option>
+            {actions.map((a) => (
+              <option key={a} value={a}>
+                {a}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="space-y-1">
+          <span className="text-[11px] font-semibold text-neutral-700">{t.admin.audit.filterFrom}</span>
+          <input type="date" name="from" defaultValue={filters.from} className={fieldClass} />
+        </label>
+        <label className="space-y-1">
+          <span className="text-[11px] font-semibold text-neutral-700">{t.admin.audit.filterTo}</span>
+          <input type="date" name="to" defaultValue={filters.to} className={fieldClass} />
+        </label>
+        <div className="flex gap-2">
+          <button
+            type="submit"
+            className="min-h-10 px-4 rounded-xl bg-neutral-950 hover:bg-neutral-800 text-white text-xs font-semibold cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 focus-visible:ring-offset-2"
+          >
+            {t.admin.audit.applyFilters}
+          </button>
+          {filtered && (
+            <Link
+              href="/admin/audit"
+              className="min-h-10 px-3 inline-flex items-center rounded-xl border border-neutral-200 bg-white hover:bg-neutral-50 text-xs font-semibold text-neutral-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
+            >
+              {t.admin.audit.resetFilters}
+            </Link>
+          )}
+        </div>
+      </form>
+
+      {entries.length === PAGE_LIMIT && <p className="text-[11px] text-neutral-600">{t.admin.audit.showingCap}</p>}
 
       {/* Audit Table Card */}
       <div className="bg-white rounded-2xl border border-neutral-200/90 shadow-xs overflow-hidden">
         {entries.length === 0 ? (
-          <div className="p-8 text-center text-xs text-neutral-500">{t.admin.audit.noAudit}</div>
+          <div className="p-8 text-center text-xs text-neutral-600">
+            {filtered ? t.admin.audit.noMatch : t.admin.audit.noAudit}
+          </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
