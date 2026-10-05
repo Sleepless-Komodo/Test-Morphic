@@ -64,3 +64,7 @@ docs-ros/
 # Next.js auto-generated agent rule files
 apps/web/CLAUDE.md
 apps/web/AGENTS.md
+
+# Internal audit notes — never commit
+audit-out/
+apps/api/audit-folder/

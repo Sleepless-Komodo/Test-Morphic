@@ -23,6 +23,12 @@ export function assertDuitkuConfig() {
   if (!prod && env === 'production') {
     throw new Error('DUITKU_ENV=production is not allowed outside production environment');
   }
+  if (!process.env.DUITKU_MERCHANT_CODE) {
+    console.warn('[duitku] WARNING: DUITKU_MERCHANT_CODE is not set in environment variables');
+  }
+  if (!process.env.DUITKU_API_KEY) {
+    console.warn('[duitku] WARNING: DUITKU_API_KEY is not set in environment variables');
+  }
   console.log(`[duitku] environment: ${env}`);
 }
 

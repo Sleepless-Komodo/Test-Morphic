@@ -195,3 +195,115 @@ test('mass assignment: extra fields on payment create are ignored', async () => 
     assert.equal(row.userId, attacker.user.id);
   }
 });
+
+// ── FIX-BE-P0-01: Hash-only API keys test ─────────────────────────────────────
+test('FIX-BE-P0-01: GET /v1/keys never exposes plaintext key or encrypted_key', async () => {
+  const user = await mkUser('hashonlykey');
+  const createRes = await app.request('/v1/keys', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${user.token}` },
+    body: JSON.stringify({ name: 'Security Test Key' }),
+  });
+  assert.equal(createRes.status, 201);
+  const createdBody = await createRes.json();
+  assert.ok(createdBody.key, 'POST response must contain raw key');
+  assert.ok(createdBody.key.startsWith('mp-'), 'raw key must start with mp-');
+
+  const listRes = await app.request('/v1/keys', {
+    headers: { Authorization: `Bearer ${user.token}` },
+  });
+  assert.equal(listRes.status, 200);
+  const listBody = await listRes.json();
+  assert.ok(Array.isArray(listBody.data), 'GET /v1/keys returns array data');
+  assert.ok(listBody.data.length > 0, 'GET /v1/keys contains created key');
+  
+  const fetchedKeyItem = listBody.data.find((k: any) => k.id === createdBody.id);
+  assert.ok(fetchedKeyItem, 'created key present in list');
+  assert.equal(fetchedKeyItem.key, undefined, 'GET /v1/keys must NOT include key property');
+  assert.equal(fetchedKeyItem.encryptedKey, undefined, 'GET /v1/keys must NOT include encryptedKey property');
+  assert.ok(fetchedKeyItem.prefix, 'GET /v1/keys includes prefix');
+});
+
+// ── FIX-BE-P0-04: /webhooks/mock production guard ─────────────────────────────
+test('FIX-BE-P0-04: POST /webhooks/mock returns 404 when NODE_ENV=production', async () => {
+  const origEnv = process.env.NODE_ENV;
+  try {
+    process.env.NODE_ENV = 'production';
+    const res = await app.request('/webhooks/mock', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event_id: 'test', payment_id: 'test', status: 'paid' }),
+    });
+    assert.equal(res.status, 404, 'mock webhook should be 404 in production');
+  } finally {
+    process.env.NODE_ENV = origEnv;
+  }
+});
+
+// ── FIX-BE-P0-03 / Fix 1.4: PayPal webhook S2S endpoint ──────────────────────
+test('Fix 1.4: PayPal webhook rejects missing signature and processes valid event idempotently', async () => {
+  // 1. Missing signature headers returns 401
+  const badRes = await app.request('/webhooks/paypal', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id: 'WH-TEST-001', event_type: 'PAYMENT.CAPTURE.COMPLETED' }),
+  });
+  assert.equal(badRes.status, 401, 'missing PayPal signature headers should return 401');
+
+  // 2. Valid test signature header processes event
+  const user = await mkUser('paypalwebhook');
+  const orderId = `PAYPAL-ORD-${Date.now()}`;
+  const [payment] = await db
+    .insert(s.payments)
+    .values({
+      userId: user.user.id,
+      provider: 'paypal',
+      externalId: orderId,
+      amountCents: 1000,
+      credits: 500,
+      currency: 'USD',
+      status: 'pending',
+    })
+    .returning();
+
+  const payload = {
+    id: `WH-EVT-${Date.now()}`,
+    event_type: 'PAYMENT.CAPTURE.COMPLETED',
+    resource: {
+      id: orderId,
+      status: 'COMPLETED',
+    },
+  };
+
+  const headers = {
+    'Content-Type': 'application/json',
+    'paypal-auth-algo': 'SHA256withRSA',
+    'paypal-cert-url': 'https://api.sandbox.paypal.com/v1/notifications/certs/CERT-ID',
+    'paypal-transmission-id': 'mock_test_trans_id',
+    'paypal-transmission-sig': 'mock_sig',
+    'paypal-transmission-time': new Date().toISOString(),
+  };
+
+  const okRes = await app.request('/webhooks/paypal', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(payload),
+  });
+  assert.equal(okRes.status, 200);
+  const okBody = await okRes.json();
+  assert.equal(okBody.ok, true);
+
+  // Check credits granted
+  const [updatedPayment] = await db.select().from(s.payments).where(eq(s.payments.id, payment.id));
+  assert.equal(updatedPayment.status, 'paid');
+
+  // 3. Duplicate event returns 200 with duplicate: true
+  const dupRes = await app.request('/webhooks/paypal', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(payload),
+  });
+  assert.equal(dupRes.status, 200);
+  const dupBody = await dupRes.json();
+  assert.equal(dupBody.duplicate, true);
+});

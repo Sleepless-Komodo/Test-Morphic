@@ -4,6 +4,7 @@ import { and, eq } from 'drizzle-orm';
 import { db, schema as s } from '@morphic/db';
 import { markPaymentIfOpen, processPaymentSuccess } from '@morphic/db/billing';
 import { verifyCallbackSignature, checkTransactionStatus } from '../lib/duitku';
+import { verifyWebhookSignature as verifyPayPalWebhookSignature } from '../lib/paypal';
 
 const webhooks = new Hono();
 
@@ -19,11 +20,15 @@ function verifyMockSignature(body: string, signature: string | undefined): boole
 }
 
 /**
- * Mock QRIS provider webhook. Real provider = same contract, swap this file.
+ * Mock QRIS provider webhook. Active ONLY in non-production environments (Fix 1.3).
  * Payload: { event_id, payment_id, status: 'paid'|'failed' }
  * Idempotent: (provider, event_id) unique in payment_events; duplicate → 200 no-op.
  */
 webhooks.post('/mock', async (c) => {
+  if (process.env.NODE_ENV === 'production') {
+    return c.json({ error: 'not found' }, 404);
+  }
+
   const raw = await c.req.text();
   if (!verifyMockSignature(raw, c.req.header('x-webhook-signature'))) {
     return c.json({ error: 'invalid signature' }, 401);
@@ -223,6 +228,119 @@ webhooks.post('/duitku', async (c) => {
       await markPaymentIfOpen(payment.id, 'failed', tx);
     });
     console.log(`[webhook/duitku] payment ${payment.id} failed (resultCode: ${payload.resultCode})`);
+  }
+
+  return c.json({ ok: true });
+});
+
+/**
+ * PayPal server-to-server webhook handler (Fix 1.4).
+ *
+ * Verifies PayPal transmission headers via PayPal REST API (/v1/notifications/verify-webhook-signature).
+ * Handles PAYMENT.CAPTURE.COMPLETED and CHECKOUT.ORDER.APPROVED events idempotently.
+ */
+webhooks.post('/paypal', async (c) => {
+  const rawText = await c.req.text();
+  let payload: any;
+  try {
+    payload = JSON.parse(rawText);
+  } catch {
+    return c.json({ error: 'invalid payload' }, 400);
+  }
+
+  const reqHeaders: Record<string, string | undefined> = {
+    'paypal-auth-algo': c.req.header('paypal-auth-algo'),
+    'paypal-cert-url': c.req.header('paypal-cert-url'),
+    'paypal-transmission-id': c.req.header('paypal-transmission-id'),
+    'paypal-transmission-sig': c.req.header('paypal-transmission-sig'),
+    'paypal-transmission-time': c.req.header('paypal-transmission-time'),
+  };
+
+  const isValid = await verifyPayPalWebhookSignature({ headers: reqHeaders, body: payload });
+  if (!isValid) {
+    console.error('[webhook/paypal] invalid webhook signature');
+    return c.json({ error: 'invalid signature' }, 401);
+  }
+
+  const eventId = payload.id;
+  const eventType = payload.event_type;
+  if (!eventId || !eventType) {
+    return c.json({ error: 'missing event details' }, 400);
+  }
+
+  // Step 1: Idempotency check in paymentEvents table
+  const [existing] = await db
+    .select({ id: s.paymentEvents.id })
+    .from(s.paymentEvents)
+    .where(and(eq(s.paymentEvents.provider, 'paypal'), eq(s.paymentEvents.eventId, eventId)))
+    .limit(1);
+
+  if (existing) {
+    console.log('[webhook/paypal] duplicate event, skipping:', eventId);
+    return c.json({ ok: true, duplicate: true });
+  }
+
+  // Step 2: Extract PayPal Order ID from resource
+  const orderId =
+    payload.resource?.supplementary_data?.related_ids?.order_id ||
+    payload.resource?.id;
+
+  if (!orderId) {
+    return c.json({ ok: true, reason: 'no_order_id' });
+  }
+
+  // Step 3: Find payment record by externalId (which matches PayPal order ID)
+  const [payment] = await db
+    .select()
+    .from(s.payments)
+    .where(and(eq(s.payments.provider, 'paypal'), eq(s.payments.externalId, orderId)))
+    .limit(1);
+
+  if (!payment) {
+    console.warn('[webhook/paypal] payment row not found for orderId:', orderId);
+    return c.json({ ok: true, reason: 'payment_not_found' });
+  }
+
+  // Step 4: Handle payment success events
+  if (eventType === 'PAYMENT.CAPTURE.COMPLETED' || eventType === 'CHECKOUT.ORDER.APPROVED') {
+    try {
+      await db.transaction(async (tx) => {
+        await tx.insert(s.paymentEvents).values({
+          provider: 'paypal',
+          eventId,
+          paymentId: payment.id,
+          payload,
+        }).onConflictDoNothing();
+
+        const res = await processPaymentSuccess(payment.id, tx);
+        if (!res.success && payment.status === 'pending') {
+          throw new Error(`cannot fulfill PayPal payment ${payment.id}`);
+        }
+      });
+      console.log(`[webhook/paypal] payment ${payment.id} fulfilled via event ${eventType}`);
+    } catch (err) {
+      console.error('[webhook/paypal] error processing paid event:', err);
+      return c.json({ error: 'internal error' }, 500);
+    }
+  } else if (['PAYMENT.CAPTURE.DENIED', 'PAYMENT.CAPTURE.DECLINED', 'CHECKOUT.ORDER.VOIDED'].includes(eventType)) {
+    await db.transaction(async (tx) => {
+      await tx.insert(s.paymentEvents).values({
+        provider: 'paypal',
+        eventId,
+        paymentId: payment.id,
+        payload,
+      }).onConflictDoNothing();
+      await markPaymentIfOpen(payment.id, 'failed', tx);
+    });
+    console.log(`[webhook/paypal] payment ${payment.id} marked failed via event ${eventType}`);
+  } else {
+    // Record event for audit trail
+    await db.insert(s.paymentEvents).values({
+      provider: 'paypal',
+      eventId,
+      paymentId: payment.id,
+      payload,
+    }).onConflictDoNothing();
   }
 
   return c.json({ ok: true });

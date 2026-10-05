@@ -5,7 +5,7 @@ import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { eq, and, desc, sql, gt, gte, lte, ne } from 'drizzle-orm';
 import { db, schema as s } from '@morphic/db';
-import { generateApiKey, maskedKey, encryptApiKey, decryptApiKey } from '@morphic/shared/keys';
+import { generateApiKey, maskedKey, hashApiKey } from '@morphic/shared/keys';
 import { auth } from '@/lib/auth';
 import { fetchBackendApi } from './api-client';
 
@@ -84,41 +84,17 @@ async function requireInteractiveUser() {
 export { requireUser, requireAdmin, requireInteractiveUser, isCurrentUserAdmin };
 
 
-let hasEnsuredKeyCol = false;
-async function ensureApiKeyEncryptedColumn() {
-  if (hasEnsuredKeyCol) return;
-  try {
-    await db.execute(sql`ALTER TABLE "api_keys" ADD COLUMN IF NOT EXISTS "encrypted_key" text;`);
-    hasEnsuredKeyCol = true;
-  } catch {
-    // Ignore if table/column already exists or lacks permission
-  }
-}
-
 export async function listApiKeys() {
   await requireUser();
 
   try {
     const apiRes = await fetchBackendApi<{ data: any[] }>('/v1/keys');
     if (apiRes.data?.data) {
-      let encMap = new Map<string, string | null>();
-      try {
-        const user = await requireUser();
-        await ensureApiKeyEncryptedColumn();
-        const dbRows = await db
-          .select({ id: s.apiKeys.id, encryptedKey: s.apiKeys.encryptedKey })
-          .from(s.apiKeys)
-          .where(eq(s.apiKeys.userId, user.id));
-        encMap = new Map(dbRows.map((r) => [r.id, r.encryptedKey]));
-      } catch {
-        // Fall back to backend data alone if DB query fails
-      }
-
       return apiRes.data.data.map((k: any) => ({
         id: k.id,
         name: k.name,
         keyPrefix: k.prefix,
-        rawKey: k.key || decryptApiKey(encMap.get(k.id)),
+        rawKey: null,
         status: k.status,
         expiresAt: k.expires_at ? new Date(k.expires_at) : null,
         lastUsedAt: k.last_used_at ? new Date(k.last_used_at) : null,
@@ -131,13 +107,11 @@ export async function listApiKeys() {
 
   try {
     const user = await requireUser();
-    await ensureApiKeyEncryptedColumn();
     const rows = await db
       .select({
         id: s.apiKeys.id,
         name: s.apiKeys.name,
         keyPrefix: s.apiKeys.keyPrefix,
-        encryptedKey: s.apiKeys.encryptedKey,
         status: s.apiKeys.status,
         expiresAt: s.apiKeys.expiresAt,
         lastUsedAt: s.apiKeys.lastUsedAt,
@@ -151,7 +125,7 @@ export async function listApiKeys() {
       id: r.id,
       name: r.name,
       keyPrefix: r.keyPrefix,
-      rawKey: decryptApiKey(r.encryptedKey),
+      rawKey: null,
       status: r.status,
       expiresAt: r.expiresAt,
       lastUsedAt: r.lastUsedAt,
@@ -572,10 +546,8 @@ export async function provisionPostPaymentKey(params?: { packageName?: string })
   }
 
   const { raw, hash, prefix } = generateApiKey();
-  const encryptedKey = encryptApiKey(raw);
 
   try {
-    await ensureApiKeyEncryptedColumn();
     const [inserted] = await db
       .insert(s.apiKeys)
       .values({
@@ -583,7 +555,6 @@ export async function provisionPostPaymentKey(params?: { packageName?: string })
         name,
         keyHash: hash,
         keyPrefix: prefix,
-        encryptedKey,
         expiresAt: null,
       })
       .returning({ id: s.apiKeys.id, prefix: s.apiKeys.keyPrefix });

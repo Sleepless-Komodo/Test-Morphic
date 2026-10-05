@@ -15,8 +15,6 @@ import {
   ShieldCheck,
   Trash2,
   Zap,
-  Eye,
-  EyeOff,
 } from 'lucide-react';
 
 const maskedKey = (prefix: string) => `${(prefix || 'mp-live-').slice(0, 10)}••••••••••••••••`;
@@ -50,7 +48,6 @@ export function KeysView({ initialKeys }: KeysViewProps) {
   const [copiedKey, setCopiedKey] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  const [revealedKeys, setRevealedKeys] = useState<Record<string, boolean>>({});
   const [copiedKeyId, setCopiedKeyId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -63,17 +60,10 @@ export function KeysView({ initialKeys }: KeysViewProps) {
     ? 'Key ini tetap aktif & berfungsi. Nilai rahasia lengkap disimpan sebagai hash satu arah demi keamanan. Jika Anda lupa kuncinya, buat key baru.'
     : 'This key remains active and working. Full secret is stored as a secure one-way hash. If you lost the raw secret, create a new key.';
 
-  const toggleReveal = (id: string) => {
-    setRevealedKeys((prev) => ({
-      ...prev,
-      [id]: !prev[id],
-    }));
-  };
-
   const handleCopyKey = (k: KeyItem) => {
     const fullKey = getFullKey(k);
-    if (!fullKey) return;
-    navigator.clipboard.writeText(fullKey);
+    const textToCopy = fullKey || k.keyPrefix;
+    navigator.clipboard.writeText(textToCopy);
     setCopiedKeyId(k.id);
     setTimeout(() => setCopiedKeyId(null), 2000);
   };
@@ -137,7 +127,6 @@ export function KeysView({ initialKeys }: KeysViewProps) {
         },
         ...prev,
       ]);
-      setRevealedKeys((prev) => ({ ...prev, [body.id]: true }));
       setNewKeyName('');
     } catch {
       setCreateError(
@@ -333,37 +322,18 @@ export function KeysView({ initialKeys }: KeysViewProps) {
                   <tr key={k.id} className="hover:bg-neutral-50/50 transition-colors">
                     <td className="px-6 py-4 font-bold text-neutral-900">{k.name}</td>
                     <td className="px-6 py-4 font-mono text-neutral-600">
-                      <div className="flex items-center gap-1.5 whitespace-nowrap">
-                        <span
-                          title={revealedKeys[k.id] && fullKey ? fullKey : undefined}
-                          className={`block max-w-[16rem] truncate px-2.5 py-1 rounded-lg border text-xs font-mono select-all transition-colors ${
-                            revealedKeys[k.id] && fullKey
-                              ? 'bg-neutral-900 text-emerald-400 border-neutral-800 font-semibold'
-                              : 'bg-neutral-100 text-neutral-600 border-neutral-200'
-                          }`}
-                        >
-                          {revealedKeys[k.id] && fullKey ? fullKey : maskedKey(k.keyPrefix)}
+                      <div className="inline-flex items-center gap-1.5">
+                        <span className="px-2.5 py-1 rounded-lg border text-xs font-mono select-all bg-neutral-100 text-neutral-600 border-neutral-200">
+                          {k.rawKey ? k.rawKey : maskedKey(k.keyPrefix)}
                         </span>
 
-                        {/* Old keys only ever stored a one-way hash, so there is nothing to show; the
-                            buttons stay visible but disabled with the reason. */}
-                        <button
-                          type="button"
-                          onClick={() => toggleReveal(k.id)}
-                          disabled={!fullKey}
-                          title={fullKey ? (revealedKeys[k.id] ? t.dashboard.keyHide : t.dashboard.keyShow) : unavailableHint}
-                          aria-label={revealedKeys[k.id] ? t.dashboard.keyHide : t.dashboard.keyShow}
-                          className="p-1.5 rounded-lg border border-neutral-200 text-neutral-600 transition-colors shrink-0 enabled:hover:border-neutral-400 enabled:hover:bg-neutral-100 enabled:hover:text-neutral-900 enabled:cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                        >
-                          {revealedKeys[k.id] && fullKey ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                        </button>
+                        {/* Copy API Key or Prefix */}
                         <button
                           type="button"
                           onClick={() => handleCopyKey(k)}
-                          disabled={!fullKey}
-                          title={fullKey ? t.dashboard.keyCopyFull : unavailableHint}
-                          aria-label={t.dashboard.keyCopyFull}
-                          className="p-1.5 rounded-lg border border-neutral-200 text-neutral-600 transition-colors shrink-0 enabled:hover:border-neutral-400 enabled:hover:bg-neutral-100 enabled:hover:text-neutral-900 enabled:cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                          title={k.rawKey ? t.dashboard.keyCopyFull : (isId ? 'Salin Prefix Key' : 'Copy Key Prefix')}
+                          aria-label={k.rawKey ? t.dashboard.keyCopyFull : (isId ? 'Salin Prefix Key' : 'Copy Key Prefix')}
+                          className="p-1.5 rounded-lg border border-neutral-200 hover:border-neutral-400 hover:bg-neutral-100 text-neutral-600 hover:text-neutral-900 transition-colors cursor-pointer shrink-0"
                         >
                           {copiedKeyId === k.id ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
                         </button>
