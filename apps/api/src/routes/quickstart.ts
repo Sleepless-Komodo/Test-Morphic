@@ -26,19 +26,33 @@ async function activeModels() {
   return models;
 }
 
-const gatewayBase = (reqUrl: string) =>
-  `${(process.env.NEXT_PUBLIC_GATEWAY_URL || new URL(reqUrl).origin).replace(/\/+$/, '')}/v1`;
+const gatewayBase = (c: { req: { url: string; header: (name: string) => string | undefined } }) => {
+  if (process.env.NEXT_PUBLIC_GATEWAY_URL) {
+    return `${process.env.NEXT_PUBLIC_GATEWAY_URL.replace(/\/+$/, '')}/v1`;
+  }
+  const host = c.req.header('x-forwarded-host') || c.req.header('host');
+  const proto = c.req.header('x-forwarded-proto') || (c.req.url.startsWith('https') ? 'https' : 'http');
+  if (host) {
+    return `${proto}://${host}/v1`;
+  }
+  return `${new URL(c.req.url).origin.replace(/\/+$/, '')}/v1`;
+};
 const modelsMap = (models: Array<{ id: string; name: string }>) =>
   Object.fromEntries(models.map((m) => [m.id, { name: m.name }]));
 
 quickstart.get('/opencode.sh', async (c) => {
   const models = await activeModels();
+  const defaultModel =
+    models.find((m) => m.id.startsWith('deepseek-v4'))?.id ||
+    models.find((m) => m.id.toLowerCase().includes('deepseek'))?.id ||
+    models[0]?.id ||
+    'deepseek-v4';
   const modelsJson = JSON.stringify(modelsMap(models), null, 2)
     .split('\n')
     .join('\n      ')
     // Goes inside an unquoted heredoc: keep $, ` and \ literal.
     .replace(/[\\$`]/g, '\\$&');
-  const defaultBase = gatewayBase(c.req.url);
+  const defaultBase = gatewayBase(c);
 
   const script = `#!/usr/bin/env bash
 # Morphic x opencode quickstart. Writes ~/.config/opencode/opencode.json for the Morphic provider.
@@ -94,7 +108,8 @@ cat > "$CONFIG" <<JSON
       },
       "models": ${modelsJson}
     }
-  }
+  },
+  "model": "morphic/${defaultModel}"
 }
 JSON
 chmod 600 "$CONFIG"
@@ -115,10 +130,15 @@ echo "  Run: opencode   then pick a model with /models"
 // script block with `return`. Works on Windows PowerShell 5.1 and PowerShell 7.
 quickstart.get('/opencode.ps1', async (c) => {
   const models = await activeModels();
+  const defaultModel =
+    models.find((m) => m.id.startsWith('deepseek-v4'))?.id ||
+    models.find((m) => m.id.toLowerCase().includes('deepseek'))?.id ||
+    models[0]?.id ||
+    'deepseek-v4';
   // Single-quoted here-string: PowerShell expands nothing inside it. The only terminator is a
   // line starting with '@, which JSON.stringify output can never produce.
   const modelsJson = JSON.stringify(modelsMap(models), null, 2);
-  const defaultBase = gatewayBase(c.req.url);
+  const defaultBase = gatewayBase(c);
 
   const script = `# Morphic x opencode quickstart for Windows. Writes %USERPROFILE%\\.config\\opencode\\opencode.json.
 # Usage (PowerShell):
@@ -174,6 +194,7 @@ ${modelsJson}
         models = $Models
       }
     }
+    model = 'morphic/${defaultModel}'
   }
   # UTF-8 without BOM: Set-Content -Encoding UTF8 on 5.1 adds a BOM some JSON readers reject.
   [IO.File]::WriteAllText($Config, ($Body | ConvertTo-Json -Depth 10), (New-Object Text.UTF8Encoding $false))
