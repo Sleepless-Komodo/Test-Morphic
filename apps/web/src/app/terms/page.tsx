@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic';
 
 import { headers } from 'next/headers';
-import { auth } from '@/lib/auth';
+import { getSessionSafe } from '@/lib/auth';
 import { getServerTranslation } from '@/lib/i18n/server';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
@@ -14,7 +14,7 @@ export const metadata = {
 export default async function TermsPage() {
   let session = null;
   try {
-    session = await auth.api.getSession({ headers: await headers() });
+    session = await getSessionSafe(await headers());
   } catch (err) {
     console.warn('[Terms] Session check failed:', err);
   }
