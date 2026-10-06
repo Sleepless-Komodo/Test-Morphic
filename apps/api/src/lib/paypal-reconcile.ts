@@ -1,6 +1,7 @@
 import { db, schema as s } from '@morphic/db';
 import { and, eq, inArray, lt } from 'drizzle-orm';
-import { markPaymentIfOpen, processPaymentSuccess } from '@morphic/db/billing';
+import { markPaymentIfOpen } from '@morphic/db/billing';
+import { fulfilPayment } from './notify';
 import { getOrder, capturedAmountMatches } from './paypal';
 import { checkTransactionStatus } from './duitku';
 
@@ -31,7 +32,7 @@ export async function settleDuitkuPayment(
       console.error(`[duitku-settle] NEEDS REVIEW: ${payment.id} got=${status.amount} expected=${payment.amountCents}`);
       return null;
     }
-    return (await processPaymentSuccess(payment.id)).success ? 'paid' : null;
+    return (await fulfilPayment(payment.id)).success ? 'paid' : null;
   }
   if (status.statusCode === '02' || expireIfUnpaid) {
     return (await markPaymentIfOpen(payment.id, 'expired')) ? 'expired' : null;
@@ -110,7 +111,7 @@ export async function reconcilePaypalPayments(): Promise<number> {
               console.error(`[payment-reconcile] NEEDS REVIEW: Duitku ${payment.id} got=${status.amount} expected=${payment.amountCents}`);
               continue;
             }
-            if ((await processPaymentSuccess(payment.id)).success) {
+            if ((await fulfilPayment(payment.id)).success) {
               reconciled++;
               console.log(`[payment-reconcile] Duitku payment ${payment.id} reconciled → paid`);
             }
@@ -148,7 +149,7 @@ export async function reconcilePaypalPayments(): Promise<number> {
             console.error(`[payment-reconcile] NEEDS REVIEW: PayPal ${payment.id} got=${order.amount} ${order.currency} expected=${payment.amountCents} ${payment.currency}`);
             continue;
           }
-          if ((await processPaymentSuccess(payment.id)).success) {
+          if ((await fulfilPayment(payment.id)).success) {
             reconciled++;
             console.log(`[payment-reconcile] PayPal payment ${payment.id} reconciled → paid`);
           }

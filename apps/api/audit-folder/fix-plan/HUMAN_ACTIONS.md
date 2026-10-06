@@ -117,3 +117,24 @@
 ---
 
 *Dokumen HUMAN_ACTIONS.md selesai disusun. 7 tindakan operasional/legal dipetakan.*
+
+---
+
+## Tambahan 2026-10-06 (penyelesaian FIX_BE)
+
+1. **Migrasi 0010** (`pnpm db:migrate` sebelum deploy): FK ledger/payments/usage → `RESTRICT`,
+   kolom `usage_records.upstream_cost_credits`, UNIQUE parsial `ledger_purchase_reference_unique`.
+   Cek duplikat dulu, kalau ada migrasi gagal:
+   `select reference, count(*) from credit_ledger where entry_type='purchase' group by 1 having count(*) > 1;`
+2. **Verifikasi email wajib.** User email+password lama dengan `email_verified=false` akan diminta klik
+   link (dikirim otomatis saat login). Kalau ingin membebaskan akun lama:
+   `update users set email_verified=true where created_at < '<tanggal deploy>';` — keputusan pemilik.
+3. **Admin wajib OTP login.** Admin yang login dengan password harus mengaktifkan "Kode OTP via email
+   saat login" di Settings sebelum bisa membuka `/admin`.
+4. **Env baru (opsional):** `REDIS_URL` (state circuit breaker + rate limit lintas instance),
+   `GATEWAY_IP_RPM` (default 300), `LOW_BALANCE_CREDITS` (default 100000),
+   `ALERT_TELEGRAM_BOT_TOKEN`/`ALERT_TELEGRAM_CHAT_ID` atau `ALERT_WEBHOOK_URL` (alert margin negatif).
+5. **Biaya hulu per model:** isi "Upstream cost in/out / 1M" (satuan kredit) di form edit model admin
+   agar `upstream_cost_credits` terisi dan alert margin negatif aktif.
+6. **OWN-04 (kurs):** kurs sekarang satu konstanta `IDR_PER_USD` di `packages/shared/src/credits.ts`;
+   tinjau bulanan atau putuskan integrasi kurs live.

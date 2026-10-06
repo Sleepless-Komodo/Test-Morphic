@@ -1,15 +1,28 @@
 import { randomBytes, createHash } from 'node:crypto';
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { db, schema as s } from '@morphic/db';
 import { eq, and, desc, sql } from 'drizzle-orm';
 import { sessionAuth, denyKeyDerivedSession } from '../middleware/session-auth';
 import { sessionRateLimit } from '../middleware/session-ratelimit';
+import { getTrustedClientIp } from '../lib/ip';
 
 const keys = new Hono();
 
 keys.use('*', sessionAuth);
 keys.use('*', denyKeyDerivedSession);
 keys.use('*', sessionRateLimit('keys', 30));
+
+/** Forensic trail for key lifecycle (who, from where), in the shared audit table. */
+async function auditKey(c: Context, action: 'key.created' | 'key.revoked' | 'key.rotated', keyId: string, keyPrefix: string, extra?: Record<string, unknown>) {
+  const { userId } = c.get('userSession');
+  await db.insert(s.adminAuditLog).values({
+    adminId: userId,
+    action,
+    entity: 'api_key',
+    entityId: keyId,
+    detail: { actor: 'user', keyPrefix, ip: getTrustedClientIp(c), userAgent: c.req.header('user-agent') ?? null, ...extra },
+  });
+}
 
 // Plaintext is returned once here and never stored; only the SHA-256 hash is kept.
 async function mintKey(userId: string, name: string, expiresAt: Date | null) {
@@ -96,7 +109,9 @@ keys.post('/', async (c) => {
   const days = EXPIRY_DAYS[expiresIn];
   const expiresAt = days === null ? null : new Date(Date.now() + days * 86_400_000);
 
-  return c.json(await mintKey(userId, name, expiresAt), 201);
+  const minted = await mintKey(userId, name, expiresAt);
+  await auditKey(c, 'key.created', minted.id, minted.prefix);
+  return c.json(minted, 201);
 });
 
 keys.get('/', async (c) => {
@@ -150,7 +165,7 @@ keys.post('/:id/rotate', async (c) => {
   }
 
   const [old] = await db
-    .select({ id: s.apiKeys.id, name: s.apiKeys.name, status: s.apiKeys.status, expiresAt: s.apiKeys.expiresAt, createdAt: s.apiKeys.createdAt })
+    .select({ id: s.apiKeys.id, name: s.apiKeys.name, keyPrefix: s.apiKeys.keyPrefix, status: s.apiKeys.status, expiresAt: s.apiKeys.expiresAt, createdAt: s.apiKeys.createdAt })
     .from(s.apiKeys)
     .where(and(eq(s.apiKeys.id, keyId), eq(s.apiKeys.userId, userId)))
     .limit(1);
@@ -169,6 +184,7 @@ keys.post('/:id/rotate', async (c) => {
 
   const minted = await mintKey(userId, old.name, newExpiresAt);
   await db.update(s.apiKeys).set({ expiresAt: oldExpiresAt }).where(eq(s.apiKeys.id, old.id));
+  await auditKey(c, 'key.rotated', old.id, old.keyPrefix, { newKeyId: minted.id, oldExpiresAt: oldExpiresAt.toISOString() });
 
   return c.json({ ...minted, rotated_from: { id: old.id, expires_at: oldExpiresAt.toISOString() } }, 201);
 });
@@ -178,7 +194,7 @@ keys.delete('/:id', async (c) => {
   const keyId = c.req.param('id');
 
   const [key] = await db
-    .select({ id: s.apiKeys.id, status: s.apiKeys.status })
+    .select({ id: s.apiKeys.id, keyPrefix: s.apiKeys.keyPrefix, status: s.apiKeys.status })
     .from(s.apiKeys)
     .where(and(eq(s.apiKeys.id, keyId), eq(s.apiKeys.userId, userId)))
     .limit(1);
@@ -193,6 +209,7 @@ keys.delete('/:id', async (c) => {
   // Hard delete: auth looks keys up by hash, so the key stops working on its next request.
   // Usage and request logs keep their rows (api_key_id is set null by the FK).
   await db.delete(s.apiKeys).where(and(eq(s.apiKeys.id, keyId), eq(s.apiKeys.userId, userId)));
+  await auditKey(c, 'key.revoked', keyId, key.keyPrefix);
 
   return c.json({ id: keyId, deleted: true });
 });

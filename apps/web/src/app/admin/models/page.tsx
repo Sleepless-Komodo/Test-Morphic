@@ -75,6 +75,8 @@ export default async function AdminModels() {
         capabilities: s.models.capabilities,
         inputCreditsPer1m: s.models.inputCreditsPer1m,
         outputCreditsPer1m: s.models.outputCreditsPer1m,
+        providerCostInputPer1m: s.models.providerCostInputPer1m,
+        providerCostOutputPer1m: s.models.providerCostOutputPer1m,
         status: s.models.status,
         providerName: s.providers.name,
       })

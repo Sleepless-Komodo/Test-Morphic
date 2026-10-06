@@ -1,7 +1,11 @@
 import { Hono } from 'hono';
 import { randomUUID } from 'node:crypto';
 import { db, schema as s } from '@morphic/db';
-import { markPaymentIfOpen, processPaymentSuccess } from '@morphic/db/billing';
+import { markPaymentIfOpen } from '@morphic/db/billing';
+import { fulfilPayment } from '../lib/notify';
+import { rateLimitStore } from '../ratelimit';
+import { buildReceiptPdf } from '../lib/receipt-pdf';
+import { packagePriceIdr, packagePriceUsdCents } from '@morphic/shared/credits';
 import { eq, and, inArray, sql, gt } from 'drizzle-orm';
 import { sessionAuth, denyKeyDerivedSession } from '../middleware/session-auth';
 import { createTransaction } from '../lib/duitku';
@@ -19,8 +23,6 @@ const payments = new Hono();
 payments.use('*', sessionAuth);
 payments.use('*', denyKeyDerivedSession);
 
-// In-memory rate-limiter map to throttle polling requests (10-second window per payment ID)
-const lastPollMap = new Map<string, number>();
 
 // Allowed Duitku payment methods whitelist restricted to QRIS channels without fee discrepancies
 const ALLOWED_DUITKU_PAYMENT_METHODS = new Set(['SP', 'LQ', 'NQ']);
@@ -108,11 +110,8 @@ payments.post('/create', async (c) => {
     );
   }
 
-  // Step 7: Determine IDR amount (auto-convert if USD package at 1 USD = 16,000 IDR)
-  const amountIDR =
-    pkg.currency === 'IDR' || !pkg.currency
-      ? pkg.priceCents
-      : Math.round((pkg.priceCents / 100) * 16000);
+  // Step 7: Determine IDR amount (USD packages converted at IDR_PER_USD)
+  const amountIDR = packagePriceIdr(pkg.priceCents, pkg.currency);
 
   // Step 8: Fetch user info for Duitku email and customer VA name confirmation
   const [user] = await db
@@ -208,6 +207,60 @@ payments.post('/create', async (c) => {
   });
 });
 
+// ── GET /v1/payments/:id/receipt ──────────────────────
+// PDF receipt for the caller's own paid payment (same fields as the web /receipt/:id page).
+payments.get('/:id/receipt', async (c) => {
+  const { userId } = c.get('userSession');
+  const paymentId = c.req.param('id');
+  const notFound = () =>
+    c.json({ error: { message: 'paid payment not found', type: 'invalid_request_error', code: 'payment_not_found' } }, 404);
+  if (!/^[0-9a-f-]{36}$/i.test(paymentId)) return notFound();
+
+  const [row] = await db
+    .select({
+      id: s.payments.id,
+      externalId: s.payments.externalId,
+      provider: s.payments.provider,
+      amountCents: s.payments.amountCents,
+      currency: s.payments.currency,
+      credits: s.payments.credits,
+      paidAt: s.payments.paidAt,
+      createdAt: s.payments.createdAt,
+      packageName: s.packages.name,
+      userName: s.users.name,
+      userEmail: s.users.email,
+    })
+    .from(s.payments)
+    .innerJoin(s.users, eq(s.users.id, s.payments.userId))
+    .leftJoin(s.packages, eq(s.packages.id, s.payments.packageId))
+    .where(and(eq(s.payments.id, paymentId), eq(s.payments.userId, userId), eq(s.payments.status, 'paid')))
+    .limit(1);
+  if (!row) return notFound();
+
+  const paidAt = row.paidAt ?? row.createdAt;
+  const amount = row.currency === 'USD' ? `USD ${(row.amountCents / 100).toFixed(2)}` : `Rp ${row.amountCents.toLocaleString('id-ID')}`;
+  const pdf = buildReceiptPdf(
+    'Kuitansi pembayaran / Payment receipt',
+    [
+      ['Nomor kuitansi', row.id.slice(0, 8).toUpperCase()],
+      ['Tanggal bayar', `${paidAt.toLocaleString('id-ID', { dateStyle: 'long', timeStyle: 'short', timeZone: 'Asia/Jakarta' })} WIB`],
+      ['Ditagihkan kepada', `${row.userName} <${row.userEmail}>`],
+      ['Paket', row.packageName ?? 'Isi ulang kredit'],
+      ['Kredit', row.credits.toLocaleString('id-ID')],
+      ['Jumlah dibayar', amount],
+      ['Metode bayar', row.provider === 'paypal' ? 'PayPal' : row.provider === 'duitku' ? 'Duitku' : row.provider],
+      ['ID transaksi gateway', row.externalId],
+      ['Status', 'LUNAS / PAID'],
+    ],
+    `Dokumen ini diterbitkan secara elektronik oleh Morphic dan sah tanpa tanda tangan. Ref ${row.id}`,
+  );
+  return c.body(new Uint8Array(pdf), 200, {
+    'Content-Type': 'application/pdf',
+    'Content-Disposition': `attachment; filename="receipt-morphic-${row.id.slice(0, 8)}.pdf"`,
+    'Cache-Control': 'private, no-store',
+  });
+});
+
 // ── GET /v1/payments/:id ──────────────────────────────
 // Poll payment status. Returns DB status + optionally refreshes from Duitku gateway.
 payments.get('/:id', async (c) => {
@@ -231,8 +284,8 @@ payments.get('/:id', async (c) => {
   // Step 2: If pending Duitku payment, poll status with 10s throttle window and amount check
   if (payment.status === 'pending' && payment.provider === 'duitku') {
     const now = Date.now();
-    if (now - (lastPollMap.get(paymentId) ?? 0) > 10_000) {
-      lastPollMap.set(paymentId, now);
+    // One gateway poll per payment per 10s, shared across instances (Redis when configured).
+    if ((await rateLimitStore.increment(`poll:duitku:${paymentId}:${Math.floor(now / 10_000)}`, 20)) === 1) {
       try {
         // Past the 5-minute window an unpaid invoice is cancelled right here, not left pending.
         const pastTtl = now - payment.createdAt.getTime() > DUITKU_EXPIRE_AFTER_MS;
@@ -334,11 +387,8 @@ payments.post('/paypal/create-order', async (c) => {
     );
   }
 
-  // Step 4: Determine USD cents amount (auto-convert if IDR package at 1 USD = 16,000 IDR)
-  const usdAmountCents =
-    pkg.currency === 'USD'
-      ? pkg.priceCents
-      : Math.max(100, Math.round((pkg.priceCents / 16000) * 100));
+  // Step 4: Determine USD cents amount (IDR packages converted at IDR_PER_USD)
+  const usdAmountCents = packagePriceUsdCents(pkg.priceCents, pkg.currency);
 
   // Step 5: Generate idempotency key & insert new pending payment row
   const idempotencyKey = randomUUID();
@@ -482,7 +532,7 @@ payments.post('/paypal/capture', async (c) => {
     }
 
     // Grant credits atomically using processPaymentSuccess helper
-    const res = await processPaymentSuccess(paymentId);
+    const res = await fulfilPayment(paymentId);
     if (res.success) {
       return c.json({
         success: true,
@@ -544,11 +594,8 @@ payments.get('/paypal/verify/:paymentId', async (c) => {
     return c.json({ status: 'paid', credits: payment.credits });
   }
 
-  // Step 3: Throttle PayPal order lookup (10-second in-memory polling window)
-  const now = Date.now();
-  const last = lastPollMap.get(paymentId) ?? 0;
-  if (now - last > 10_000) {
-    lastPollMap.set(paymentId, now);
+  // Step 3: Throttle PayPal order lookup (one per payment per 10s, shared across instances)
+  if ((await rateLimitStore.increment(`poll:paypal:${paymentId}:${Math.floor(Date.now() / 10_000)}`, 20)) === 1) {
     try {
       const order = await paypal.getOrder(payment.externalId);
 
@@ -559,7 +606,7 @@ payments.get('/paypal/verify/:paymentId', async (c) => {
         }
 
         // Rescue path: processPaymentSuccess can rescue open, failed, or expired payment rows to 'paid'
-        const res = await processPaymentSuccess(paymentId);
+        const res = await fulfilPayment(paymentId);
         if (res.success) {
           payment.status = 'paid';
           payment.paidAt = new Date();

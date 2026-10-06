@@ -26,6 +26,7 @@ import { formatCredits, API_BASE_URL, cn } from '@/lib/utils';
 import { PayPalButton } from '@/components/PayPalButton';
 import { provisionPostPaymentKey } from '@/lib/actions';
 import { ModelProviderLogo } from '@/components/ProviderLogos';
+import { packagePriceIdr, packagePriceUsdCents } from '@morphic/shared/credits';
 
 const API_URL = '/api/backend';
 const POLL_INTERVAL_MS = 3000;
@@ -171,15 +172,9 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
     existingPayment?.provider === 'paypal' ? 'paypal' : (pkg.currency === 'USD' ? 'paypal' : 'duitku')
   );
 
-  const idrPrice =
-    pkg.currency === 'IDR' || !pkg.currency
-      ? pkg.priceCents
-      : Math.round((pkg.priceCents / 100) * 16000);
+  const idrPrice = packagePriceIdr(pkg.priceCents, pkg.currency);
 
-  const usdPrice =
-    pkg.currency === 'USD'
-      ? (pkg.priceCents / 100).toFixed(2)
-      : (Math.max(100, Math.round((pkg.priceCents / 16000) * 100)) / 100).toFixed(2);
+  const usdPrice = (packagePriceUsdCents(pkg.priceCents, pkg.currency) / 100).toFixed(2);
 
   const isUSD = paymentProvider === 'paypal';
 

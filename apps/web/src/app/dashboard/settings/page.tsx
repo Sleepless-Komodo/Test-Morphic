@@ -5,8 +5,8 @@ import { SettingsView } from './settings-view';
 
 export const dynamic = 'force-dynamic';
 
-export default async function SettingsPage() {
-  const [user, sessions] = await Promise.all([requireUser(), listActiveSessions()]);
+export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ mfa?: string }> }) {
+  const [user, sessions, params] = await Promise.all([requireUser(), listActiveSessions(), searchParams]);
 
   // The session user carries no role, and the profile card used to print a fixed
   // "DEVELOPER" badge. Read what the account actually is.
@@ -36,11 +36,21 @@ export default async function SettingsPage() {
     console.warn('[SettingsPage] Could not read account role:', err);
   }
 
+  const adminMfaNotice = params.mfa === 'required' && account?.role === 'admin' && !account.twoFactorEnabled;
+
   return (
-    <SettingsView
+    <>
+      {adminMfaNotice && (
+        <p role="alert" className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900">
+          Panel admin butuh OTP login. Aktifkan &quot;Kode OTP via email saat login&quot; di bawah, lalu buka /admin lagi.
+          <span className="block text-amber-800">Admin access needs login OTP. Turn on &quot;Email OTP at sign-in&quot; below, then open /admin again.</span>
+        </p>
+      )}
+      <SettingsView
       user={{ ...user, role: account?.role ?? null, emailVerified: account?.emailVerified ?? null }}
       sessions={sessions}
       loginOtp={{ enabled: account?.twoFactorEnabled ?? false, hasPassword: account?.hasPassword ?? false }}
-    />
+      />
+    </>
   );
 }

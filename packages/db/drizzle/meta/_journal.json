@@ -71,6 +71,13 @@
       "when": 1791167091219,
       "tag": "0009_user_soft_delete",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1791284539496,
+      "tag": "0010_financial_retention",
+      "breakpoints": true
     }
   ]
 }

@@ -192,12 +192,14 @@ export async function settle(input: {
   promptTokens: number;
   completionTokens: number;
   pricing: ModelPricing;
+  /** Provider's price in credits per 1M tokens; enables upstream-cost / margin tracking. */
+  upstreamPricing?: ModelPricing | null;
   requestId: string;
   status: 'success' | 'error';
   error?: string | null;
   latencyMs?: number | null;
   streamed?: boolean;
-}): Promise<{ actualCredits: number; refunded: number; usageRecordId: string }> {
+}): Promise<{ actualCredits: number; refunded: number; usageRecordId: string; upstreamCostCredits: number | null }> {
   const actualCredits =
     input.status === 'success'
       ? tokensToCredits(input.promptTokens, input.pricing.inputCreditsPer1m) +
@@ -206,6 +208,12 @@ export async function settle(input: {
   // actual is clamped to estimate: settlement never charges more than reserved
   const charged = Math.min(actualCredits, input.reservation.estimatedCredits);
   const refunded = input.reservation.estimatedCredits - charged;
+  const up = input.upstreamPricing;
+  const upstreamCostCredits =
+    input.status === 'success' && up
+      ? tokensToCredits(input.promptTokens, up.inputCreditsPer1m) +
+        tokensToCredits(input.completionTokens, up.outputCreditsPer1m)
+      : null;
 
   return withTransaction(async (tx) => {
     const [res] = await tx
@@ -229,6 +237,7 @@ export async function settle(input: {
         completionTokens: input.completionTokens,
         totalTokens: input.promptTokens + input.completionTokens,
         creditsConsumed: charged,
+        upstreamCostCredits,
         latencyMs: input.latencyMs ?? null,
         status: input.status,
         error: input.error ?? null,
@@ -275,7 +284,7 @@ export async function settle(input: {
       })
       .where(eq(s.reservations.id, res.id));
 
-    return { actualCredits: charged, refunded, usageRecordId: usage!.id };
+    return { actualCredits: charged, refunded, usageRecordId: usage!.id, upstreamCostCredits };
   });
 }
 

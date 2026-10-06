@@ -101,7 +101,10 @@ export const auth = betterAuth({
   },
   emailAndPassword: {
     enabled: true,
-    autoSignIn: true,
+    // No session until the address is proven: sign-up sends a link, and an unverified sign-in
+    // is refused with EMAIL_NOT_VERIFIED after a fresh link is sent (sendOnSignIn).
+    autoSignIn: false,
+    requireEmailVerification: true,
     minPasswordLength: 8,
     resetPasswordTokenExpiresIn: 30 * 60,
     revokeSessionsOnPasswordReset: true,
@@ -111,6 +114,20 @@ export const auth = betterAuth({
         subject: 'Atur ulang kata sandi Morphic',
         text: `Buka tautan ini untuk membuat kata sandi baru (berlaku 30 menit):\n${url}\n\nAbaikan email ini jika Anda tidak memintanya.`,
         html: `<p>Buka tautan ini untuk membuat kata sandi baru (berlaku 30 menit):</p><p><a href="${url}">Atur ulang kata sandi</a></p><p>Abaikan email ini jika Anda tidak memintanya.</p>`,
+      });
+    },
+  },
+  emailVerification: {
+    sendOnSignUp: true,
+    sendOnSignIn: true,
+    autoSignInAfterVerification: true,
+    expiresIn: 24 * 60 * 60,
+    sendVerificationEmail: async ({ user, url }) => {
+      await sendEmail({
+        to: user.email,
+        subject: 'Verifikasi email Morphic Anda',
+        text: `Buka tautan ini untuk memverifikasi email dan masuk ke Morphic (berlaku 24 jam):\n${url}\n\nAbaikan email ini jika Anda tidak mendaftar.`,
+        html: `<p>Buka tautan ini untuk memverifikasi email dan masuk ke Morphic (berlaku 24 jam):</p><p><a href="${url}">Verifikasi email</a></p><p>Abaikan email ini jika Anda tidak mendaftar.</p>`,
       });
     },
   },

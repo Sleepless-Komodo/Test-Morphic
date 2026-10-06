@@ -30,6 +30,7 @@ export default function EmailAuthPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [verifyNotice, setVerifyNotice] = useState<string | null>(null);
   const [failCount, setFailCount] = useState(0);
   const [lockoutSeconds, setLockoutSeconds] = useState(0);
 
@@ -70,6 +71,7 @@ export default function EmailAuthPage() {
 
     setLoading(true);
     setErrorMsg(null);
+    setVerifyNotice(null);
 
     const handleAuthFail = (msg: string) => {
       recaptchaRef.current?.reset();
@@ -101,6 +103,7 @@ export default function EmailAuthPage() {
           email: trimmedEmail,
           password,
           name: name.trim() || trimmedEmail.split('@')[0],
+          callbackURL: '/dashboard',
           fetchOptions: {
             headers: fetchHeaders,
           },
@@ -116,6 +119,17 @@ export default function EmailAuthPage() {
           );
           return;
         }
+
+        // No session yet: the account opens from the link we just emailed.
+        setVerifyNotice(
+          locale === 'id'
+            ? `Kami mengirim tautan verifikasi ke ${trimmedEmail}. Buka tautan itu untuk masuk.`
+            : `We sent a verification link to ${trimmedEmail}. Open it to sign in.`,
+        );
+        recaptchaRef.current?.reset();
+        setCaptchaToken(null);
+        setLoading(false);
+        return;
       } else {
         const res = await signIn.email({
           email: trimmedEmail,
@@ -124,6 +138,18 @@ export default function EmailAuthPage() {
             headers: fetchHeaders,
           },
         });
+
+        if (res?.error?.code === 'EMAIL_NOT_VERIFIED') {
+          setVerifyNotice(
+            locale === 'id'
+              ? `Email belum diverifikasi. Kami mengirim tautan baru ke ${trimmedEmail}.`
+              : `Email not verified yet. We sent a new link to ${trimmedEmail}.`,
+          );
+          recaptchaRef.current?.reset();
+          setCaptchaToken(null);
+          setLoading(false);
+          return;
+        }
 
         if (res?.error) {
           console.error('Sign in error:', res.error);
@@ -224,6 +250,15 @@ export default function EmailAuthPage() {
                 <p suppressHydrationWarning className="text-xs font-medium text-amber-800 leading-relaxed">
                   {errorMsg}
                 </p>
+              </div>
+            </div>
+          )}
+
+          {verifyNotice && (
+            <div role="status" className="mb-4 p-3 rounded-2xl bg-emerald-50 border border-emerald-200 text-left">
+              <div className="flex items-start gap-2">
+                <Mail className="h-4 w-4 text-emerald-700 shrink-0 mt-0.5" />
+                <p className="text-xs font-medium text-emerald-900 leading-relaxed">{verifyNotice}</p>
               </div>
             </div>
           )}

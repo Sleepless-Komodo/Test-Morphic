@@ -3,6 +3,7 @@ import { Hono } from 'hono';
 import { and, eq } from 'drizzle-orm';
 import { db, schema as s } from '@morphic/db';
 import { markPaymentIfOpen, processPaymentSuccess } from '@morphic/db/billing';
+import { notifyPaymentPaid } from '../lib/notify';
 import { verifyCallbackSignature, checkTransactionStatus } from '../lib/duitku';
 import { verifyWebhookSignature as verifyPayPalWebhookSignature } from '../lib/paypal';
 
@@ -70,13 +71,15 @@ webhooks.post('/mock', async (c) => {
   }
 
   if (status === 'paid') {
-    await db.transaction(async (tx) => {
+    const fulfilled = await db.transaction(async (tx) => {
       await tx.insert(s.paymentEvents).values({ provider: 'mock', eventId, paymentId: payment.id, payload });
       const res = await processPaymentSuccess(payment.id, tx);
       if (!res.success) {
         throw new Error(`cannot fulfill mock payment ${payment.id}`);
       }
+      return res;
     });
+    if (fulfilled.success && !fulfilled.alreadyPaid) void notifyPaymentPaid(payment.id);
   } else {
     await db.transaction(async (tx) => {
       await tx.insert(s.paymentEvents).values({ provider: 'mock', eventId, paymentId: payment.id, payload });
@@ -197,7 +200,7 @@ webhooks.post('/duitku', async (c) => {
 
     // Step 8: Grant credits inside an atomic database transaction
     try {
-      await db.transaction(async (tx) => {
+      const fulfilled = await db.transaction(async (tx) => {
         await tx.insert(s.paymentEvents).values({
           provider: 'duitku',
           eventId,
@@ -209,7 +212,9 @@ webhooks.post('/duitku', async (c) => {
         if (!res.success) {
           throw new Error(`cannot fulfill Duitku payment ${payment.id}`);
         }
+        return res;
       });
+      if (fulfilled.success && !fulfilled.alreadyPaid) void notifyPaymentPaid(payment.id);
 
       console.log(`[webhook/duitku] payment ${payment.id} paid — ${payment.credits} credits granted to ${payment.userId}`);
     } catch (err) {
@@ -304,7 +309,7 @@ webhooks.post('/paypal', async (c) => {
   // Step 4: Handle payment success events
   if (eventType === 'PAYMENT.CAPTURE.COMPLETED' || eventType === 'CHECKOUT.ORDER.APPROVED') {
     try {
-      await db.transaction(async (tx) => {
+      const fulfilled = await db.transaction(async (tx) => {
         await tx.insert(s.paymentEvents).values({
           provider: 'paypal',
           eventId,
@@ -316,7 +321,9 @@ webhooks.post('/paypal', async (c) => {
         if (!res.success && payment.status === 'pending') {
           throw new Error(`cannot fulfill PayPal payment ${payment.id}`);
         }
+        return res;
       });
+      if (fulfilled.success && !fulfilled.alreadyPaid) void notifyPaymentPaid(payment.id);
       console.log(`[webhook/paypal] payment ${payment.id} fulfilled via event ${eventType}`);
     } catch (err) {
       console.error('[webhook/paypal] error processing paid event:', err);

@@ -10,6 +10,7 @@ import { generateApiKey, maskedKey, hashApiKey } from '@morphic/shared/keys';
 import { sendEmail } from '@morphic/shared/email';
 import { auth } from '@/lib/auth';
 import { fetchBackendApi } from './api-client';
+import { softDeleteUser } from './account-deletion';
 
 import { cache } from 'react';
 
@@ -47,11 +48,13 @@ async function requireUser() {
 }
 
 /**
- * The signed-in admin row, or null for guests, non-admins, suspended admins and API-key sessions.
+ * The signed-in admin, or null for guests, non-admins, suspended admins and API-key sessions.
+ * Admins who sign in with a password must also have login OTP on (`mfaMissing` otherwise);
+ * Google/GitHub-only admins are secured by their provider's MFA.
  * One joined query (user role + session auth method), memoised per request so the admin layout
  * and page share it.
  */
-const currentAdmin = cache(async () => {
+const adminCheck = cache(async (): Promise<{ user: typeof s.users.$inferSelect; mfaMissing: boolean } | null> => {
   const session = await getSessionWithRetry();
   if (!session) return null;
   // Role comes from the DB on every request (never from the session payload), and admin power is
@@ -64,15 +67,22 @@ const currentAdmin = cache(async () => {
     .where(and(eq(s.users.id, session.user.id), eq(s.sessions.id, session.session.id)))
     .limit(1);
   if (!row || row.user.role !== 'admin' || row.user.suspended || row.authMethod === 'api_key') return null;
-  return row.user;
+  const mfaMissing = !row.user.twoFactorEnabled && (await hasPasswordLogin(row.user.id));
+  return { user: row.user, mfaMissing };
 });
+
+const currentAdmin = async () => {
+  const check = await adminCheck();
+  return check && !check.mfaMissing ? check.user : null;
+};
 
 async function requireAdmin() {
   const session = await getSessionWithRetry();
   if (!session) redirect('/login');
-  const admin = await currentAdmin();
-  if (!admin) redirect('/dashboard');
-  return admin;
+  const check = await adminCheck();
+  if (!check) redirect('/dashboard');
+  if (check.mfaMissing) redirect('/dashboard/settings?mfa=required');
+  return check.user;
 }
 
 async function isCurrentUserAdmin(): Promise<boolean> {
@@ -681,27 +691,7 @@ export async function deleteOwnAccount(formData: FormData) {
   }
 
   try {
-    const now = new Date();
-    await db
-      .update(s.apiKeys)
-      .set({ status: 'revoked', revokedAt: now })
-      .where(and(eq(s.apiKeys.userId, user.id), eq(s.apiKeys.status, 'active')));
-    await db.delete(s.accounts).where(eq(s.accounts.userId, user.id));
-    await db.delete(s.twoFactors).where(eq(s.twoFactors.userId, user.id));
-    await db.delete(s.sessions).where(eq(s.sessions.userId, user.id));
-    await db
-      .update(s.users)
-      .set({
-        email: `deleted+${user.id}@redacted.local`,
-        name: 'Deleted User',
-        image: null,
-        emailVerified: false,
-        suspended: true,
-        twoFactorEnabled: false,
-        deletedAt: now,
-        updatedAt: now,
-      })
-      .where(eq(s.users.id, user.id));
+    await softDeleteUser(user.id);
     revalidatePath('/dashboard');
     revalidatePath('/login');
     return { ok: true };
