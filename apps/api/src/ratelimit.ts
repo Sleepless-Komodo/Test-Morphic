@@ -1,5 +1,5 @@
-import Redis from 'ioredis';
 import { RedisRateLimitStore } from './lib/redis-store';
+import { redis } from './lib/redis';
 
 export interface IRateLimitStore {
   /** Increments counter for a key, setting TTL if new. Returns updated count. */
@@ -80,16 +80,9 @@ export class InMemoryRateLimitStore implements IRateLimitStore {
 }
 
 function createStore(): IRateLimitStore {
-  const url = process.env.REDIS_URL;
-  if (url) {
-    try {
-      const client = new Redis(url, { maxRetriesPerRequest: 2 });
-      client.on('error', (e: unknown) => console.error('[ratelimit] redis error:', e));
-      console.log('[ratelimit] using Redis store');
-      return new RedisRateLimitStore(client);
-    } catch (e) {
-      console.error('[ratelimit] Redis init failed, falling back to in-memory:', e);
-    }
+  if (redis) {
+    console.log('[ratelimit] using Redis store');
+    return new RedisRateLimitStore(redis);
   }
   console.warn('[ratelimit] REDIS_URL unset — using in-memory store (per-process, resets on restart)');
   return new InMemoryRateLimitStore();
@@ -100,11 +93,21 @@ export const rateLimitStore: IRateLimitStore = createStore();
 const RATE_WINDOW_SECONDS = 60;
 const CONCURRENCY_TTL_SECONDS = 300;
 
-export async function checkRateLimit(keyId: string, rpm: number): Promise<boolean> {
-  const bucket = Math.floor(Date.now() / (RATE_WINDOW_SECONDS * 1000));
-  const key = `rl:${keyId}:${bucket}`;
-  const count = await rateLimitStore.increment(key, RATE_WINDOW_SECONDS * 2);
-  return count <= rpm;
+/** Fixed one-minute window. `scope` separates per-key (`rl`) from per-IP (`rlip`) counters. */
+export async function checkRateLimit(
+  id: string,
+  rpm: number,
+  scope = 'rl',
+): Promise<{ ok: boolean; remaining: number; retryAfter: number }> {
+  const now = Date.now();
+  const windowMs = RATE_WINDOW_SECONDS * 1000;
+  const bucket = Math.floor(now / windowMs);
+  const count = await rateLimitStore.increment(`${scope}:${id}:${bucket}`, RATE_WINDOW_SECONDS * 2);
+  return {
+    ok: count <= rpm,
+    remaining: Math.max(0, rpm - count),
+    retryAfter: Math.ceil(((bucket + 1) * windowMs - now) / 1000),
+  };
 }
 
 export async function trackConcurrency(

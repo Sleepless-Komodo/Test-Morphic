@@ -47,3 +47,20 @@ export function actualUsageCredits(
     tokensToCredits(completionTokens, pricing.outputCreditsPer1m)
   );
 }
+
+/**
+ * Checkout FX rate. Single source for the API (what users are charged) and the web
+ * (what checkout shows and admin reports convert with). Owner reviews it monthly (OWN-04).
+ * ponytail: fixed rate; switch to a cached live rate with sanity bounds if FX moves too fast.
+ */
+export const IDR_PER_USD = 16_000;
+
+/** Package price in Rupiah (`priceCents` holds whole Rupiah for IDR, cents for USD). */
+export function packagePriceIdr(priceCents: number, currency: string | null | undefined): number {
+  return currency === 'IDR' || !currency ? priceCents : Math.round((priceCents / 100) * IDR_PER_USD);
+}
+
+/** Package price in USD cents, never below PayPal's $1.00 floor for converted IDR packages. */
+export function packagePriceUsdCents(priceCents: number, currency: string | null | undefined): number {
+  return currency === 'USD' ? priceCents : Math.max(100, Math.round((priceCents / IDR_PER_USD) * 100));
+}

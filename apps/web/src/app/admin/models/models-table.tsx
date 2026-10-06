@@ -16,6 +16,8 @@ interface ModelRow {
   capabilities: string[];
   inputCreditsPer1m: number;
   outputCreditsPer1m: number;
+  providerCostInputPer1m: number | null;
+  providerCostOutputPer1m: number | null;
   status: string;
   providerName: string;
   providerId?: string;
@@ -182,6 +184,28 @@ function EditRow({ model, providers, onDone }: {
               defaultValue={model.outputCreditsPer1m}
               min={1}
               required
+            />
+          </Field>
+
+          <Field label="Upstream cost in / 1M" tip="What the provider charges us per 1M input tokens, in credits. Leave blank if unknown.">
+            <input
+              name="providerCostInputPer1m"
+              aria-label="Upstream input cost in credits per 1M"
+              className="w-full px-3 py-2 text-xs rounded-xl border border-neutral-200 bg-white text-neutral-900 font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
+              type="number"
+              defaultValue={model.providerCostInputPer1m ?? ''}
+              min={0}
+            />
+          </Field>
+
+          <Field label="Upstream cost out / 1M" tip="What the provider charges us per 1M output tokens, in credits. Used for negative-margin alerts.">
+            <input
+              name="providerCostOutputPer1m"
+              aria-label="Upstream output cost in credits per 1M"
+              className="w-full px-3 py-2 text-xs rounded-xl border border-neutral-200 bg-white text-neutral-900 font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
+              type="number"
+              defaultValue={model.providerCostOutputPer1m ?? ''}
+              min={0}
             />
           </Field>
 

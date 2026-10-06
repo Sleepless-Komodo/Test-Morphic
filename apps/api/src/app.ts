@@ -9,6 +9,7 @@ import { payments } from './routes/payments';
 import { redeem } from './routes/redeem';
 import { catalog } from './routes/catalog';
 import { quickstart } from './routes/quickstart';
+import { requestId } from './middleware/request-id';
 
 const app = new Hono();
 
@@ -33,11 +34,13 @@ app.use(
     // Allowed HTTP methods
     allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     // Expose headers to FE
-    exposeHeaders: ['Content-Length'],
+    exposeHeaders: ['Content-Length', 'X-Request-Id', 'X-RateLimit-Limit-Requests', 'X-RateLimit-Remaining-Requests', 'Retry-After'],
     maxAge: 600, // cache preflight 10 minutes
     credentials: true,
   })
 );
+
+app.use('/v1/*', requestId);
 
 app.onError((err, c) => {
   console.error('[API Error]:', err);

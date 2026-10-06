@@ -1,5 +1,6 @@
 import { db, schema as s } from '@morphic/db';
 import { gte, sql } from 'drizzle-orm';
+import { rateLimitStore } from '../ratelimit';
 
 export interface ProviderHealth {
   providerName: string;
@@ -65,6 +66,28 @@ async function sendWebhookAlert(payload: Record<string, unknown>): Promise<void>
     }
   } catch (err) {
     console.error('[alert] Failed to send Webhook notification:', err);
+  }
+}
+
+/** Push an ops alert to every configured channel (Telegram, webhook) and the server log. */
+export async function sendOpsAlert(message: string, payload: Record<string, unknown>): Promise<void> {
+  console.warn(`[alert] ${message}`);
+  await Promise.all([sendTelegramAlert(message), sendWebhookAlert({ message, ...payload })]);
+}
+
+/** Revenue below upstream cost on a request. At most one alert per model per hour. */
+export async function alertNegativeMargin(model: string, revenueCredits: number, costCredits: number): Promise<void> {
+  try {
+    const hour = Math.floor(Date.now() / 3_600_000);
+    if ((await rateLimitStore.increment(`alert:margin:${model}:${hour}`, 7200)) !== 1) return;
+    await sendOpsAlert(`Negative margin on ${model}: charged ${revenueCredits} credits, upstream cost ${costCredits} credits`, {
+      type: 'negative_margin',
+      model,
+      revenueCredits,
+      costCredits,
+    });
+  } catch (e) {
+    console.error('[alert] negative margin alert failed:', e);
   }
 }
 

@@ -69,7 +69,7 @@
   - Mock email test: pastikan `sendEmail()` dipanggil dengan payload yang benar pada event pendaftaran dan reset password.
 - **Ketergantungan:** Keputusan pemilik OWN-02 (pemilihan vendor Resend vs SES).
 - **Risiko Regresi:** Memerlukan konfigurasi `RESEND_API_KEY` atau kredensial AWS di environment.
-- **Status:** Pending
+- **Status:** Completed (2026-10-06) — Resend via `packages/shared/src/email.ts`; email verifikasi daftar, reset password 30 menit, OTP login, kuitansi top-up (`notifyPaymentPaid`), peringatan saldo rendah.
 
 ---
 
@@ -161,7 +161,7 @@
   - Integration test: buat stream request, batalkan AbortController klien setelah 50ms, pastikan adapter melempar `AbortError` dan fetch hulu berhenti.
 - **Ketergantungan:** Node.js v20+ atau Bun (sudah mendukung `AbortSignal.any`).
 - **Risiko Regresi:** Sangat rendah.
-- **Status:** Pending
+- **Status:** Completed (2026-10-06) — `AbortSignal.any([req.signal, timeout])` di `router.ts`. Tes: `gateway.test.ts` P0-05.
 
 ---
 
@@ -191,7 +191,7 @@
   - DB test: buat user, isi saldo, hapus akun → assert baris ledger tetap ada dengan status akun bertanda `deleted_at`.
 - **Ketergantungan:** Perubahan FE FIX-FE-P0-02 (dialog konfirmasi hapus akun).
 - **Risiko Regresi:** Perlu memastikan query aktif di dashboard mengecualikan user yang `deleted_at IS NOT NULL`.
-- **Status:** Pending
+- **Status:** Completed (2026-10-06) — soft-delete + anonimisasi untuk hapus akun sendiri **dan** hapus oleh admin (`apps/web/src/lib/account-deletion.ts`); FK `credit_ledger`/`payments`/`usage_records` → `ON DELETE RESTRICT` (migrasi 0010). Tes: P0-06.
 
 ---
 
@@ -219,7 +219,7 @@
   - Test login flow: admin tanpa MFA ditolak saat mengakses rute layout admin.
 - **Ketergantungan:** FE setup TOTP UI.
 - **Risiko Regresi:** Admin yang sudah ada harus mendaftarkan MFA pada login berikutnya.
-- **Status:** Pending
+- **Status:** Completed (2026-10-06) — plugin `twoFactor` (OTP email, bukan TOTP app); `requireAdmin()` menolak admin ber-password tanpa OTP aktif → redirect `/dashboard/settings?mfa=required`. Admin OAuth-only (Google/GitHub) diamankan MFA provider.
 
 ---
 
@@ -247,7 +247,7 @@
   - Test dengan buffer 11 MB → assert 413.
 - **Ketergantungan:** Tidak ada.
 - **Risiko Regresi:** Sangat rendah.
-- **Status:** Pending
+- **Status:** Completed (2026-10-06) — `bodyLimit` 10 MB di `/v1/chat/*` → 413 `payload_too_large`. Tes: P1-02.
 
 ---
 
@@ -268,7 +268,7 @@
   - Mock provider test: simulasi upstream primer melempar 502 → verifikasi upstream fallback dipanggil dan respons berhasil.
 - **Ketergantungan:** FIX-BE-P1-08 (state circuit breaker di Redis).
 - **Risiko Regresi:** Penambahan latensi pada skenario kegagalan provider primer (harus ada connect timeout ketat ≤ 5 detik).
-- **Status:** Pending
+- **Status:** Completed (2026-10-06) — network error / 5xx primer → 1x retry ke `fallbackProviderId` (reservasi sama, tanpa tagih ganda); timeout & client abort tidak di-retry. Tes: P1-03.
 
 ---
 
@@ -303,7 +303,7 @@
   - Integration test: periksa header respons pada request 200, 400, dan 429.
 - **Ketergantungan:** Tidak ada.
 - **Risiko Regresi:** Sangat rendah.
-- **Status:** Pending
+- **Status:** Completed (2026-10-06) — middleware `request-id.ts` (`X-Request-Id` + `error.request_id` di semua `/v1/*`), `X-RateLimit-*` + `Retry-After` di gateway. ID selalu dari server (header klien diabaikan karena `request_id` UNIQUE di DB). Tes: P1-04.
 
 ---
 
@@ -325,7 +325,7 @@
   - Streaming mock test: uji token metering dengan usage chunk dan tanpa usage chunk (tiktoken fallback).
 - **Ketergantungan:** Tidak ada.
 - **Risiko Regresi:** Model pihak ketiga yang sangat tua mungkin menolak field `stream_options` (harus dihapus jika model tidak mendukung).
-- **Status:** Pending
+- **Status:** Completed (2026-10-06) — `stream_options.include_usage` disuntikkan; fallback estimasi dari teks hasil stream (chars/4, sama dengan estimasi prompt) — bukan tiktoken, agar tanpa dependency WASM. Tes: P1-05.
 
 ---
 
@@ -350,7 +350,7 @@
   - Test request DSAR → assert data JSON berisi metadata lengkap tanpa memuat password hash atau secret key provider.
 - **Ketergantungan:** FE tombol ekspor DSAR.
 - **Risiko Regresi:** Rendah.
-- **Status:** Pending
+- **Status:** Completed (2026-10-06) — `GET /v1/account/export` (JSON sinkron, tanpa tabel `dsar_requests`; cukup untuk ukuran data sekarang). Tes: P1-06.
 
 ---
 
@@ -377,7 +377,7 @@
   - Test register flow: pastikan sesi tidak terbentuk sebelum token verifikasi dikonfirmasi.
 - **Ketergantungan:** FIX-BE-P0-02 (email provider harus sudah aktif).
 - **Risiko Regresi:** Alur onboarding bertambah 1 langkah (verifikasi email).
-- **Status:** Pending (diblokir FIX-BE-P0-02)
+- **Status:** Completed (2026-10-06) — `autoSignIn: false`, `requireEmailVerification: true`, link verifikasi dikirim saat daftar & saat login belum terverifikasi; UI login menampilkan instruksi cek email.
 
 ---
 
@@ -398,7 +398,7 @@
   - Benchmark test: 100 concurrent failures diproses tanpa connection timeout ke PostgreSQL.
 - **Ketergantungan:** Koneksi Redis aktif.
 - **Risiko Regresi:** State circuit breaker reset saat Redis restart (dapat diterima karena bersifat transien).
-- **Status:** Pending
+- **Status:** Completed (2026-10-06) — state CB di Redis `cb:provider:{id}` (fallback in-memory tanpa `REDIS_URL`); Postgres hanya ditulis saat transisi state (agar dashboard tetap bisa menampilkan). Tes: P1-08 (lulus dengan & tanpa Redis).
 
 ---
 
@@ -425,7 +425,7 @@
   - Test download receipt: assert respons 200 dan header PDF valid.
 - **Ketergantungan:** FE tombol download kuitansi.
 - **Risiko Regresi:** Perlu library PDF generator ringan (misal `@pdf-lib/pdf-lib` atau build-in stream).
-- **Status:** Pending
+- **Status:** Completed (2026-10-06) — `GET /v1/payments/:id/receipt` → `application/pdf` (generator PDF minimal tanpa library). Tes: P2-01.
 
 ---
 
@@ -448,7 +448,7 @@
   - Test settlement: pastikan fungsi notifikasi dipanggil tepat satu kali saat saldo melewati batas bawah.
 - **Ketergantungan:** FIX-BE-P0-02 (email provider).
 - **Risiko Regresi:** Rendah.
-- **Status:** Pending
+- **Status:** Completed (2026-10-06) — `notifyLowBalance` setelah settle (ambang `LOW_BALANCE_CREDITS`, default 100.000), debounce 24 jam via store rate-limit. Tes: P2-02.
 
 ---
 
@@ -470,7 +470,7 @@
   - Test create & delete key → verifikasi baris audit log terbentuk.
 - **Ketergantungan:** Tidak ada.
 - **Risiko Regresi:** Rendah.
-- **Status:** Pending
+- **Status:** Completed (2026-10-06) — `key.created` / `key.revoked` / `key.rotated` dicatat di tabel audit terpadu `admin_audit_log` (actor=user, IP tepercaya, user-agent). Tes: P2-03.
 
 ---
 
@@ -492,7 +492,7 @@
   - Test spoof header: pastikan IP yang dipakai adalah header tepercaya.
 - **Ketergantungan:** Tidak ada.
 - **Risiko Regresi:** Perlu memastikan IP proxy internal (misal Next.js server proxy) tidak terblokir (gunakan CIDR allowlist).
-- **Status:** Pending
+- **Status:** Completed (2026-10-06) — `lib/ip.ts` (`CF-Connecting-IP` → hop terakhir `X-Forwarded-For` → socket); limit 300 RPM per IP (`GATEWAY_IP_RPM`) di `/v1/models*` & `/v1/chat/*`. Tes: P2-04.
 
 ---
 
@@ -519,7 +519,7 @@
 - **Tes Wajib:**
   - Test settlement: verifikasi kolom `upstream_cost` terisi dengan benar.
 - **Ketergantungan:** DB migration.
-- **Status:** Pending
+- **Status:** Completed (2026-10-06) — `usage_records.upstream_cost_credits` (migrasi 0010) dihitung dari `models.provider_cost_*_per_1m` (satuan kredit, bisa diisi di form edit model admin); margin negatif → alert Telegram/webhook (maks 1/jam/model). Tes: P3-01.
 
 ---
 
@@ -539,7 +539,7 @@
 - **Tes Wajib:**
   - Test DB constraint: insert dua baris dengan `reference: 'ref-123'` → baris kedua melempar error duplicate key.
 - **Ketergantungan:** Bersihkan data referensi duplikat lama jika ada sebelum migrasi dijalankan.
-- **Status:** Pending
+- **Status:** Completed (2026-10-06) — UNIQUE parsial `ledger_purchase_reference_unique` (hanya `entry_type = purchase`): UNIQUE penuh tidak mungkin karena reservation/release memakai `requestId` yang sama. Tes: P3-02.
 
 ---
 
@@ -562,7 +562,7 @@
 - **Tes Wajib:**
   - Test rotasi: gunakan kedua key secara paralel dalam jendela masa tenggang → keduanya diterima; gunakan key lama pasca expired → ditolak 401.
 - **Ketergantungan:** Tidak ada.
-- **Status:** Pending
+- **Status:** Completed (sudah ada `POST /v1/keys/:id/rotate`; tes rotasi di `security.test.ts`).
 
 ---
 
@@ -581,7 +581,7 @@
 - **Tes Wajib:**
   - Test konversi paket USD dengan mock nilai tukar dinamis.
 - **Ketergantungan:** Keputusan pemilik OWN-04.
-- **Status:** Pending
+- **Status:** Partial (2026-10-06) — kurs disatukan ke satu konstanta `IDR_PER_USD` di `@morphic/shared/credits` (dipakai API checkout, tampilan checkout, laporan admin). Kurs live menunggu keputusan pemilik OWN-04.
 
 ---
 
@@ -606,7 +606,7 @@
 - **Tes Wajib:**
   - Test loop pemanggilan `POST /v1/keys` 21 kali → request ke-21 mengembalikan 400.
 - **Ketergantungan:** Tidak ada.
-- **Status:** Pending
+- **Status:** Completed (sudah ada, batas 5 key/akun — lebih ketat dari 20). Tes: P3-05.
 
 ---
 
@@ -624,7 +624,7 @@
   - Riwayat eskalasi admin via CLI tampil di audit log viewer dasbor.
 - **Tes Wajib:**
   - Jalankan script di test env → cek tabel `admin_audit_log`.
-- **Status:** Pending
+- **Status:** Completed (2026-10-06) — `make-admin.ts` menulis `grant_admin` ke `admin_audit_log` dengan actor `system_cli`.
 
 ---
 
