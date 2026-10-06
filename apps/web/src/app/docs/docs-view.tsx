@@ -32,7 +32,7 @@ const BASE_URL = API_BASE_URL;
 const QUICKSTART_URL = `${BASE_URL.replace(/\/v1\/?$/, '')}/quickstart`;
 const CHAT_URL = CHAT_COMPLETIONS_URL;
 
-type IdeKey = 'opencode' | 'claudecode';
+type IdeKey = 'opencode' | 'claudecode' | 'hermes' | 'vscode' | 'cursor' | 'windsurf' | 'aider';
 type SdkKey = 'ts' | 'python' | 'curl';
 type OsKey = 'windows' | 'macos' | 'linux';
 type WindowsShell = 'powershell' | 'cmd';
@@ -491,8 +491,165 @@ curl -fsSL ${QUICKSTART_URL}/opencode.sh | bash`,
     };
   };
 
+  const getHermesSnippet = (os: OsKey, winShell: WindowsShell) => {
+    const configJson = `{
+  "provider": "openai",
+  "base_url": "${BASE_URL}",
+  "api_key": "mp-live-xxxxxxxxxxxxxxxxxxxx",
+  "default_model": "deepseek-v4"
+}`;
+
+    if (os === 'macos') {
+      return {
+        file: 'run-hermes-mac.sh',
+        language: 'bash',
+        menuPath: 'macOS Terminal (zsh / bash) → hermes',
+        code: `export OPENAI_BASE_URL="${BASE_URL}"
+export OPENAI_API_KEY="mp-live-xxxxxxxxxxxxxxxxxxxx"
+
+hermes --model deepseek-v4`,
+        extraFile: '~/.hermes/config.json (opsional)',
+        extraLanguage: 'json',
+        extraCode: configJson,
+      };
+    }
+    if (os === 'linux') {
+      return {
+        file: 'run-hermes-linux.sh',
+        language: 'bash',
+        menuPath: 'Linux Terminal (bash) → hermes',
+        code: `export OPENAI_BASE_URL="${BASE_URL}"
+export OPENAI_API_KEY="mp-live-xxxxxxxxxxxxxxxxxxxx"
+
+hermes --model deepseek-v4`,
+        extraFile: '~/.hermes/config.json (opsional)',
+        extraLanguage: 'json',
+        extraCode: configJson,
+      };
+    }
+    if (winShell === 'cmd') {
+      return {
+        file: 'run-hermes.cmd',
+        language: 'cmd',
+        menuPath: 'Command Prompt (CMD) → hermes',
+        code: `set OPENAI_BASE_URL=${BASE_URL}
+set OPENAI_API_KEY=mp-live-xxxxxxxxxxxxxxxxxxxx
+
+hermes --model deepseek-v4`,
+        extraFile: '%USERPROFILE%\\.hermes\\config.json (opsional)',
+        extraLanguage: 'json',
+        extraCode: configJson,
+      };
+    }
+    return {
+      file: 'run-hermes.ps1',
+      language: 'powershell',
+      menuPath: 'Windows PowerShell → hermes',
+      code: `$env:OPENAI_BASE_URL = "${BASE_URL}"
+$env:OPENAI_API_KEY  = "mp-live-xxxxxxxxxxxxxxxxxxxx"
+
+hermes --model deepseek-v4`,
+      extraFile: '$HOME\\.hermes\\config.json (opsional)',
+      extraLanguage: 'json',
+      extraCode: configJson,
+    };
+  };
+
+  const getVsCodeSnippet = () => {
+    const continueConfig = `{
+  "models": [
+    {
+      "title": "Morphic - DeepSeek V4",
+      "provider": "openai",
+      "model": "deepseek-v4",
+      "apiBase": "${BASE_URL}",
+      "apiKey": "mp-live-xxxxxxxxxxxxxxxxxxxx"
+    },
+    {
+      "title": "Morphic - Qwen Max",
+      "provider": "openai",
+      "model": "qwen-max",
+      "apiBase": "${BASE_URL}",
+      "apiKey": "mp-live-xxxxxxxxxxxxxxxxxxxx"
+    }
+  ],
+  "tabAutocompleteModel": {
+    "title": "Morphic Autocomplete",
+    "provider": "openai",
+    "model": "deepseek-v4",
+    "apiBase": "${BASE_URL}",
+    "apiKey": "mp-live-xxxxxxxxxxxxxxxxxxxx"
+  }
+}`;
+
+    const clineConfig = `{
+  "apiProvider": "openai",
+  "openAiBaseUrl": "${BASE_URL}",
+  "openAiApiKey": "mp-live-xxxxxxxxxxxxxxxxxxxx",
+  "openAiModelId": "deepseek-v4"
+}`;
+
+    return {
+      menuPath: 'VS Code > Ekstensi Continue (~/.continue/config.json) atau Cline / Roo Code Settings',
+      file: 'continue.config.json',
+      language: 'json',
+      code: continueConfig,
+      extraFile: 'cline_settings.json (ekstensi Cline / Roo Code)',
+      extraLanguage: 'json',
+      extraCode: clineConfig,
+    };
+  };
+
+  const getAiderSnippet = (os: OsKey, winShell: WindowsShell) => {
+    if (os === 'macos') {
+      return {
+        file: 'run-aider-mac.sh',
+        language: 'bash',
+        menuPath: 'macOS Terminal (zsh)',
+        code: `export OPENAI_API_BASE="${BASE_URL}"
+export OPENAI_API_KEY="mp-live-xxxxxxxxxxxxxxxxxxxx"
+
+aider --model openai/deepseek-v4`,
+      };
+    }
+    if (os === 'linux') {
+      return {
+        file: 'run-aider-linux.sh',
+        language: 'bash',
+        menuPath: 'Linux Terminal (bash)',
+        code: `export OPENAI_API_BASE="${BASE_URL}"
+export OPENAI_API_KEY="mp-live-xxxxxxxxxxxxxxxxxxxx"
+
+aider --model openai/deepseek-v4`,
+      };
+    }
+    if (winShell === 'cmd') {
+      return {
+        file: 'run-aider.cmd',
+        language: 'cmd',
+        menuPath: 'Command Prompt (CMD)',
+        code: `set OPENAI_API_BASE=${BASE_URL}
+set OPENAI_API_KEY=mp-live-xxxxxxxxxxxxxxxxxxxx
+
+aider --model openai/deepseek-v4`,
+      };
+    }
+    return {
+      file: 'run-aider.ps1',
+      language: 'powershell',
+      menuPath: 'Windows PowerShell',
+      code: `$env:OPENAI_API_BASE = "${BASE_URL}"
+$env:OPENAI_API_KEY  = "mp-live-xxxxxxxxxxxxxxxxxxxx"
+
+aider --model openai/deepseek-v4`,
+    };
+  };
+
   const claudeSnippet = getClaudeCodeSnippet(selectedOs, selectedWinShell);
   const opencodeSnippet = getOpencodeSnippet(selectedOs, selectedWinShell);
+  const hermesSnippet = getHermesSnippet(selectedOs, selectedWinShell);
+  const vsCodeSnippet = getVsCodeSnippet();
+  const aiderSnippet = getAiderSnippet(selectedOs, selectedWinShell);
 
   const ideConfigs: Record<
     IdeKey,
@@ -505,7 +662,7 @@ curl -fsSL ${QUICKSTART_URL}/opencode.sh | bash`,
       file: string;
       language?: string;
       code: string;
-      // A second block for setups that need a file AND a command (opencode).
+      // A second block for setups that need a file AND a command (opencode / hermes / vscode).
       extraCode?: string;
       extraFile?: string;
       extraLanguage?: string;
@@ -533,6 +690,77 @@ curl -fsSL ${QUICKSTART_URL}/opencode.sh | bash`,
       file: claudeSnippet.file,
       language: claudeSnippet.language,
       code: claudeSnippet.code,
+    },
+    hermes: {
+      name: 'Hermes Agent',
+      title: 'Hermes Agent (Nous Research)',
+      desc: 'Jalankan autonomous AI agent dari Nous Research di terminal dengan menghubungkannya ke Morphic Gateway.',
+      descEn: 'Run the Nous Research autonomous AI agent in your terminal connected to the Morphic Gateway.',
+      menuPath: hermesSnippet.menuPath,
+      file: hermesSnippet.file,
+      language: hermesSnippet.language,
+      code: hermesSnippet.code,
+      extraCode: hermesSnippet.extraCode,
+      extraFile: hermesSnippet.extraFile,
+      extraLanguage: hermesSnippet.extraLanguage,
+    },
+    vscode: {
+      name: 'VS Code',
+      title: 'Visual Studio Code (Continue & Cline)',
+      desc: 'Konfigurasi ekstensi coding agent terpopuler di VS Code: Continue.dev untuk tab autocomplete & chat, atau Cline / Roo Code untuk autonomous task.',
+      descEn: 'Configure popular coding agent extensions in VS Code: Continue.dev for tab autocomplete & chat, or Cline / Roo Code for autonomous coding tasks.',
+      menuPath: vsCodeSnippet.menuPath,
+      file: vsCodeSnippet.file,
+      language: vsCodeSnippet.language,
+      code: vsCodeSnippet.code,
+      extraCode: vsCodeSnippet.extraCode,
+      extraFile: vsCodeSnippet.extraFile,
+      extraLanguage: vsCodeSnippet.extraLanguage,
+    },
+    cursor: {
+      name: 'Cursor',
+      title: 'Cursor IDE (Composer & Inline)',
+      desc: 'Gunakan seluruh model AI langsung di Cursor Composer & Inline Edit melalui protokol resmi OpenAI API.',
+      descEn: 'Use all AI models directly in Cursor Composer & Inline Edit via the official OpenAI API protocol.',
+      menuPath:
+        selectedOs === 'macos'
+          ? 'Settings (Cmd+Shift+J) > Models > OpenAI API'
+          : 'Settings (Ctrl+Shift+J) > Models > OpenAI API',
+      file: 'cursor.settings.json',
+      language: 'json',
+      code: `// Cursor Settings > Models > OpenAI API:
+Base URL: ${BASE_URL}
+API Key:  mp-live-xxxxxxxxxxxxxxxxxxxx
+
+// Rekomendasi Model IDs untuk ditambahkan (+ Add Model):
+- deepseek-v4    (Coding & reasoning, konteks 64K)
+- kimi-coding    (Konteks 256K, refactoring multi-file)
+- qwen-max       (General purpose & reasoning, konteks 32K)`,
+    },
+    windsurf: {
+      name: 'Windsurf',
+      title: 'Windsurf (Codeium Cascade)',
+      desc: 'Jalankan fitur Cascade AI pada Windsurf dengan menghubungkan custom model provider OpenAI.',
+      descEn: 'Run Cascade AI features in Windsurf by connecting a custom OpenAI provider.',
+      menuPath: 'Windsurf Settings > AI Providers > Custom OpenAI-Compatible Provider',
+      file: 'windsurf_config.json',
+      language: 'json',
+      code: `{
+  "provider": "openai-compatible",
+  "endpoint": "${BASE_URL}",
+  "apiKey": "mp-live-xxxxxxxxxxxxxxxxxxxx",
+  "defaultModel": "deepseek-v4"
+}`,
+    },
+    aider: {
+      name: 'Aider',
+      title: 'Aider (Command-line Pair Programming)',
+      desc: 'Pair programming di command line dengan Aider menggunakan satu baris perintah terminal.',
+      descEn: 'Pair program in the command line with Aider using a single terminal command.',
+      menuPath: aiderSnippet.menuPath,
+      file: aiderSnippet.file,
+      language: aiderSnippet.language,
+      code: aiderSnippet.code,
     },
   };
 
@@ -812,7 +1040,7 @@ curl ${CHAT_URL} \\
       ],
     },
     {
-      title: isId ? 'Integrasi Platform & Agent' : 'Platform & Agent CLI',
+      title: isId ? 'Integrasi Editor & Agent' : 'IDE & Coding Agents',
       items: [
         {
           id: 'ide-opencode',
@@ -829,6 +1057,46 @@ curl ${CHAT_URL} \\
           label: 'Claude Code CLI',
           href: '#ide-setup',
           onClick: () => setActiveIde('claudecode'),
+        },
+        {
+          id: 'ide-hermes',
+          sectionId: 'ide-setup',
+          key: 'hermes',
+          label: 'Hermes Agent',
+          href: '#ide-setup',
+          onClick: () => setActiveIde('hermes'),
+        },
+        {
+          id: 'ide-vscode',
+          sectionId: 'ide-setup',
+          key: 'vscode',
+          label: 'VS Code (Continue & Cline)',
+          href: '#ide-setup',
+          onClick: () => setActiveIde('vscode'),
+        },
+        {
+          id: 'ide-cursor',
+          sectionId: 'ide-setup',
+          key: 'cursor',
+          label: 'Cursor IDE',
+          href: '#ide-setup',
+          onClick: () => setActiveIde('cursor'),
+        },
+        {
+          id: 'ide-windsurf',
+          sectionId: 'ide-setup',
+          key: 'windsurf',
+          label: 'Windsurf Cascade',
+          href: '#ide-setup',
+          onClick: () => setActiveIde('windsurf'),
+        },
+        {
+          id: 'ide-aider',
+          sectionId: 'ide-setup',
+          key: 'aider',
+          label: 'Aider CLI',
+          href: '#ide-setup',
+          onClick: () => setActiveIde('aider'),
         },
       ],
     },
@@ -1248,13 +1516,13 @@ curl ${CHAT_URL} \\
           {/* SECTION 4: IDE SETUP */}
           <section id="ide-setup" className="scroll-mt-32 sm:scroll-mt-36 space-y-4">
             <h2 className="text-xl sm:text-2xl font-heading font-bold text-neutral-950 pb-2 border-b border-neutral-100">
-              {isId ? 'Integrasi Platform & Agent CLI' : 'Platform & Agent CLI Setup'}
+              {isId ? 'Integrasi Editor & Agent Coding' : 'IDE & Coding Agents Setup'}
             </h2>
 
             <p className="text-sm text-neutral-600 leading-relaxed">
               {isId
-                ? 'Pilih platform CLI agent Anda di bawah ini (opencode atau Claude Code) untuk melihat panduan setup instan:'
-                : 'Select your CLI agent platform below (opencode or Claude Code) for instant setup instructions:'}
+                ? 'Pilih editor atau platform CLI agent Anda di bawah ini untuk melihat jalur pengaturan dan snippet konfigurasi instan:'
+                : 'Select your coding editor or CLI agent platform below for instant setup instructions and configuration snippets:'}
             </p>
 
             {/* Apple/shadcn segmented tab bar */}

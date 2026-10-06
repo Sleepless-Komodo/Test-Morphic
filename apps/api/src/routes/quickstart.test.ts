@@ -11,7 +11,7 @@ test('GET /quickstart/opencode.sh returns bash script with correct headers and b
   });
 
   assert.equal(res.status, 200);
-  assert.equal(res.headers.get('content-type'), 'text/plain; charset=utf-8');
+  assert.equal(res.headers.get('content-type'), 'text/x-shellscript; charset=utf-8');
 
   const text = await res.text();
   assert.ok(text.includes('#!/usr/bin/env bash'));
@@ -19,3 +19,22 @@ test('GET /quickstart/opencode.sh returns bash script with correct headers and b
   assert.ok(text.includes('opencode.json'));
   assert.ok(text.includes('morphic/deepseek-v4'));
 });
+
+test('GET /quickstart/opencode.ps1 returns PowerShell script with correct headers and base URL', async () => {
+  const res = await app.request('/quickstart/opencode.ps1', {
+    headers: {
+      host: 'morphic-api.web.id',
+      'x-forwarded-proto': 'https',
+    },
+  });
+
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get('content-type'), 'text/plain; charset=utf-8');
+
+  const text = await res.text();
+  assert.ok(text.includes('opencode quickstart for Windows'));
+  assert.ok(text.includes('https://morphic-api.web.id/v1'));
+  assert.ok(text.includes('opencode.json'));
+  assert.ok(text.includes('morphic/deepseek-v4'));
+});
+
