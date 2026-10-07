@@ -1,8 +1,9 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import Link from 'next/link';
 import { motion, useInView } from 'framer-motion';
-import { Copy, Check, Terminal as TerminalIcon } from 'lucide-react';
+import { Copy, Check, Terminal as TerminalIcon, ArrowUpRight } from 'lucide-react';
 import { useTranslation } from '@/lib/i18n';
 import { useReducedMotionSafe } from '@/lib/use-reduced-motion-safe';
 import { API_BASE_URL, CHAT_COMPLETIONS_URL } from '@/lib/utils';
@@ -105,7 +106,7 @@ print(response.choices[0].message.content)`,
 };
 
 export default function MagicTerminal() {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const reduced = useReducedMotionSafe();
   const [activeTab, setActiveTab] = useState<TabKey>('curl');
   const [copied, setCopied] = useState(false);
@@ -158,8 +159,8 @@ export default function MagicTerminal() {
   };
 
   return (
-    <section id="terminal" className="relative z-10 py-14 lg:py-20 px-6 bg-white text-neutral-900 border-t border-neutral-200/70 scroll-mt-20 sm:scroll-mt-24">
-      <div className="max-w-6xl mx-auto grid lg:grid-cols-[0.9fr_1.1fr] gap-10 lg:gap-14 items-center">
+    <section id="terminal" className="relative z-10 py-16 sm:py-20 lg:py-24 px-4 sm:px-6 lg:px-8 bg-white text-neutral-900 border-t border-neutral-200/70 scroll-mt-20 sm:scroll-mt-24">
+      <div className="max-w-7xl mx-auto grid lg:grid-cols-[0.9fr_1.1fr] gap-10 lg:gap-14 items-center">
         {/* Left Column: Editorial Value Proposition */}
         <motion.div
           initial={reduced ? false : { opacity: 0, y: 14 }}
@@ -190,6 +191,17 @@ export default function MagicTerminal() {
                 {pill}
               </span>
             ))}
+          </div>
+
+          {/* Action CTA Button */}
+          <div className="mt-8 flex items-center gap-3">
+            <Link
+              href="/docs"
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-neutral-950 hover:bg-neutral-800 text-white text-xs sm:text-sm font-bold transition-all shadow-xs group cursor-pointer"
+            >
+              <span>{locale === 'en' ? 'Explore CLI & SDK Docs' : 'Buka Panduan Setup & SDK'}</span>
+              <ArrowUpRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+            </Link>
           </div>
         </motion.div>
 

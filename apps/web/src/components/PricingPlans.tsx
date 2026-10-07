@@ -32,7 +32,7 @@ export default function PricingPlans({
   const targetUrl = isLoggedIn ? '/dashboard/billing' : '/login';
 
   return (
-    <section id="pricing" className="relative z-10 py-16 lg:py-24 px-4 sm:px-6 border-t border-neutral-200/70 scroll-mt-20 sm:scroll-mt-24">
+    <section id="pricing" className="relative z-10 py-16 lg:py-24 px-4 sm:px-6 lg:px-8 border-t border-neutral-200/70 scroll-mt-20 sm:scroll-mt-24">
       {/* Neutral ambient gradient — monochrome, no blue tint */}
       <div
         className="absolute inset-x-0 top-0 h-72 pointer-events-none -z-10"

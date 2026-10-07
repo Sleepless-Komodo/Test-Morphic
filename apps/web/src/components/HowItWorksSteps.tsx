@@ -406,8 +406,8 @@ export default function HowItWorksSteps({ isLoggedIn = false }: HowItWorksStepsP
     >
       {/* ── Desktop Scroll Track (lg+) ── */}
       <div ref={desktopContainerRef} className="hidden lg:block relative h-[260vh]">
-        <div className="sticky top-20 min-h-[580px] h-[calc(100vh-5.5rem)] flex flex-col justify-center py-2 px-6 lg:px-8">
-          <div className="max-w-5xl mx-auto w-full">
+        <div className="sticky top-20 min-h-[580px] h-[calc(100vh-5.5rem)] flex flex-col justify-center py-2 px-4 sm:px-6 lg:px-8">
+          <div className="max-w-7xl mx-auto w-full">
             {/* Desktop Section Header with Micro Blur-Fade Up */}
             <motion.div
               initial={reduced ? false : { opacity: 0, y: 14 }}
@@ -576,7 +576,7 @@ export default function HowItWorksSteps({ isLoggedIn = false }: HowItWorksStepsP
 
                       <Link
                         href={isLoggedIn ? '/dashboard/keys' : '/login'}
-                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-neutral-950 hover:bg-neutral-800 text-white text-xs sm:text-sm font-semibold transition-all duration-150 group shadow-xs cursor-pointer"
+                        className="inline-flex items-center gap-1.5 px-4.5 py-2 rounded-full bg-neutral-950 hover:bg-neutral-800 text-white text-xs sm:text-sm font-semibold transition-all duration-150 group shadow-xs cursor-pointer"
                       >
                         <span>{isLoggedIn ? t.steps.ctaLoggedIn : t.steps.ctaGuest}</span>
                         <ArrowUpRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
@@ -620,7 +620,7 @@ export default function HowItWorksSteps({ isLoggedIn = false }: HowItWorksStepsP
       </div>
 
       {/* ── Mobile / Tablet Vertical Timeline (< lg) ── */}
-      <div className="lg:hidden py-14 sm:py-20 px-4 sm:px-6">
+      <div className="lg:hidden py-14 sm:py-20 px-4 sm:px-6 lg:px-8">
         <div className="max-w-xl mx-auto">
           {/* Mobile Section Header with Micro Blur-Fade Up */}
           <motion.div

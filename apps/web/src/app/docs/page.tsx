@@ -21,7 +21,7 @@ export default async function DocsPage() {
   }
 
   return (
-    <main className="min-h-screen bg-white text-neutral-900 selection:bg-neutral-900 selection:text-white flex flex-col justify-between overflow-x-clip">
+    <main className="min-h-screen bg-[#fafafa] text-neutral-900 selection:bg-neutral-900 selection:text-white flex flex-col justify-between overflow-x-clip">
       <Navbar session={session} />
       <DocsView session={session} />
       <Footer />

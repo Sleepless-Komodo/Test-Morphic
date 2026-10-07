@@ -198,8 +198,8 @@ export default function PricingComparisonTable({ isLoggedIn = false }: { isLogge
   };
 
   return (
-    <section className="relative z-10 py-16 lg:py-24 px-4 sm:px-6 bg-[#fafafa] border-t border-neutral-200/80">
-      <div className="max-w-6xl mx-auto">
+    <section className="relative z-10 py-16 lg:py-24 px-4 sm:px-6 lg:px-8 bg-[#fafafa] border-t border-neutral-200/80">
+      <div className="max-w-5xl mx-auto">
         {/* Section Header */}
         <motion.div
           initial={reduced ? false : { opacity: 0, y: 14 }}
@@ -217,7 +217,7 @@ export default function PricingComparisonTable({ isLoggedIn = false }: { isLogge
               ? 'Compare Plan Limits & Specifications'
               : 'Perbandingan Spesifikasi & Fitur Lengkap'}
           </h2>
-          <p className="mt-4 text-neutral-600 font-body text-base sm:text-lg leading-relaxed max-w-2xl mx-auto">
+          <p className="mt-4 text-neutral-600 font-body text-base sm:text-lg leading-relaxed max-w-xl mx-auto text-balance">
             {locale === 'en'
               ? 'Transparent technical specifications for every tier. No hidden throttling, zero lock-in.'
               : 'Spesifikasi teknis transparan untuk setiap paket kuota. Bebas biaya tersembunyi, tanpa langganan mengikat.'}
@@ -235,20 +235,20 @@ export default function PricingComparisonTable({ isLoggedIn = false }: { isLogge
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse min-w-[640px]">
               {/* Table Sticky Header */}
-              <thead>
+              <thead className="sticky top-0 z-20 backdrop-blur-md bg-neutral-50/95 border-b border-neutral-200">
                 <tr className="border-b border-neutral-200 bg-neutral-50/80">
                   <th className="py-5 px-6 font-mono text-xs uppercase tracking-wider text-neutral-500 font-bold w-[40%]">
                     {locale === 'en' ? 'Feature / Specification' : 'Spesifikasi & Fitur'}
                   </th>
-                  <th className="py-5 px-6 text-center font-heading font-bold text-sm text-neutral-900 w-[20%]">
+                  <th className="py-5 px-5 text-center font-heading font-bold text-sm text-neutral-900 w-[20%]">
                     Starter
                     <div className="text-[11px] font-mono font-normal text-neutral-500 mt-0.5">Rp 15.000</div>
                   </th>
-                  <th className="py-5 px-6 text-center font-heading font-extrabold text-sm text-neutral-950 bg-neutral-100/70 w-[20%] border-x border-neutral-200/80">
+                  <th className="py-5 px-5 text-center font-heading font-extrabold text-sm text-neutral-950 bg-neutral-100/70 w-[20%] border-x border-neutral-200/80">
                     Pro (Popular)
                     <div className="text-[11px] font-mono font-normal text-neutral-500 mt-0.5">Rp 49.000</div>
                   </th>
-                  <th className="py-5 px-6 text-center font-heading font-bold text-sm text-neutral-900 w-[20%]">
+                  <th className="py-5 px-5 text-center font-heading font-bold text-sm text-neutral-900 w-[20%]">
                     Ultra / Team
                     <div className="text-[11px] font-mono font-normal text-neutral-500 mt-0.5">Rp 149.000</div>
                   </th>
@@ -298,7 +298,7 @@ export default function PricingComparisonTable({ isLoggedIn = false }: { isLogge
                   <td className="py-6 px-6 text-center">
                     <Link
                       href={isLoggedIn ? '/dashboard/billing' : '/login'}
-                      className="inline-flex items-center justify-center gap-1 w-full max-w-[130px] py-2 px-3 rounded-xl border border-neutral-300 hover:border-neutral-950 bg-white text-neutral-900 text-xs font-bold transition-all hover:bg-neutral-950 hover:text-white"
+                      className="inline-flex items-center justify-center gap-1 w-full max-w-[130px] py-2 px-3 rounded-full border border-neutral-300 hover:border-neutral-950 bg-white text-neutral-900 text-xs font-bold transition-all hover:bg-neutral-950 hover:text-white"
                     >
                       <span>Starter</span>
                       <ArrowUpRight className="w-3.5 h-3.5" />
@@ -307,7 +307,7 @@ export default function PricingComparisonTable({ isLoggedIn = false }: { isLogge
                   <td className="py-6 px-6 text-center bg-neutral-100/70 border-x border-neutral-200">
                     <Link
                       href={isLoggedIn ? '/dashboard/billing' : '/login'}
-                      className="inline-flex items-center justify-center gap-1 w-full max-w-[130px] py-2 px-3 rounded-xl bg-neutral-950 hover:bg-neutral-800 text-white text-xs font-bold transition-all shadow-xs"
+                      className="inline-flex items-center justify-center gap-1 w-full max-w-[130px] py-2 px-3 rounded-full bg-neutral-950 hover:bg-neutral-800 text-white text-xs font-bold transition-all shadow-xs"
                     >
                       <span>Pilih Pro</span>
                       <ArrowUpRight className="w-3.5 h-3.5" />
@@ -316,7 +316,7 @@ export default function PricingComparisonTable({ isLoggedIn = false }: { isLogge
                   <td className="py-6 px-6 text-center">
                     <Link
                       href={isLoggedIn ? '/dashboard/billing' : '/login'}
-                      className="inline-flex items-center justify-center gap-1 w-full max-w-[130px] py-2 px-3 rounded-xl border border-neutral-300 hover:border-neutral-950 bg-white text-neutral-900 text-xs font-bold transition-all hover:bg-neutral-950 hover:text-white"
+                      className="inline-flex items-center justify-center gap-1 w-full max-w-[130px] py-2 px-3 rounded-full border border-neutral-300 hover:border-neutral-950 bg-white text-neutral-900 text-xs font-bold transition-all hover:bg-neutral-950 hover:text-white"
                     >
                       <span>Ultra</span>
                       <ArrowUpRight className="w-3.5 h-3.5" />

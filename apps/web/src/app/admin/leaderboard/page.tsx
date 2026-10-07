@@ -94,7 +94,7 @@ export default async function AdminLeaderboard({ searchParams }: { searchParams:
   const label = 'text-xs font-semibold text-neutral-500';
 
   return (
-    <div className="max-w-6xl space-y-6">
+    <div className="w-full space-y-6">
       <AutoRefresh />
       <div className="flex flex-col gap-4 border-b border-neutral-200/80 pb-5 sm:flex-row sm:items-end sm:justify-between">
         <div>

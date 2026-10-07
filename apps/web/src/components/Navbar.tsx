@@ -113,7 +113,7 @@ export default function Navbar({ session }: NavbarProps) {
       initial={reduced ? false : 'hidden'}
       animate="visible"
       variants={NAVBAR_ENTRANCE}
-      className="fixed top-4 sm:top-5 inset-x-0 mx-auto z-50 w-[95%] max-w-6xl"
+      className="fixed top-4 sm:top-5 inset-x-0 mx-auto z-50 w-[95%] max-w-7xl"
     >
       <div className="relative bg-white/95 backdrop-blur-xl text-neutral-900 border border-neutral-200/90 rounded-full px-5 sm:px-7 py-3.5 shadow-[0_6px_28px_rgba(0,0,0,0.06)] flex items-center justify-between transition-all duration-200">
         {/* Left: Brand Logo (Morphic Clean Black Logo Lockup) */}

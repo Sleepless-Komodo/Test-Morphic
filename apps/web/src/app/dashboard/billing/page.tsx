@@ -4,7 +4,14 @@ import { requireUser } from '@/lib/actions';
 import { getBalance } from '@morphic/db/billing';
 import { BillingView } from './billing-view';
 
-export default async function BillingPage() {
+export default async function BillingPage(props: {
+  searchParams?: Promise<{ tab?: string }>;
+}) {
+  const searchParams = await props.searchParams;
+  const initialTab =
+    searchParams?.tab === 'payments' || searchParams?.tab === 'ledger'
+      ? searchParams.tab
+      : 'packages';
   const user = await requireUser();
 
   // Read straight from Postgres. These five reads used to go through the gateway, whose
@@ -102,6 +109,7 @@ export default async function BillingPage() {
       entitlements={entitlements}
       payments={payments}
       ledger={ledger}
+      initialTab={initialTab}
     />
   );
 }

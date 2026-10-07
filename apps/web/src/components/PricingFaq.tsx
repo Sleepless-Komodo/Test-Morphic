@@ -86,7 +86,7 @@ export default function PricingFaq() {
   };
 
   return (
-    <section className="relative z-10 py-16 lg:py-24 px-4 sm:px-6 bg-white border-t border-neutral-200/80">
+    <section className="relative z-10 py-16 lg:py-24 px-4 sm:px-6 lg:px-8 bg-white border-t border-neutral-200/80">
       <div className="max-w-5xl mx-auto">
         {/* Section Header */}
         <motion.div
@@ -105,7 +105,7 @@ export default function PricingFaq() {
               ? 'Frequently Asked Questions on Billing'
               : 'Pertanyaan Seputar Saldo & Pembayaran'}
           </h2>
-          <p className="mt-4 text-neutral-600 font-body text-base sm:text-lg leading-relaxed max-w-2xl mx-auto">
+          <p className="mt-4 text-neutral-600 font-body text-base sm:text-lg leading-relaxed max-w-2xl mx-auto text-balance">
             {locale === 'en'
               ? 'Everything you need to know about QRIS top-ups, credit validity, and invoicing.'
               : 'Informasi lengkap seputar masa aktif kuota, pembayaran instan QRIS, dan invoice pengeluaran.'}

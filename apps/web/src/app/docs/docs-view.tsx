@@ -1220,8 +1220,8 @@ curl ${CHAT_URL} \\
   );
 
   return (
-    <div className="w-full bg-white text-neutral-900 pt-28 sm:pt-32 pb-24">
-      {/* Main 2-Column Documentation Canvas */}
+    <div className="w-full bg-[#fafafa] text-neutral-900 pt-28 sm:pt-32 pb-24">
+      {/* Main 2-Column Documentation Canvas (Industry Standard max-w-7xl) */}
       <div className="max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 flex items-start">
         <aside className="hidden lg:block w-64 xl:w-72 shrink-0 sticky top-28 sm:top-32 self-start max-h-[calc(100vh-8.5rem)] overflow-y-auto py-2 pr-6 border-r border-neutral-200/80 [scrollbar-width:thin]">
           {sidebarNav}
