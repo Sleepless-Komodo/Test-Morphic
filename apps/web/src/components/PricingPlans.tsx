@@ -1,324 +1,413 @@
 'use client';
 
-import React, { useState } from 'react';
+import { useEffect, useRef, useState, type PointerEvent, type ReactNode } from 'react';
+import Image from 'next/image';
 import Link from 'next/link';
-import { motion } from 'framer-motion';
-import { ArrowUpRight, CheckCircle2, ShieldCheck, Plug, Wallet, Clock } from 'lucide-react';
+import {
+  AnimatePresence,
+  animate,
+  motion,
+  useMotionTemplate,
+  useMotionValue,
+  useScroll,
+  useSpring,
+  useTransform,
+  type MotionValue,
+} from 'framer-motion';
+import { ArrowUpRight, Check } from 'lucide-react';
 import { useTranslation } from '@/lib/i18n';
 import { useReducedMotionSafe } from '@/lib/use-reduced-motion-safe';
 
 const EASE = [0.16, 1, 0.3, 1] as const;
+const STACK_SPRING = { type: 'spring' as const, stiffness: 260, damping: 28, mass: 0.8 };
+const TILT_SPRING = { stiffness: 150, damping: 18, mass: 0.5 };
 
 interface PricingPlansProps {
   isLoggedIn?: boolean;
   showPricingHubLink?: boolean;
 }
 
-export default function PricingPlans({
-  isLoggedIn = false,
-  showPricingHubLink = true,
-}: PricingPlansProps) {
-  const { t, locale } = useTranslation();
-  const [activeTab, setActiveTab] = useState<'credits' | 'daily'>('credits');
-  // Card the user clicked or tabbed into; null falls back to the tier marked popular.
-  const [selected, setSelected] = useState<string | null>(null);
-  const isSelected = (name: string, popular: boolean) => (selected === null ? popular : selected === name);
-  const switchTab = (tab: 'credits' | 'daily') => {
-    setActiveTab(tab);
-    setSelected(null);
-  };
-  const reduced = useReducedMotionSafe();
+type Mode = 'credits' | 'daily';
+type Plan = {
+  name: string;
+  price: string;
+  amount: string; // the big figure on the card
+  unit: string;
+  desc: string;
+  note?: string;
+  noteLabel?: string;
+  features: string[];
+  badge?: string;
+  cta: string;
+};
 
+/** Counts the numeric part of a formatted price ("Rp 49,000") to its new value. */
+function RollingPrice({ price, locale }: { price: string; locale: string }) {
+  const reduced = useReducedMotionSafe();
+  const target = Number(price.replace(/\D/g, ''));
+  const prefix = price.match(/^\D*/)?.[0] ?? '';
+  const value = useMotionValue(target);
+  const text = useTransform(value, (v) => prefix + Math.round(v).toLocaleString(locale === 'en' ? 'en-US' : 'id-ID'));
+
+  useEffect(() => {
+    if (reduced) {
+      value.set(target);
+      return;
+    }
+    const c = animate(value, target, { duration: 0.7, ease: EASE });
+    return () => c.stop();
+  }, [target, reduced, value]);
+
+  return <motion.span className="tabular-nums">{text}</motion.span>;
+}
+
+/** The plan as a physical pass: what you get, big, on a black card. */
+function PassCard({ plan, kind }: { plan: Plan; kind: string }) {
+  return (
+    <div className="relative flex h-full flex-col justify-between overflow-hidden rounded-[22px] border border-white/10 bg-[#0a0a0a] p-6 sm:p-7 text-white">
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0"
+        style={{ background: 'radial-gradient(ellipse 70% 60% at 0% 0%, rgba(255,255,255,0.14), transparent 70%)' }}
+      />
+      <div className="relative flex items-center justify-between">
+        <span className="flex items-center gap-2.5">
+          <span className="relative h-8 w-8 overflow-hidden rounded-lg">
+            <Image src="/morphic-symbol.jpg" alt="" fill sizes="32px" className="object-cover scale-[1.9]" />
+          </span>
+          <span className="text-sm font-semibold">Morphic</span>
+        </span>
+        <span className="font-mono text-[11px] tracking-[0.14em] text-neutral-400">{kind}</span>
+      </div>
+
+      <div className="relative">
+        <div className="font-mono text-4xl sm:text-5xl font-semibold tracking-tight tabular-nums">{plan.amount}</div>
+        <div className="mt-1 text-sm text-neutral-400">{plan.unit}</div>
+      </div>
+
+      <div className="relative flex items-end justify-between gap-4">
+        <span className="text-base font-semibold">{plan.name}</span>
+        <span className="font-mono text-sm text-neutral-300">{plan.price}</span>
+      </div>
+    </div>
+  );
+}
+
+/** Words that rise into place as the section scrolls in. */
+function ScrollWords({ text, enter }: { text: string; enter: MotionValue<number> }) {
+  return (
+    <>
+      {text.split(' ').map((w, i) => (
+        <span key={`${w}-${i}`}>
+          {i > 0 && ' '}
+          <ScrollWord word={w} enter={enter} at={0.15 + i * 0.05} />
+        </span>
+      ))}
+    </>
+  );
+}
+
+function ScrollWord({ word, enter, at }: { word: string; enter: MotionValue<number>; at: number }) {
+  const y = useTransform(enter, [at, at + 0.3], ['110%', '0%'], { clamp: true });
+  return (
+    <span className="inline-block overflow-hidden pb-[0.1em] -mb-[0.1em] align-bottom">
+      <motion.span className="inline-block" style={{ y }}>
+        {word}
+      </motion.span>
+    </span>
+  );
+}
+
+/** Holds one card's place in the fan: spread wide while the section enters, stacked once it lands. */
+function FanSlot({ offset, zIndex, enter, children }: { offset: number; zIndex: number; enter: MotionValue<number>; children: ReactNode }) {
+  const fan = useTransform(enter, [0.35, 1], [1, 0], { clamp: true });
+  const x = useTransform(fan, (f) => `${offset * f * 62}%`);
+  const rotate = useTransform(fan, (f) => offset * f * 9);
+  const y = useTransform(fan, (f) => Math.abs(offset) * f * 30);
+  return (
+    <motion.div style={{ x, rotate, y, zIndex }} className="absolute inset-0">
+      {children}
+    </motion.div>
+  );
+}
+
+export default function PricingPlans({ isLoggedIn = false, showPricingHubLink = true }: PricingPlansProps) {
+  const { t, locale } = useTranslation();
+  const reduced = useReducedMotionSafe();
+  const en = locale === 'en';
+  const [mode, setMode] = useState<Mode>('credits');
+  // Index the user picked; null falls back to the tier the copy marks popular.
+  const [picked, setPicked] = useState<number | null>(null);
   const targetUrl = isLoggedIn ? '/dashboard/billing' : '/login';
 
+  // Scroll-linked entrance: 0 as the section's top meets the bottom of the screen, 1 once it is well in.
+  const sectionRef = useRef<HTMLElement>(null);
+  const { scrollYProgress: enterRaw } = useScroll({ target: sectionRef, offset: ['start end', 'start 0.15'] });
+  const enterSpring = useSpring(enterRaw, { stiffness: 140, damping: 32, mass: 0.35 });
+  const settled = useMotionValue(1);
+  const enter = reduced ? settled : enterSpring;
+  const descOpacity = useTransform(enter, [0.35, 0.7], [0, 1]);
+  const descY = useTransform(enter, [0.35, 0.7], [16, 0]);
+  const stageTilt = useTransform(enter, [0.3, 1], [32, 0]);
+  const stageY = useTransform(enter, [0.3, 1], [80, 0]);
+  const panelX = useTransform(enter, [0.5, 1], [60, 0]);
+  const panelOpacity = useTransform(enter, [0.5, 0.9], [0, 1]);
+
+  // Pointer tilt and a glare that follows the cursor across the front card.
+  const px = useMotionValue(0.5);
+  const py = useMotionValue(0.5);
+  const sx = useSpring(px, TILT_SPRING);
+  const sy = useSpring(py, TILT_SPRING);
+  const rotateY = useTransform(sx, [0, 1], [-12, 12]);
+  const rotateX = useTransform(sy, [0, 1], [10, -10]);
+  const glareX = useTransform(sx, (v) => `${v * 100}%`);
+  const glareY = useTransform(sy, (v) => `${v * 100}%`);
+  const glare = useMotionTemplate`radial-gradient(420px circle at ${glareX} ${glareY}, rgba(255,255,255,0.16), transparent 55%)`;
+
+  const onPointerMove = (e: PointerEvent<HTMLDivElement>) => {
+    if (reduced || e.pointerType !== 'mouse') return;
+    const r = e.currentTarget.getBoundingClientRect();
+    px.set((e.clientX - r.left) / r.width);
+    py.set((e.clientY - r.top) / r.height);
+  };
+  const onPointerLeave = () => {
+    px.set(0.5);
+    py.set(0.5);
+  };
+
+  const plans: Plan[] =
+    mode === 'credits'
+      ? t.pricing.tiers.map((tier) => {
+          const [, amount = tier.credits, unit = ''] = tier.credits.match(/^([\d.,]+)\s*(.*)$/) ?? [];
+          return {
+            name: tier.name,
+            price: tier.price,
+            amount,
+            unit,
+            desc: tier.desc,
+            noteLabel: t.pricing.estimateLabel,
+            note: tier.estimate,
+            features: tier.features,
+            badge: tier.popular ? t.pricing.popularBadge : undefined,
+            cta: `${t.pricing.choosePlan} ${tier.name}`,
+          };
+        })
+      : t.pricing.dailyTiers.map((pass) => ({
+          name: pass.name,
+          price: pass.price,
+          amount: en ? '24 hours' : '24 jam',
+          unit: en ? 'unlimited requests' : 'request tanpa batas',
+          desc: pass.desc,
+          features: en
+            ? ['24 hours of access', 'Unlimited requests', 'Activated instantly by QRIS']
+            : ['Akses 24 jam', 'Request tanpa batas', 'Aktif instan lewat QRIS'],
+          badge: pass.popular ? t.pricing.bestValueBadge : undefined,
+          cta: t.pricing.activatePass,
+        }));
+
+  const popularIdx = Math.max(0, plans.findIndex((p) => p.badge));
+  const active = picked ?? popularIdx;
+  const plan = plans[active];
+  const kind = mode === 'credits' ? 'CREDIT PASS' : 'DAY PASS';
+
+  const switchMode = (m: Mode) => {
+    setMode(m);
+    setPicked(null);
+  };
+
+  const tabs: { id: Mode; label: string }[] = [
+    { id: 'credits', label: en ? 'Credit balance' : 'Saldo kredit' },
+    { id: 'daily', label: en ? 'Daily pass' : 'Pass harian' },
+  ];
+
   return (
-    <section id="pricing" className="relative z-10 py-16 lg:py-24 px-4 sm:px-6 lg:px-8 border-t border-neutral-200/70 scroll-mt-20 sm:scroll-mt-24">
-      {/* Neutral ambient gradient — monochrome, no blue tint */}
-      <div
-        className="absolute inset-x-0 top-0 h-72 pointer-events-none -z-10"
-        style={{
-          background:
-            'radial-gradient(90% 100% at 50% 0%, rgba(9, 9, 11, 0.03) 0%, transparent 60%), linear-gradient(180deg, #f7f8fa 0%, #fafafa 100%)',
-        }}
-        aria-hidden="true"
-      />
-
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <motion.div
-          initial={reduced ? false : { opacity: 0, y: 14 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, margin: '-50px' }}
-          transition={{ duration: 0.5, ease: EASE }}
-          className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-12"
+    <section ref={sectionRef} id="pricing" className="relative z-10 bg-[#fafafa] px-4 sm:px-6 py-20 lg:py-28 scroll-mt-20">
+      <div className="mx-auto max-w-5xl">
+        <div
+          className="mb-12 flex flex-col gap-6 md:flex-row md:items-end md:justify-between"
         >
-          <div>
-            <div className="text-xs sm:text-sm font-mono uppercase tracking-[0.2em] text-neutral-500 font-bold mb-3">
+          <div className="max-w-xl">
+            <p suppressHydrationWarning className="mb-3 text-sm font-medium text-neutral-500">
               {t.pricing.badge}
-            </div>
-
-            <h2 className="text-4xl sm:text-5xl lg:text-6xl font-heading font-extrabold tracking-tight text-neutral-950">
-              {t.pricing.title}
-            </h2>
-
-            <p className="mt-4 text-neutral-600 font-body text-sm md:text-base max-w-2xl leading-relaxed">
-              {t.pricing.desc}
             </p>
+            <h2 suppressHydrationWarning className="font-heading text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight text-neutral-950 text-balance">
+              <ScrollWords key={t.pricing.title} text={t.pricing.title} enter={enter} />
+            </h2>
+            <motion.p suppressHydrationWarning style={{ opacity: descOpacity, y: descY }} className="mt-4 text-base leading-relaxed text-neutral-600">
+              {t.pricing.desc}
+            </motion.p>
           </div>
 
-          {showPricingHubLink && (
-            <div className="flex items-center gap-3 self-start md:self-auto shrink-0">
-              <Link
-                href="/pricing"
-                className="inline-flex items-center gap-2 rounded-full border border-neutral-300 hover:border-neutral-950 px-5 sm:px-6 py-2.5 sm:py-3 text-xs sm:text-sm font-bold transition-all hover:bg-neutral-950 hover:text-white shadow-2xs group cursor-pointer"
-              >
-                <span>{locale === 'en' ? 'Full Pricing & Calculator' : 'Detail Harga & Kalkulator'}</span>
-                <ArrowUpRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
-              </Link>
-            </div>
-          )}
-        </motion.div>
-
-        {/* Purchase Mode Tab Switcher & Cards */}
-        <motion.div
-          initial={reduced ? false : { opacity: 0, y: 16 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, margin: '-40px' }}
-          transition={{ duration: 0.55, delay: 0.1, ease: EASE }}
-        >
-          <div className="flex flex-col items-center gap-3 mb-12">
-          <div role="tablist" aria-label="Pricing billing modes" className="inline-flex items-center p-1 rounded-full border border-neutral-200 bg-neutral-100 text-xs select-none shadow-xs">
-            <button
-              type="button"
-              role="tab"
-              id="pricing-tab-credits"
-              aria-selected={activeTab === 'credits'}
-              aria-controls="pricing-panel-credits"
-              onClick={() => switchTab('credits')}
-              className={`flex items-center gap-2 px-4 sm:px-5 py-2 rounded-full transition-all cursor-pointer font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 focus-visible:ring-offset-2 ${
-                activeTab === 'credits'
-                  ? 'bg-white text-neutral-950 shadow-sm font-bold'
-                  : 'text-neutral-500 hover:text-neutral-900'
-              }`}
-            >
-              <Wallet className="h-3.5 w-3.5 shrink-0" />
-              <span suppressHydrationWarning>{t.pricing.tabCredits}</span>
-            </button>
-            <button
-              type="button"
-              role="tab"
-              id="pricing-tab-daily"
-              aria-selected={activeTab === 'daily'}
-              aria-controls="pricing-panel-daily"
-              onClick={() => switchTab('daily')}
-              className={`flex items-center gap-2 px-4 sm:px-5 py-2 rounded-full transition-all cursor-pointer font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 focus-visible:ring-offset-2 ${
-                activeTab === 'daily'
-                  ? 'bg-white text-neutral-950 shadow-sm font-bold'
-                  : 'text-neutral-500 hover:text-neutral-900'
-              }`}
-            >
-              <Clock className="h-3.5 w-3.5 shrink-0" />
-              <span suppressHydrationWarning>{t.pricing.tabDaily}</span>
-            </button>
-          </div>
-          <p suppressHydrationWarning className="text-xs text-neutral-500 text-center">
-            {activeTab === 'credits' ? t.pricing.creditsTabDesc : t.pricing.dailyTabDesc}
-          </p>
-        </div>
-
-        {/* ===== Tab 1: Credit Balance (Pay-as-you-go) ===== */}
-        {activeTab === 'credits' && (
-          <div
-            key="credits"
-            className="grid grid-cols-1 md:grid-cols-3 gap-6 items-stretch animate-in fade-in duration-200"
-          >
-            {t.pricing.tiers.map((tier) => (
-              <div
-                key={tier.name}
-                onClick={() => setSelected(tier.name)}
-                onFocusCapture={() => setSelected(tier.name)}
-                className={`group relative rounded-2xl p-7 flex flex-col bg-white border cursor-pointer transition-[border-color,box-shadow,transform] duration-300 ease-out hover:-translate-y-0.5 ${
-                  isSelected(tier.name, tier.popular) ? 'border-neutral-950 ring-1 ring-neutral-950 shadow-[0_8px_30px_-12px_rgba(9,9,11,0.25)]' : 'border-neutral-200 shadow-xs hover:border-neutral-400'
+          <div role="tablist" aria-label={en ? 'Billing mode' : 'Mode pembayaran'} className="inline-flex shrink-0 self-start rounded-full border border-neutral-200 bg-white p-1 md:self-auto">
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                role="tab"
+                aria-selected={mode === tab.id}
+                aria-controls="pricing-panel"
+                onClick={() => switchMode(tab.id)}
+                className={`relative rounded-full px-5 py-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 focus-visible:ring-offset-2 ${
+                  mode === tab.id ? 'text-white' : 'text-neutral-600 hover:text-neutral-950'
                 }`}
               >
-                {/* Card Header: name + inline badge chip (no floating badge) */}
-                <div className="flex items-center justify-between gap-2 mb-1.5">
-                  <h2 className="font-heading font-bold text-lg text-neutral-950">{tier.name}</h2>
-                  <span
-                    className={`text-[10px] font-mono font-bold uppercase tracking-wider px-2.5 py-1 rounded-md border ${
-                      tier.popular
-                        ? 'bg-neutral-950 text-white border-neutral-950'
-                        : 'bg-white text-neutral-500 border-neutral-200'
-                    }`}
-                  >
-                    {tier.popular ? t.pricing.popularBadge : tier.badge}
-                  </span>
-                </div>
-
-                <p className="text-xs text-neutral-500 mb-6 leading-relaxed">{tier.desc}</p>
-
-                {/* Price block */}
-                <div className="mb-6 pb-6 border-b border-neutral-100">
-                  <div className="flex items-baseline gap-1">
-                    <span className="text-3xl md:text-4xl font-extrabold text-neutral-950 tracking-tight">
-                      {tier.price}
-                    </span>
-                  </div>
-                  <div className="text-xs font-mono font-semibold text-neutral-500 mt-1.5">
-                    {t.pricing.creditsGet} {tier.credits}
-                  </div>
-                </div>
-
-                {/* Real Developer Value estimate */}
-                <div className="mb-6 rounded-xl bg-neutral-50 border border-neutral-100 px-3.5 py-3">
-                  <div className="text-[10px] font-mono uppercase tracking-wider font-bold text-neutral-500 mb-1">
-                    {t.pricing.estimateLabel}
-                  </div>
-                  <div className="text-[11px] font-mono font-semibold text-neutral-700 leading-relaxed">
-                    {tier.estimate}
-                  </div>
-                </div>
-
-                {/* Technical spec sheet — hairline dividers, no checklist bubbles */}
-                <div className="mb-8 divide-y divide-neutral-100 border-y border-neutral-100">
-                  {tier.features.map((feat, idx) => (
-                    <div key={idx} className="py-2.5 text-xs text-neutral-700 flex items-start gap-2">
-                      <span className="text-neutral-500 font-mono select-none shrink-0">•</span>
-                      <span suppressHydrationWarning>{feat}</span>
-                    </div>
-                  ))}
-                </div>
-
-                {/* CTA — always high contrast, clearly clickable */}
-                <Link
-                  href={targetUrl}
-                  className={`mt-auto w-full text-center py-3 px-6 rounded-full text-xs font-bold transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer ${
-                    isSelected(tier.name, tier.popular)
-                      ? 'bg-neutral-950 text-white hover:bg-neutral-800 shadow-md hover:shadow-lg hover:-translate-y-0.5'
-                      : 'border border-neutral-950 text-neutral-950 hover:bg-neutral-950 hover:text-white hover:-translate-y-0.5'
-                  }`}
-                >
-                  <span suppressHydrationWarning>
-                    {t.pricing.choosePlan} {tier.name}
-                  </span>
-                  <ArrowUpRight className="h-3.5 w-3.5" />
-                </Link>
-              </div>
+                {mode === tab.id && (
+                  <motion.span
+                    layoutId="pricing-tab"
+                    className="absolute inset-0 rounded-full bg-neutral-950"
+                    transition={reduced ? { duration: 0 } : { type: 'spring', stiffness: 420, damping: 36 }}
+                  />
+                )}
+                <span className="relative">{tab.label}</span>
+              </button>
             ))}
           </div>
-        )}
+        </div>
 
-        {/* ===== Tab 2: Daily Pass (24-Hour Unlimited) ===== */}
-        {activeTab === 'daily' && (
-          <div key="daily" className="animate-in fade-in duration-200">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 items-stretch">
-              {t.pricing.dailyTiers.map((pass) => (
-                <div
-                  key={pass.name}
-                  onClick={() => setSelected(pass.name)}
-                  onFocusCapture={() => setSelected(pass.name)}
-                  className={`group relative rounded-2xl p-6 flex flex-col bg-white border cursor-pointer transition-[border-color,box-shadow,transform] duration-300 ease-out hover:-translate-y-0.5 ${
-                    isSelected(pass.name, pass.popular) ? 'border-neutral-950 ring-1 ring-neutral-950 shadow-[0_8px_30px_-12px_rgba(9,9,11,0.25)]' : 'border-neutral-200 shadow-xs hover:border-neutral-400'
-                  }`}
-                >
-                  <div className="flex items-center justify-between gap-2 mb-4">
-                    <h3 className="font-mono font-bold text-sm text-neutral-950">{pass.name}</h3>
-                    {pass.popular && (
-                      <span className="text-[10px] font-mono font-bold uppercase tracking-wider px-2.5 py-1 rounded-md border bg-neutral-950 text-white border-neutral-950">
-                        {t.pricing.bestValueBadge}
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="mb-4 pb-4 border-b border-neutral-100">
-                    <div className="flex items-baseline gap-1">
-                      <span className="text-3xl font-extrabold text-neutral-950 tracking-tight">
-                        {pass.price}
-                      </span>
-                      <span className="text-xs font-mono font-semibold text-neutral-500">
-                        {t.pricing.perDay}
-                      </span>
-                    </div>
-                  </div>
-
-                  <p className="text-xs text-neutral-600 leading-relaxed mb-5">{pass.desc}</p>
-
-                  {/* Spec strip */}
-                  <div className="mb-6 divide-y divide-neutral-100 border-y border-neutral-100 text-[11px] font-mono text-neutral-600">
-                    <div className="py-2 flex justify-between">
-                      <span className="text-neutral-500">{locale === 'en' ? 'Duration' : 'Durasi'}</span>
-                      <span className="font-semibold">{locale === 'en' ? '24 hours' : '24 jam'}</span>
-                    </div>
-                    <div className="py-2 flex justify-between">
-                      <span className="text-neutral-500">{locale === 'en' ? 'Requests' : 'Permintaan'}</span>
-                      <span className="font-semibold">{locale === 'en' ? 'Unlimited' : 'Tak Terbatas'}</span>
-                    </div>
-                    <div className="py-2 flex justify-between">
-                      <span className="text-neutral-500">{locale === 'en' ? 'Activation' : 'Aktivasi'}</span>
-                      <span className="font-semibold">{locale === 'en' ? 'QRIS · Instant' : 'QRIS · Instan'}</span>
-                    </div>
-                  </div>
-
-                  <Link
-                    href={targetUrl}
-                    className={`mt-auto w-full text-center py-2.5 px-4 rounded-full text-xs font-bold transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer ${
-                      isSelected(pass.name, pass.popular)
-                        ? 'bg-neutral-950 text-white hover:bg-neutral-800 shadow-md hover:shadow-lg hover:-translate-y-0.5'
-                        : 'border border-neutral-950 text-neutral-950 hover:bg-neutral-950 hover:text-white hover:-translate-y-0.5'
-                    }`}
-                  >
-                    <span suppressHydrationWarning>{t.pricing.activatePass}</span>
-                    <ArrowUpRight className="h-3.5 w-3.5" />
-                  </Link>
-                </div>
-              ))}
+        <div
+          className="grid grid-cols-1 items-center gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:gap-16"
+        >
+          {/* Card stack: the picked pass comes to the front, the rest fan out behind it. */}
+          <div className="mx-auto w-full max-w-[440px]">
+            <div onPointerMove={onPointerMove} onPointerLeave={onPointerLeave} className="pt-16 [perspective:1400px]">
+              <motion.div style={{ rotateX: stageTilt, y: stageY }} className="[transform-style:preserve-3d]">
+              <motion.div style={{ rotateX, rotateY }} className="relative aspect-[1.586/1] w-full [transform-style:preserve-3d]">
+                {plans.map((p, i) => {
+                  const rel = (i - active + plans.length) % plans.length;
+                  const front = rel === 0;
+                  return (
+                    <FanSlot key={`${mode}-${p.name}`} zIndex={10 - rel} offset={i - (plans.length - 1) / 2} enter={enter}>
+                    <motion.button
+                      key={`${mode}-${p.name}`}
+                      type="button"
+                      tabIndex={-1}
+                      aria-hidden={!front}
+                      onClick={() => setPicked(i)}
+                      initial={reduced ? false : { opacity: 0, y: 40, scale: 0.9 }}
+                      animate={{
+                        y: rel * -22,
+                        scale: 1 - rel * 0.07,
+                        opacity: rel > 2 ? 0 : 1 - rel * 0.3,
+                        rotateZ: rel === 0 ? 0 : rel % 2 ? -2.5 : 2.5,
+                      }}
+                      transition={reduced ? { duration: 0 } : STACK_SPRING}
+                      className={`absolute inset-0 text-left ${front ? 'cursor-default' : 'cursor-pointer'} ${
+                        front ? 'shadow-[0_30px_60px_-24px_rgba(10,10,10,0.55)]' : ''
+                      } rounded-[22px]`}
+                    >
+                      <PassCard plan={p} kind={kind} />
+                      {front && (
+                        <motion.span
+                          aria-hidden="true"
+                          className="pointer-events-none absolute inset-0 rounded-[22px]"
+                          style={{ background: glare }}
+                        />
+                      )}
+                    </motion.button>
+                    </FanSlot>
+                  );
+                })}
+              </motion.div>
+              </motion.div>
             </div>
 
-            {/* Daily note */}
-            <p className="text-center text-[11px] font-mono text-neutral-500 mt-6">
-              {t.pricing.dailyNote}
-            </p>
+            <div role="radiogroup" aria-label={en ? 'Plans' : 'Paket'} className="mt-8 flex flex-wrap justify-center gap-1.5">
+              {plans.map((p, i) => {
+                const on = i === active;
+                return (
+                  <button
+                    key={`${mode}-pick-${p.name}`}
+                    type="button"
+                    role="radio"
+                    aria-checked={on}
+                    onClick={() => setPicked(i)}
+                    className={`relative rounded-full px-4 py-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 focus-visible:ring-offset-2 ${
+                      on ? 'text-white' : 'text-neutral-600 hover:text-neutral-950'
+                    }`}
+                  >
+                    {on && (
+                      <motion.span
+                        layoutId={`pricing-pick-${mode}`}
+                        className="absolute inset-0 rounded-full bg-neutral-950"
+                        transition={reduced ? { duration: 0 } : { type: 'spring', stiffness: 420, damping: 36 }}
+                      />
+                    )}
+                    <span className="relative">{p.name}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
-        )}
-        </motion.div>
 
-        {showPricingHubLink && (
-          <div className="mt-8 text-center">
-            <Link
-              href="/pricing"
-              className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-neutral-600 hover:text-neutral-950 transition-colors group cursor-pointer"
-            >
-              <span>
-                {locale === 'en'
-                  ? 'Compare all plan limits, models & calculate savings in Full Pricing Hub'
-                  : 'Bandingkan batas limit, model & kalkulator penghematan di Halaman Harga Lengkap'}
+          {/* Details for the card in front. */}
+          <motion.div id="pricing-panel" role="tabpanel" aria-live="polite" style={{ x: panelX, opacity: panelOpacity }}>
+            <div className="flex items-center gap-3">
+              <span className="text-lg font-bold text-neutral-950">{plan.name}</span>
+              {plan.badge && <span className="rounded-md bg-neutral-950 px-2 py-0.5 text-xs font-semibold text-white">{plan.badge}</span>}
+            </div>
+            <div className="mt-2 flex items-baseline gap-2">
+              <span className="font-heading text-5xl sm:text-6xl font-extrabold tracking-tight text-neutral-950">
+                <RollingPrice price={plan.price} locale={locale} />
               </span>
-              <ArrowUpRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
-            </Link>
-          </div>
-        )}
+              {mode === 'daily' && <span className="text-neutral-500">{t.pricing.perDay}</span>}
+            </div>
 
-        {/* Trust & Security Strip — integrated, monochrome */}
-        <motion.div
-          initial={reduced ? false : { opacity: 0, y: 12 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, margin: '-20px' }}
-          transition={{ duration: 0.45, delay: 0.15, ease: EASE }}
-          className="mt-16 pt-8 border-t border-neutral-200"
-        >
-          <div className="flex flex-wrap items-center justify-center gap-x-10 gap-y-4 text-xs text-neutral-600">
-            {t.pricing.trustItems.map((item, idx) => {
-              const icons = [CheckCircle2, ShieldCheck, Plug];
-              const Icon = icons[idx] || CheckCircle2;
-              return (
-                <span key={idx} className="flex items-center gap-2">
-                  <Icon className="h-4 w-4 text-neutral-950 shrink-0" />
-                  <span suppressHydrationWarning>{item}</span>
-                </span>
-              );
-            })}
-          </div>
-        </motion.div>
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.div
+                key={`${mode}-${plan.name}`}
+                initial={reduced ? false : { opacity: 0, y: 12, filter: 'blur(6px)' }}
+                animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+                exit={reduced ? undefined : { opacity: 0, y: -8, filter: 'blur(6px)' }}
+                transition={{ duration: 0.35, ease: EASE }}
+              >
+                <p className="mt-4 max-w-md text-[15px] leading-relaxed text-neutral-600">{plan.desc}</p>
+
+                {plan.note && (
+                  <div className="mt-6 rounded-2xl bg-neutral-100 px-4 py-3.5">
+                    <div className="text-[12px] text-neutral-500">{plan.noteLabel}</div>
+                    <div className="mt-1 text-sm leading-relaxed text-neutral-800">{plan.note}</div>
+                  </div>
+                )}
+
+                <ul className="mt-6 space-y-2.5">
+                  {plan.features.map((f, i) => (
+                    <motion.li
+                      key={f}
+                      initial={reduced ? false : { opacity: 0, x: -10 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ duration: 0.4, delay: 0.06 + i * 0.05, ease: EASE }}
+                      className="flex items-start gap-3 text-sm text-neutral-800"
+                    >
+                      <span className="mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-full bg-neutral-950">
+                        <Check className="h-2.5 w-2.5 text-white" strokeWidth={3.5} />
+                      </span>
+                      <span suppressHydrationWarning>{f}</span>
+                    </motion.li>
+                  ))}
+                </ul>
+              </motion.div>
+            </AnimatePresence>
+
+            <div className="mt-8 flex flex-col gap-4 sm:flex-row sm:items-center">
+              <Link
+                href={targetUrl}
+                className="group inline-flex items-center justify-center gap-2 rounded-full bg-neutral-950 px-7 py-3.5 text-sm font-bold text-white transition-[background-color,transform] duration-300 hover:bg-neutral-800 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 focus-visible:ring-offset-2"
+              >
+                <span suppressHydrationWarning>{plan.cta}</span>
+                <ArrowUpRight className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+              </Link>
+              {showPricingHubLink && (
+                <Link
+                  href="/pricing"
+                  className="group inline-flex items-center gap-1.5 text-sm font-semibold text-neutral-600 transition-colors hover:text-neutral-950"
+                >
+                  {en ? 'Full pricing and calculator' : 'Harga lengkap dan kalkulator'}
+                  <ArrowUpRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+                </Link>
+              )}
+            </div>
+          </motion.div>
+        </div>
       </div>
     </section>
   );

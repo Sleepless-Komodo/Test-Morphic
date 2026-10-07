@@ -22,6 +22,10 @@ Fetched with webfetch on 2026-09-09 from the upstream `master` branch:
 | `cursor.svg` | https://raw.githubusercontent.com/lobehub/lobe-icons/master/packages/static-svg/icons/cursor.svg |
 | `cline.svg` | https://raw.githubusercontent.com/lobehub/lobe-icons/master/packages/static-svg/icons/cline.svg |
 | `windsurf.svg` | https://raw.githubusercontent.com/lobehub/lobe-icons/master/packages/static-svg/icons/windsurf.svg |
+| `minimax-color.svg` | https://raw.githubusercontent.com/lobehub/lobe-icons/master/packages/static-svg/icons/minimax-color.svg (fetched 2026-10-07) |
+| `gemini-color.svg` | https://raw.githubusercontent.com/lobehub/lobe-icons/master/packages/static-svg/icons/gemini-color.svg (fetched 2026-10-07) |
+| `meta-color.svg` | https://raw.githubusercontent.com/lobehub/lobe-icons/master/packages/static-svg/icons/meta-color.svg (fetched 2026-10-07) |
+| `mistral-color.svg` | https://raw.githubusercontent.com/lobehub/lobe-icons/master/packages/static-svg/icons/mistral-color.svg (fetched 2026-10-07) |
 
 License source (also fetched with webfetch):
 https://raw.githubusercontent.com/lobehub/lobe-icons/master/LICENSE

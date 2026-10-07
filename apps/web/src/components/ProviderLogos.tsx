@@ -1,7 +1,7 @@
 'use client';
 
 import Image from 'next/image';
-import { Cpu, Sparkles } from 'lucide-react';
+import { Cpu } from 'lucide-react';
 
 interface LogoProps {
   className?: string;
@@ -36,6 +36,10 @@ export function YiLogo({ className = 'w-4 h-4' }: LogoProps) {
   return <Image src="/logos/yi.svg" alt="Yi" width={24} height={24} unoptimized className={className} />;
 }
 
+export function MiniMaxLogo({ className = 'w-4 h-4' }: LogoProps) {
+  return <Image src="/logos/minimax-color.svg" alt="MiniMax" width={24} height={24} unoptimized className={className} />;
+}
+
 export function GrokLogo({ className = 'w-4 h-4' }: LogoProps) {
   return <Image src="/logos/grok.svg" alt="Grok" width={24} height={24} unoptimized className={className} />;
 }
@@ -64,7 +68,7 @@ export function ModelProviderLogo({ provider = '', className = 'w-4 h-4' }: { pr
     return <ZhipuLogo className={className} />;
   }
   if (p.includes('minimax')) {
-    return <Sparkles className={`${className} text-rose-500`} role="img" aria-label="MiniMax" />;
+    return <MiniMaxLogo className={className} />;
   }
   if (p.includes('01.ai') || /\byi\b/.test(p)) {
     return <YiLogo className={className} />;

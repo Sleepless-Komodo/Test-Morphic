@@ -1,58 +1,65 @@
 'use client';
 
-import { useRef, useEffect } from 'react';
+import { useRef } from 'react';
 import Link from 'next/link';
-import { motion } from 'framer-motion';
+import { motion, useScroll, useSpring, useTransform } from 'framer-motion';
 import { ArrowUpRight } from 'lucide-react';
 import { useTranslation } from '@/lib/i18n';
 import { useReducedMotionSafe } from '@/lib/use-reduced-motion-safe';
 import AnimatedText from '@/components/AnimatedText';
+import HeroContours from '@/components/HeroContours';
 
 interface HeroOpeningProps {
   isLoggedIn?: boolean;
 }
 
+const EASE = [0.16, 1, 0.3, 1] as const;
+
 const containerVariants = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: {
-      staggerChildren: 0.12,
-      delayChildren: 0.08,
-    },
-  },
+  hidden: {},
+  visible: { transition: { staggerChildren: 0.05, delayChildren: 0.15 } },
 };
 
-const itemVariants = {
-  hidden: { opacity: 0, y: 22, filter: 'blur(6px)' },
-  visible: {
-    opacity: 1,
-    y: 0,
-    filter: 'blur(0px)',
-    transition: {
-      duration: 0.65,
-      ease: [0.16, 1, 0.3, 1] as const,
-    },
-  },
+// Each word rises out of its own clipped line box.
+const wordVariants = {
+  hidden: { y: '110%' },
+  visible: { y: '0%', transition: { duration: 0.9, ease: EASE } },
 };
+
+const fadeVariants = {
+  hidden: { opacity: 0, y: 18 },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.9, ease: EASE } },
+};
+
+function Words({ text, className }: { text: string; className: string }) {
+  return (
+    <span className={`block ${className}`}>
+      {text.split(' ').map((word, i) => (
+        <span key={`${word}-${i}`}>
+          {i > 0 && ' '}
+          <span className="inline-block overflow-hidden pb-[0.1em] -mb-[0.1em] align-bottom">
+            <motion.span variants={wordVariants} className="inline-block will-change-transform">
+              {word}
+            </motion.span>
+          </span>
+        </span>
+      ))}
+    </span>
+  );
+}
 
 export default function HeroOpening({ isLoggedIn = false }: HeroOpeningProps) {
   const { t, locale } = useTranslation();
   const sectionRef = useRef<HTMLElement>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
   const reduced = useReducedMotionSafe();
 
-  useEffect(() => {
-    const video = videoRef.current;
-    if (video) {
-      video.defaultMuted = true;
-      video.muted = true;
-      const playPromise = video.play();
-      if (playPromise !== undefined) {
-        playPromise.catch(() => {});
-      }
-    }
-  }, []);
+  // Scroll: the stage recedes as a card while the copy lifts and the contours sink (depth).
+  const { scrollYProgress } = useScroll({ target: sectionRef, offset: ['start start', 'end start'] });
+  const progress = useSpring(scrollYProgress, { stiffness: 200, damping: 40 });
+  const stageScale = useTransform(progress, [0, 1], [1, reduced ? 1 : 0.92]);
+  const copyY = useTransform(progress, [0, 1], [0, reduced ? 0 : -180]);
+  const copyOpacity = useTransform(progress, [0, 0.55], [1, reduced ? 1 : 0]);
+  const fieldY = useTransform(progress, [0, 1], [0, reduced ? 0 : 140]);
 
   const headline1 = t?.hero?.headline || (locale === 'id' ? 'Satu Kunci API' : 'One Single API Key');
   const headline2 =
@@ -60,109 +67,71 @@ export default function HeroOpening({ isLoggedIn = false }: HeroOpeningProps) {
   const subheadline = t.hero.subheadline;
 
   return (
-    <section
-      ref={sectionRef}
-      className="hero-section relative w-full overflow-hidden flex flex-col items-center justify-center min-h-[92vh] sm:min-h-screen pt-36 sm:pt-44 md:pt-48 pb-24 sm:pb-32 bg-[#fafafa] text-neutral-900"
-    >
-      {/* 1. Concentric Circles Video Animation (Inverted & Grayscaled to Morphic Monochrome Palette) */}
-      <div
-        className="absolute inset-0 overflow-hidden pointer-events-none select-none z-0"
-        aria-hidden="true"
+    <section ref={sectionRef} className="hero-section relative w-full bg-[#fafafa] p-2 sm:p-3">
+      <motion.div
+        style={{ scale: stageScale }}
+        className="relative isolate flex min-h-[calc(100svh-16px)] sm:min-h-[calc(100svh-24px)] items-center overflow-hidden rounded-[24px] sm:rounded-[32px] bg-[#0a0a0a] text-white origin-top will-change-transform"
       >
-        <video
-          ref={videoRef}
-          autoPlay
-          loop
-          muted
-          playsInline
-          preload="auto"
-          className="absolute inset-0 w-full h-full object-cover pointer-events-none select-none mix-blend-multiply opacity-40 filter invert grayscale contrast-125 scale-105"
-        >
-          <source src="/concentric-circles.mp4" type="video/mp4" />
-          <source
-            src="https://cdn.jiro.build/Velara/the-purple-neon-concentric-circles-pulse-and-radia.mp4"
-            type="video/mp4"
-          />
-        </video>
-
-        {/* Soft radial vignette mask so rings are centered behind headline and fade at edges */}
+        <motion.div aria-hidden="true" style={{ y: fieldY }} className="absolute inset-0 -z-10">
+          <HeroContours className="h-full w-full" />
+        </motion.div>
+        {/* Stage light from above. White only: the brand is monochrome. */}
         <div
-          className="absolute inset-0 pointer-events-none"
-          style={{
-            background:
-              'radial-gradient(ellipse 75% 65% at 50% 45%, transparent 35%, rgba(250, 250, 250, 0.75) 70%, #fafafa 100%)',
-          }}
+          aria-hidden="true"
+          className="absolute inset-0 -z-10"
+          style={{ background: 'radial-gradient(ellipse 70% 55% at 50% -8%, rgba(255,255,255,0.13), transparent 70%)' }}
         />
 
-        {/* Seamless bottom fade into page body */}
-        <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-[#fafafa] to-transparent pointer-events-none" />
-      </div>
-
-      {/* 2. Main Foreground Hero Content (Industry Standard max-w-7xl) */}
-      <motion.div
-        initial={reduced ? false : 'hidden'}
-        animate="visible"
-        variants={containerVariants}
-        className="relative z-10 max-w-7xl mx-auto w-full flex flex-col items-center justify-center text-center px-4 sm:px-6 lg:px-8 my-auto"
-      >
-        {/* Grand Headline (Flagship scale, confident high-contrast typography) */}
-        <h1
-          suppressHydrationWarning
-          className="text-5xl sm:text-6xl md:text-7xl lg:text-[5.25rem] xl:text-[5.75rem] font-extrabold tracking-tight leading-[1.04] max-w-4xl sm:max-w-5xl mx-auto mb-6 sm:mb-8 font-heading transform-gpu text-balance"
-        >
-          <motion.span variants={itemVariants} className="block text-neutral-950">
-            {headline1}
-          </motion.span>
-          <motion.span
-            variants={itemVariants}
-            className="block text-neutral-400 font-bold mt-2 sm:mt-3"
-          >
-            {headline2}
-          </motion.span>
-        </h1>
-
-        {/* Concise Subheadline Paragraph */}
-        <motion.p
-          suppressHydrationWarning
-          variants={itemVariants}
-          className="text-neutral-600 font-body text-base sm:text-lg md:text-xl lg:text-[1.3rem] leading-relaxed mb-10 sm:mb-12 max-w-2xl sm:max-w-3xl mx-auto font-normal text-balance"
-        >
-          {subheadline}
-        </motion.p>
-
-        {/* Dual Action CTA Buttons with Interactive Roll-up Micro-interaction */}
         <motion.div
-          variants={itemVariants}
-          className="flex flex-col sm:flex-row items-center justify-center gap-4 sm:gap-5 w-full sm:w-auto"
+          initial={reduced ? false : 'hidden'}
+          animate="visible"
+          variants={containerVariants}
+          className="mx-auto flex w-full max-w-6xl flex-col items-center px-4 sm:px-6 pt-28 sm:pt-32 pb-20 sm:pb-24 text-center"
         >
-          {/* Primary Button — Solid black with white roll-up text */}
-          <Link
-            href={isLoggedIn ? '/dashboard/keys' : '/login'}
-            className="group w-full sm:w-auto min-w-[220px] sm:min-w-[250px] justify-center rounded-full px-9 sm:px-11 py-4 sm:py-4.5 text-base sm:text-lg font-bold flex items-center gap-2.5 btn-hero-primary cursor-pointer text-center shadow-sm"
-          >
-            <AnimatedText
-              text={
-                isLoggedIn
-                  ? t?.hero?.manageKeys || (locale === 'id' ? 'Kelola API Key' : 'Manage Keys')
-                  : t?.hero?.primaryCta || (locale === 'id' ? 'Dapatkan API Key' : 'Get API Key')
-              }
-              className="text-white"
-            />
-            <ArrowUpRight className="h-5 w-5 sm:h-5.5 sm:w-5.5 shrink-0 btn-hero-icon transition-transform duration-300 ease-out group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
-          </Link>
+          <motion.div style={{ y: copyY, opacity: copyOpacity }} className="flex flex-col items-center">
+            <h1
+              suppressHydrationWarning
+              className="font-heading text-[2.6rem] sm:text-6xl md:text-7xl lg:text-[4.75rem] font-extrabold tracking-tight leading-[1.02] mb-5 sm:mb-6 text-balance max-w-5xl"
+            >
+              <Words key={`h1-${headline1}`} text={headline1} className="text-white" />
+              <Words key={`h2-${headline2}`} text={headline2} className="text-neutral-500 font-bold mt-1 sm:mt-2" />
+            </h1>
 
-          {/* Secondary Button — Clean white surface with dark roll-up text */}
-          <Link
-            href="/models"
-            className="group w-full sm:w-auto min-w-[200px] sm:min-w-[230px] justify-center rounded-full px-9 sm:px-11 py-4 sm:py-4.5 text-base sm:text-lg font-bold flex items-center gap-2.5 btn-hero-secondary cursor-pointer text-center shadow-2xs"
-          >
-            <AnimatedText
-              text={t?.hero?.secondaryCta || (locale === 'id' ? 'Jelajahi Model' : 'Explore Models')}
-              className="text-neutral-900 group-hover:text-black"
-            />
-          </Link>
+            <motion.p
+              suppressHydrationWarning
+              variants={fadeVariants}
+              className="text-neutral-400 font-body text-base sm:text-lg leading-relaxed mb-8 max-w-2xl text-balance"
+            >
+              {subheadline}
+            </motion.p>
+
+            <motion.div
+              variants={fadeVariants}
+              className="flex flex-col sm:flex-row items-center justify-center gap-3 w-full sm:w-auto"
+            >
+              <Link
+                href={isLoggedIn ? '/dashboard/keys' : '/login'}
+                className="group w-full sm:w-auto min-w-[210px] justify-center rounded-full bg-white px-7 py-3.5 text-base font-bold text-neutral-950 flex items-center gap-2 transition-[background-color,transform] duration-300 hover:bg-neutral-200 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-[#0a0a0a]"
+              >
+                <AnimatedText
+                  text={
+                    isLoggedIn
+                      ? t?.hero?.manageKeys || (locale === 'id' ? 'Kelola API Key' : 'Manage Keys')
+                      : t?.hero?.primaryCta || (locale === 'id' ? 'Dapatkan API Key' : 'Get API Key')
+                  }
+                />
+                <ArrowUpRight className="h-5 w-5 shrink-0 transition-transform duration-300 group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+              </Link>
+
+              <Link
+                href="/models"
+                className="group w-full sm:w-auto min-w-[190px] justify-center rounded-full border border-white/20 px-7 py-3.5 text-base font-bold text-white flex items-center transition-[background-color,border-color,transform] duration-300 hover:bg-white/10 hover:border-white/40 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-[#0a0a0a]"
+              >
+                <AnimatedText text={t?.hero?.secondaryCta || (locale === 'id' ? 'Jelajahi Model' : 'Explore Models')} />
+              </Link>
+            </motion.div>
+          </motion.div>
         </motion.div>
-
       </motion.div>
     </section>
   );

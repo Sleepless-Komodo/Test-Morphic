@@ -4,10 +4,10 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
-import { motion } from 'framer-motion';
+import { motion, useScroll, useMotionValueEvent } from 'framer-motion';
 import { useTranslation } from '@/lib/i18n';
 import { useReducedMotionSafe } from '@/lib/use-reduced-motion-safe';
-import { ArrowUpRight, Menu, X, LayoutDashboard, LogIn, Globe } from 'lucide-react';
+import { Menu, X, LayoutDashboard, Globe } from 'lucide-react';
 import CommandPalette from './CommandPalette';
 
 interface NavbarProps {
@@ -31,6 +31,10 @@ export default function Navbar({ session }: NavbarProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [activeSection, setActiveSection] = useState<string>('');
+  const [hoveredHref, setHoveredHref] = useState<string | null>(null);
+  const [scrolled, setScrolled] = useState(false);
+  const { scrollY } = useScroll();
+  useMotionValueEvent(scrollY, 'change', (y) => setScrolled(y > 24));
   const pathname = usePathname();
   const reduced = useReducedMotionSafe();
 
@@ -39,6 +43,10 @@ export default function Navbar({ session }: NavbarProps) {
   };
 
   const isHome = pathname === '/';
+  // Home opens on a bare bar over the hero; the capsule forms once the page moves.
+  const solid = !isHome || scrolled || mobileMenuOpen;
+  // The home hero is a dark stage, so the bare bar flips to light ink until the capsule forms.
+  const onDark = isHome && !solid;
 
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -54,7 +62,7 @@ export default function Navbar({ session }: NavbarProps) {
   React.useEffect(() => {
     if (!isHome) return;
 
-    const sectionIds = ['integration', 'terminal', 'pricing', 'faq'];
+    const sectionIds = ['integration', 'pricing', 'faq'];
     // Layout reads are batched to one per frame instead of one per scroll event.
     let frame = 0;
     const onScroll = () => {
@@ -90,7 +98,6 @@ export default function Navbar({ session }: NavbarProps) {
 
   const navLinks = [
     { href: '/#integration', label: locale === 'id' ? 'Cara Kerja' : 'How it Works', isRoute: false },
-    { href: '/#terminal', label: 'API', isRoute: false },
     { href: '/models', label: locale === 'id' ? 'Model' : 'Models', isRoute: true },
     { href: '/pricing', label: t.nav.price, isRoute: true },
     { href: '/docs', label: t.nav.docs || 'Docs', isRoute: true },
@@ -113,9 +120,17 @@ export default function Navbar({ session }: NavbarProps) {
       initial={reduced ? false : 'hidden'}
       animate="visible"
       variants={NAVBAR_ENTRANCE}
-      className="fixed top-4 sm:top-5 inset-x-0 mx-auto z-50 w-[95%] max-w-7xl"
+      className="fixed top-3 sm:top-4 inset-x-0 z-50 px-4 sm:px-6"
     >
-      <div className="relative bg-white/95 backdrop-blur-xl text-neutral-900 border border-neutral-200/90 rounded-full px-5 sm:px-7 py-3.5 shadow-[0_6px_28px_rgba(0,0,0,0.06)] flex items-center justify-between transition-all duration-200">
+      <div
+        className={`relative mx-auto text-neutral-900 border rounded-full flex items-center justify-between transition-[max-width,background-color,border-color,box-shadow,padding] duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+          onDark ? 'nav-dark ' : ''
+        }${
+          solid
+            ? 'max-w-5xl bg-white/95 border-neutral-200 shadow-[0_8px_30px_rgba(0,0,0,0.06)] pl-5 pr-2.5 py-2'
+            : 'max-w-6xl bg-transparent border-transparent shadow-none px-2 py-3'
+        }`}
+      >
         {/* Left: Brand Logo (Morphic Clean Black Logo Lockup) */}
         <Link href="/" className="flex items-center group shrink-0">
           <Image
@@ -124,68 +139,74 @@ export default function Navbar({ session }: NavbarProps) {
             width={135}
             height={32}
             priority
-            className="h-7 sm:h-8 w-auto object-contain transition-transform group-hover:scale-105 transform-gpu"
+            className="nav-logo h-6 sm:h-7 w-auto object-contain transition-[filter] duration-500"
           />
         </Link>
 
-        {/* Center: Clean Concise Links with generous breathing room */}
-        <nav className="hidden md:flex items-center justify-center gap-4 lg:gap-6 xl:gap-8 text-sm lg:text-[15px] font-bold text-neutral-600 flex-1 px-3 lg:px-6 pointer-events-auto">
+        {/* Center: one pill follows the pointer and settles back on the active link. */}
+        <nav
+          onMouseLeave={() => setHoveredHref(null)}
+          className="hidden md:flex items-center justify-center gap-0.5 text-[14px] font-medium text-neutral-600 flex-1 px-4"
+        >
           {navLinks.map((link) => {
             const isActive = isLinkActive(link.href, link.isRoute);
+            const pillHere = hoveredHref ? hoveredHref === link.href : isActive;
             return (
               <Link
                 key={link.href}
                 href={link.href}
+                onMouseEnter={() => setHoveredHref(link.href)}
                 aria-current={isActive ? 'page' : undefined}
-                className={`relative py-1 transition-colors after:absolute after:left-0 after:bottom-0 after:h-[2px] after:w-full after:origin-left after:bg-neutral-950 after:transition-transform after:duration-200 ${
-                  isActive
-                    ? 'text-neutral-950 font-extrabold after:scale-x-100'
-                    : 'after:scale-x-0 hover:text-neutral-950 hover:after:scale-x-100'
+                className={`nav-ink relative px-3.5 py-2 rounded-full transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 ${
+                  pillHere || isActive ? 'is-on text-neutral-950' : 'hover:text-neutral-950'
                 }`}
               >
-                <span suppressHydrationWarning>{link.label}</span>
+                {pillHere && (
+                  <motion.span
+                    layoutId="nav-pill"
+                    aria-hidden="true"
+                    className="nav-pill absolute inset-0 rounded-full bg-neutral-900/[0.06]"
+                    transition={reduced ? { duration: 0 } : { type: 'spring', stiffness: 420, damping: 36 }}
+                  />
+                )}
+                <span suppressHydrationWarning className="relative">{link.label}</span>
               </Link>
             );
           })}
         </nav>
 
         {/* Right: Action Buttons & Far-Right Language Switcher */}
-        <div className="hidden md:flex items-center gap-2 lg:gap-3 shrink-0">
+        <div className="hidden md:flex items-center gap-1.5 lg:gap-2 shrink-0">
           {session ? (
             <Link
               href="/dashboard"
-              className="bg-neutral-950 hover:bg-neutral-800 text-white rounded-full px-4.5 lg:px-5 py-2.5 text-[14px] lg:text-[15px] font-bold flex items-center gap-2 transition-all shadow-xs hover:scale-[1.02]"
+              className="nav-cta bg-neutral-950 hover:bg-neutral-800 text-white rounded-full px-4 py-2 text-[14px] font-semibold flex items-center gap-2 transition-colors"
             >
-              <LayoutDashboard className="h-4.5 w-4.5" />
+              <LayoutDashboard className="h-4 w-4" />
               <span suppressHydrationWarning>{t.nav.dashboard}</span>
             </Link>
           ) : (
             <>
               <Link
                 href="/login"
-                className="hidden lg:inline-flex min-w-[88px] justify-center border border-neutral-300 text-neutral-900 hover:text-black hover:border-neutral-400 hover:bg-neutral-50 rounded-full px-4 py-2 text-[14px] lg:text-[15px] font-bold transition-all items-center gap-2 text-center"
+                className="nav-ink hidden lg:inline-flex rounded-full px-3.5 py-2 text-[14px] font-medium text-neutral-700 hover:text-neutral-950 hover:bg-neutral-900/[0.06] transition-colors"
               >
-                <LogIn className="h-4 w-4 shrink-0" />
                 <span suppressHydrationWarning>{t.nav.login}</span>
               </Link>
               <Link
                 href="/models"
-                className="min-w-[110px] lg:min-w-[120px] justify-center bg-neutral-950 hover:bg-neutral-800 text-white rounded-full px-4.5 lg:px-5 py-2 text-[14px] lg:text-[15px] font-bold flex items-center gap-1.5 transition-all shadow-xs hover:scale-[1.02] text-center"
+                className="nav-cta bg-neutral-950 hover:bg-neutral-800 text-white rounded-full px-4 py-2 text-[14px] font-semibold transition-colors"
               >
                 <span suppressHydrationWarning>{t.nav.getStarted}</span>
-                <ArrowUpRight className="h-4 w-4 shrink-0" />
               </Link>
             </>
           )}
-
-          {/* Divider between CTAs and Language Switcher */}
-          <span className="w-px h-5 bg-neutral-200 mx-0.5 lg:mx-1" aria-hidden="true" />
 
           {/* Language Switcher Pill - Stationed on the far right edge */}
           <button
             onClick={toggleLanguage}
             aria-label="Switch Language (ID / EN)"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-neutral-200 hover:border-neutral-300 text-xs sm:text-sm font-mono font-bold text-neutral-800 hover:text-neutral-950 bg-neutral-50 hover:bg-neutral-100 transition-all cursor-pointer select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
+            className="nav-ink flex items-center gap-1.5 px-3 py-2 rounded-full text-[13px] font-semibold text-neutral-700 hover:text-neutral-950 hover:bg-neutral-900/[0.06] transition-colors cursor-pointer select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
             title="Switch Language (ID / EN)"
           >
             <Globe className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
@@ -198,14 +219,14 @@ export default function Navbar({ session }: NavbarProps) {
           <button
             onClick={toggleLanguage}
             aria-label="Switch Language (ID / EN)"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-neutral-200 text-xs font-mono font-bold uppercase text-neutral-800 bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
+            className="nav-ink flex items-center gap-1.5 px-3 py-2 rounded-full text-[13px] font-semibold uppercase text-neutral-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
           >
             <Globe className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
             <span suppressHydrationWarning>{locale}</span>
           </button>
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="p-2 text-neutral-800 hover:text-neutral-950 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
+            className="nav-ink p-2 text-neutral-800 hover:text-neutral-950 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
             aria-label="Toggle Navigation Menu"
           >
             {mobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
@@ -215,7 +236,7 @@ export default function Navbar({ session }: NavbarProps) {
 
       {/* Mobile Slideout Menu */}
       {mobileMenuOpen && (
-        <div className="md:hidden mt-2 bg-white/95 backdrop-blur-md border border-neutral-200/90 rounded-3xl p-5 shadow-2xl text-neutral-800 flex flex-col gap-2.5 animate-in fade-in slide-in-from-top-2 duration-200 ease-out transform-gpu">
+        <div className="md:hidden mx-auto max-w-5xl mt-2 bg-white border border-neutral-200 rounded-3xl p-4 shadow-[0_16px_40px_rgba(0,0,0,0.08)] text-neutral-800 flex flex-col gap-2.5 animate-in fade-in slide-in-from-top-2 duration-200 ease-out transform-gpu">
           {navLinks.map((link) => {
             const isActive = isLinkActive(link.href, link.isRoute);
             return (

@@ -99,7 +99,7 @@ export default function LandingApiCta({ isLoggedIn = false }: LandingApiCtaProps
         whileInView={{ opacity: 1, y: 0 }}
         viewport={{ once: true, margin: '-60px' }}
         transition={{ duration: 0.6, ease: EASE }}
-        className="mx-auto max-w-7xl"
+        className="mx-auto max-w-6xl"
       >
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-14 items-center">
           {/* Left Column: Parametric Lattice Mesh converging to a focal laser beam (LangChain-style visual, unboxed) */}
