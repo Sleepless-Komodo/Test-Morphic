@@ -22,6 +22,7 @@ interface BillingViewProps {
   entitlements: any[];
   payments: any[];
   ledger: any[];
+  initialTab?: 'packages' | 'payments' | 'ledger';
 }
 
 const LEDGER_TYPE_LABELS: Record<string, { en: string; id: string }> = {
@@ -42,6 +43,7 @@ export function BillingView({
   entitlements,
   payments,
   ledger,
+  initialTab = 'packages',
 }: BillingViewProps) {
   const { t, locale } = useTranslation();
   const [balance, setBalance] = useState(initialBalance);
@@ -50,16 +52,7 @@ export function BillingView({
   const paymentsList = payments ?? [];
   const [exporting, setExporting] = useState<'payments' | 'ledger' | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'packages' | 'payments' | 'ledger'>('packages');
-
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const tab = new URLSearchParams(window.location.search).get('tab');
-      if (tab === 'payments' || tab === 'ledger' || tab === 'packages') {
-        setActiveTab(tab);
-      }
-    }
-  }, []);
+  const [activeTab, setActiveTab] = useState<'packages' | 'payments' | 'ledger'>(initialTab);
 
   const handleTabChange = (tab: 'packages' | 'payments' | 'ledger') => {
     setActiveTab(tab);
