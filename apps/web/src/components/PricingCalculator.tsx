@@ -86,7 +86,7 @@ export default function PricingCalculator() {
   };
 
   return (
-    <section className="relative z-10 py-16 lg:py-24 px-4 sm:px-6 bg-white border-t border-neutral-200/80">
+    <section className="relative z-10 py-16 lg:py-24 px-4 sm:px-6 lg:px-8 bg-white border-t border-neutral-200/80">
       <div className="max-w-5xl mx-auto">
         {/* Section Header */}
         <motion.div
@@ -107,7 +107,7 @@ export default function PricingCalculator() {
               ? 'Calculate Your Monthly Token Savings'
               : 'Bandingkan Biaya Token Morphic vs Provider Resmi'}
           </h2>
-          <p className="mt-4 text-neutral-600 font-body text-base sm:text-lg leading-relaxed max-w-2xl mx-auto">
+          <p className="mt-4 text-neutral-600 font-body text-base sm:text-lg leading-relaxed max-w-2xl mx-auto text-balance">
             {locale === 'en'
               ? 'See in real-time how much you save by switching to Morphic unified QRIS gateway without foreign credit card surcharges.'
               : 'Simulasikan kebutuhan token bulanan Anda. Bebas biaya konversi valas, tanpa minimum deposit kartu kredit USD, dan hemat hingga 70%.'}
@@ -256,7 +256,7 @@ export default function PricingCalculator() {
 
                 <Link
                   href="/login"
-                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-neutral-950 hover:bg-neutral-800 text-white text-xs font-bold transition-all shadow-xs group"
+                  className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-full bg-neutral-950 hover:bg-neutral-800 text-white text-xs font-bold transition-all shadow-xs group"
                 >
                   <span>{locale === 'en' ? 'Start Free' : 'Mulai Sekarang'}</span>
                   <ArrowRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5" />

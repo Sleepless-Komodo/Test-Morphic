@@ -265,7 +265,9 @@ export function DashboardShell({ session, balance, isAdmin = false, children }: 
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 min-w-0 w-full px-4 sm:px-6 md:px-8 py-6">{children}</main>
+      <main className="flex-1 min-w-0 w-full px-4 sm:px-6 md:px-8 py-6">
+        <div className="w-full max-w-7xl mx-auto">{children}</div>
+      </main>
 
       {/* Mobile: Floating Menu Button */}
       <button

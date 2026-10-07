@@ -61,7 +61,7 @@ export default async function AdminAlerts() {
   const total = a.spikes.length + a.errorKeys.length + a.burners.length + a.sharedIps.length + a.mismatches.length + a.stuckTotal.n;
 
   return (
-    <div className="max-w-6xl space-y-6">
+    <div className="w-full space-y-6">
       <AutoRefresh />
       <div className="border-b border-neutral-200/80 pb-5">
         <h1 className="flex items-center gap-2 font-heading text-xl font-extrabold tracking-tight text-neutral-950 sm:text-2xl">

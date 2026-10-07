@@ -62,8 +62,8 @@ export default function MarketingFaq() {
   };
 
   return (
-    <section id="faq" className="relative z-10 py-14 lg:py-20 px-6 bg-[#fafafa] text-neutral-900 border-t border-neutral-200/70 scroll-mt-20 sm:scroll-mt-24">
-      <div className="max-w-6xl mx-auto grid gap-12 lg:grid-cols-[0.7fr_1.3fr] items-start">
+    <section id="faq" className="relative z-10 py-16 sm:py-20 lg:py-24 px-4 sm:px-6 lg:px-8 bg-[#fafafa] text-neutral-900 border-t border-neutral-200/70 scroll-mt-20 sm:scroll-mt-24">
+      <div className="max-w-7xl mx-auto grid gap-12 lg:grid-cols-[0.7fr_1.3fr] items-start">
         {/* Left Column: Sticky Header */}
         <motion.div
           initial={reduced ? false : { opacity: 0, y: 14 }}

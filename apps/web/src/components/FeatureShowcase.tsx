@@ -285,8 +285,8 @@ export default function FeatureShowcase() {
   ];
 
   return (
-    <section id="gateway" className="relative z-10 px-4 sm:px-6 py-24 lg:py-32 overflow-hidden bg-[#fafafa] scroll-mt-20">
-      <div className="max-w-6xl mx-auto">
+    <section id="gateway" className="relative z-10 px-4 sm:px-6 lg:px-8 py-24 lg:py-32 overflow-hidden bg-[#fafafa] scroll-mt-20">
+      <div className="max-w-7xl mx-auto">
         {/* Section Header */}
         <motion.div
           initial={reduced ? false : { opacity: 0, y: 14, filter: 'blur(4px)' }}

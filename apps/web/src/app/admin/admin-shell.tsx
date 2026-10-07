@@ -148,7 +148,7 @@ export function AdminShell({ user, children }: AdminShellProps) {
 
       {/* Main Content Area */}
       <main className="flex-1 min-w-0 w-full p-4 sm:p-6 md:p-8 lg:p-10 overflow-x-auto">
-        {children}
+        <div className="w-full max-w-7xl mx-auto">{children}</div>
       </main>
 
       {/* Mobile: Floating Navigation Button */}
