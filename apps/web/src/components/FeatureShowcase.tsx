@@ -484,7 +484,13 @@ export default function FeatureShowcase() {
   const trackRef = useRef<HTMLDivElement>(null);
   const { scrollYProgress } = useScroll({ target: trackRef, offset: ['start start', 'end end'] });
   // One critically damped spring smooths wheel steps for both the drawing and the camera.
-  const smooth = useSpring(scrollYProgress, { stiffness: 140, damping: 32, mass: 0.35, restDelta: 0.0002 });
+  // On mobile touch screens, use restDelta 0.002 and lighter mass to avoid CPU overload on low-spec chips.
+  const smooth = useSpring(
+    scrollYProgress,
+    mobile
+      ? { stiffness: 120, damping: 26, mass: 0.28, restDelta: 0.002 }
+      : { stiffness: 140, damping: 32, mass: 0.35, restDelta: 0.0002 }
+  );
   // Pans the drawing so `focus` (a y in drawing units) sits at the viewport middle.
   const cameraY = useTransform(smooth, geo.cameraAt, geo.focus.map((f) => `${(-f / geo.h) * 100}%`));
 
@@ -497,7 +503,7 @@ export default function FeatureShowcase() {
   return (
     <section id="gateway" className="relative bg-white scroll-mt-20">
       <p className="sr-only">{summary}</p>
-      <div ref={trackRef} className="relative h-[520vh]">
+      <div ref={trackRef} className={`relative ${mobile ? 'h-[320vh]' : 'h-[520vh]'}`}>
         <div className="sticky top-0 h-[100svh] overflow-hidden">
           <motion.div
             style={{ y: cameraY, x: '-50%' }}

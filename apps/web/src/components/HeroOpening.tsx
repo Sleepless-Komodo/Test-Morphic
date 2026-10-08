@@ -53,7 +53,13 @@ export default function HeroOpening({ isLoggedIn = false }: HeroOpeningProps) {
 
   // Scroll: the stage recedes as a card while the copy lifts and the contours sink (depth).
   const { scrollYProgress } = useScroll({ target: sectionRef, offset: ['start start', 'end start'] });
-  const progress = useSpring(scrollYProgress, { stiffness: 200, damping: 40 });
+  const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+  const progress = useSpring(
+    scrollYProgress,
+    isMobile
+      ? { stiffness: 130, damping: 30, restDelta: 0.002 }
+      : { stiffness: 200, damping: 40 }
+  );
   const stageScale = useTransform(progress, [0, 1], [1, 0.92]);
   const copyY = useTransform(progress, [0, 1], [0, -180]);
   const copyOpacity = useTransform(progress, [0, 0.55], [1, 0]);
