@@ -214,7 +214,7 @@ export function SettingsView({ user, sessions, loginOtp }: SettingsViewProps) {
   };
 
   const copySupportEmail = () => {
-    navigator.clipboard.writeText('support@morphic.sh');
+    navigator.clipboard.writeText('hello@mirraclefoundation.com');
     setCopiedSupport(true);
     setTimeout(() => setCopiedSupport(false), 2000);
   };

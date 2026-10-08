@@ -86,6 +86,9 @@ export default function Footer() {
             <Link href="/dashboard" className="hover:text-white transition-colors">
               <span suppressHydrationWarning>{t.nav.dashboard}</span>
             </Link>
+            <a href="mailto:hello@mirraclefoundation.com" className="hover:text-white transition-colors">
+              hello@mirraclefoundation.com
+            </a>
           </div>
         </div>
       </div>
