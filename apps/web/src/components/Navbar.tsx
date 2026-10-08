@@ -6,7 +6,6 @@ import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { motion, useScroll, useMotionValueEvent } from 'framer-motion';
 import { useTranslation } from '@/lib/i18n';
-import { useReducedMotionSafe } from '@/lib/use-reduced-motion-safe';
 import { Menu, X, LayoutDashboard, Globe } from 'lucide-react';
 import CommandPalette from './CommandPalette';
 
@@ -36,7 +35,6 @@ export default function Navbar({ session }: NavbarProps) {
   const { scrollY } = useScroll();
   useMotionValueEvent(scrollY, 'change', (y) => setScrolled(y > 24));
   const pathname = usePathname();
-  const reduced = useReducedMotionSafe();
 
   const toggleLanguage = () => {
     setLocale(locale === 'id' ? 'en' : 'id');
@@ -117,7 +115,7 @@ export default function Navbar({ session }: NavbarProps) {
 
   return (
     <motion.header
-      initial={reduced ? false : 'hidden'}
+      initial="hidden"
       animate="visible"
       variants={NAVBAR_ENTRANCE}
       className="fixed top-3 sm:top-4 inset-x-0 z-50 px-4 sm:px-6"
@@ -166,7 +164,7 @@ export default function Navbar({ session }: NavbarProps) {
                     layoutId="nav-pill"
                     aria-hidden="true"
                     className="nav-pill absolute inset-0 rounded-full bg-neutral-900/[0.06]"
-                    transition={reduced ? { duration: 0 } : { type: 'spring', stiffness: 420, damping: 36 }}
+                    transition={{ type: 'spring', stiffness: 420, damping: 36 }}
                   />
                 )}
                 <span suppressHydrationWarning className="relative">{link.label}</span>

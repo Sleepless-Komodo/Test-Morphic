@@ -15,7 +15,6 @@ import {
 } from 'framer-motion';
 import { Check } from 'lucide-react';
 import { useTranslation } from '@/lib/i18n';
-import { useReducedMotionSafe } from '@/lib/use-reduced-motion-safe';
 import { API_BASE_URL } from '@/lib/utils';
 
 const EASE = [0.16, 1, 0.3, 1] as const;
@@ -32,10 +31,8 @@ const PAY_METHODS = ['QRIS', 'PayPal'];
 
 /** Reveals `text` a few characters per frame; returns the visible prefix. */
 function useTyped(text: string, cps = 90) {
-  const reduced = useReducedMotionSafe();
   const [n, setN] = useState(0);
   useEffect(() => {
-    if (reduced) return;
     const start = performance.now();
     let raf = 0;
     const tick = () => {
@@ -45,8 +42,8 @@ function useTyped(text: string, cps = 90) {
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [text, cps, reduced]);
-  return reduced ? text : text.slice(0, n);
+  }, [text, cps]);
+  return text.slice(0, n);
 }
 
 // A QR-looking 21x21 matrix: three finder squares plus seeded noise. Decorative, never scannable.
@@ -73,16 +70,15 @@ const QR = (() => {
 })();
 
 function TopUpPreview({ locale }: { locale: string }) {
-  const reduced = useReducedMotionSafe();
-  const [paid, setPaid] = useState(reduced);
+  const [paid, setPaid] = useState(false);
   const tokens = useMotionValue(0);
   const tokensText = useTransform(tokens, (v) => Math.round(v).toLocaleString('id-ID'));
 
   useEffect(() => {
     if (!paid) return;
-    const c = animate(tokens, 5_000_000, { duration: reduced ? 0 : 1.4, ease: [0.16, 1, 0.3, 1] });
+    const c = animate(tokens, 5_000_000, { duration: 1.4, ease: [0.16, 1, 0.3, 1] });
     return () => c.stop();
-  }, [paid, reduced, tokens]);
+  }, [paid, tokens]);
 
   return (
     <div className="flex items-center gap-4 sm:gap-6">
@@ -148,13 +144,11 @@ function TopUpPreview({ locale }: { locale: string }) {
 const KEY_CHARS = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
 function KeyPreview({ locale }: { locale: string }) {
-  const reduced = useReducedMotionSafe();
   const final = 'mp-••••••••••••••••';
-  const [shown, setShown] = useState(reduced ? final : 'mp-');
+  const [shown, setShown] = useState('mp-');
 
   // Scramble left to right, then settle on the masked form the dashboard shows.
   useEffect(() => {
-    if (reduced) return;
     const len = final.length - 3;
     const start = performance.now();
     let raf = 0;
@@ -167,7 +161,7 @@ function KeyPreview({ locale }: { locale: string }) {
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [reduced]);
+  }, []);
 
   return (
     <div>
@@ -179,7 +173,7 @@ function KeyPreview({ locale }: { locale: string }) {
         {['Production', 'Staging'].map((name, i) => (
           <motion.div
             key={name}
-            initial={reduced ? false : { opacity: 0, y: 10 }}
+            initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.9 + i * 0.12, ease: EASE }}
             className="rounded-xl border border-white/10 px-3 py-2.5"
@@ -258,14 +252,12 @@ function ConnectPreview() {
 const STREAM = ['def', ' binary_search', '(arr,', ' target):', '\n    lo, hi', ' = 0,', ' len(arr)', ' - 1'];
 
 function RoutePreview({ locale }: { locale: string }) {
-  const reduced = useReducedMotionSafe();
   const [idx, setIdx] = useState(0);
-  const [count, setCount] = useState(reduced ? STREAM.length : 0);
+  const [count, setCount] = useState(0);
   const cur = ROUTER_MODELS[idx];
 
   // Restart the token stream whenever the model changes.
   useEffect(() => {
-    if (reduced) return;
     let i = 0;
     const id = window.setInterval(() => {
       i += 1;
@@ -273,7 +265,7 @@ function RoutePreview({ locale }: { locale: string }) {
       if (i >= STREAM.length) window.clearInterval(id);
     }, 120);
     return () => window.clearInterval(id);
-  }, [idx, reduced]);
+  }, [idx]);
 
   const pick = (i: number) => {
     setCount(0);
@@ -307,7 +299,7 @@ function RoutePreview({ locale }: { locale: string }) {
         {STREAM.slice(0, count).map((tok, i) => (
           <motion.span
             key={`${idx}-${i}`}
-            initial={reduced ? false : { opacity: 0, filter: 'blur(4px)' }}
+            initial={{ opacity: 0, filter: 'blur(4px)' }}
             animate={{ opacity: 1, filter: 'blur(0px)' }}
             transition={{ duration: 0.3 }}
           >
@@ -410,7 +402,6 @@ function Frame({
 
 export default function HowItWorksSteps() {
   const { t, locale } = useTranslation();
-  const reduced = useReducedMotionSafe();
   const trackRef = useRef<HTMLDivElement>(null);
   const stripRef = useRef<HTMLDivElement>(null);
   const [active, setActive] = useState(0); // frame index, 0 is the intro
@@ -510,29 +501,6 @@ export default function HowItWorksSteps() {
       {t.steps.title}
     </h2>
   );
-
-  if (reduced) {
-    return (
-      <section id="integration" className="relative z-10 bg-[#fafafa] px-4 sm:px-6 py-20 scroll-mt-20">
-        <div className="mx-auto max-w-3xl">
-          {header}
-          <p className="mt-4 text-lg text-neutral-600">{t.steps.desc}</p>
-          <ol className="mt-12 space-y-12">
-            {steps.map((s, i) => (
-              <li key={s.num}>
-                <div className="mb-3 flex items-baseline gap-3">
-                  <span className="font-mono text-sm text-neutral-400">{s.num}</span>
-                  <h3 className="text-2xl font-bold tracking-tight text-neutral-950">{s.title}</h3>
-                </div>
-                <p className="mb-5 text-neutral-600">{s.desc}</p>
-                <StepPanel num={i} total={steps.length}>{s.preview}</StepPanel>
-              </li>
-            ))}
-          </ol>
-        </div>
-      </section>
-    );
-  }
 
   return (
     <section id="integration" className="relative z-10 bg-[#fafafa] scroll-mt-20">
