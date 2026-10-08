@@ -122,7 +122,13 @@ export default function ClosingKey() {
   const trackRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const { scrollYProgress } = useScroll({ target: trackRef, offset: ['start start', 'end end'] });
-  const progress = useSpring(scrollYProgress, { stiffness: 140, damping: 32, mass: 0.35, restDelta: 0.0002 });
+  const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+  const progress = useSpring(
+    scrollYProgress,
+    isMobile
+      ? { stiffness: 120, damping: 28, mass: 0.3, restDelta: 0.002 }
+      : { stiffness: 140, damping: 32, mass: 0.35, restDelta: 0.0002 }
+  );
   const rx = useMotionValue(420);
   const ry = useMotionValue(280);
   const [count, setCount] = useState(0);
@@ -154,7 +160,7 @@ export default function ClosingKey() {
   let wordIndex = 0;
   return (
     <section className="relative bg-white" aria-labelledby="closing-title">
-      <div ref={trackRef} className="relative h-[260vh]">
+      <div ref={trackRef} className={`relative ${isMobile ? 'h-[190vh]' : 'h-[260vh]'}`}>
         <div ref={stageRef} className="sticky top-0 h-[100svh] overflow-hidden">
           {LOGOS.map(([label], i) => (
             <Orbiter key={label} i={i} progress={progress} rx={rx} ry={ry} />

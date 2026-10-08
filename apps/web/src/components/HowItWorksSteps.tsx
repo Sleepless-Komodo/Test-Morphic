@@ -409,8 +409,14 @@ export default function HowItWorksSteps() {
   const travel = useMotionValue(0);
 
   const { scrollYProgress } = useScroll({ target: trackRef, offset: ['start start', 'end end'] });
+  const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
   // Softer spring than elsewhere: the strip glides a touch behind the wheel instead of stepping with it.
-  const progress = useSpring(scrollYProgress, { stiffness: 80, damping: 24, mass: 0.5, restDelta: 0.0002 });
+  const progress = useSpring(
+    scrollYProgress,
+    isMobile
+      ? { stiffness: 80, damping: 24, mass: 0.4, restDelta: 0.002 }
+      : { stiffness: 80, damping: 24, mass: 0.5, restDelta: 0.0002 }
+  );
 
   const steps: Step[] = [
     {
@@ -504,7 +510,7 @@ export default function HowItWorksSteps() {
 
   return (
     <section id="integration" className="relative z-10 bg-[#fafafa] scroll-mt-20">
-      <div ref={trackRef} className="relative h-[560vh]">
+      <div ref={trackRef} className={`relative ${isMobile ? 'h-[360vh]' : 'h-[560vh]'}`}>
         <div className="sticky top-0 flex h-[100svh] flex-col overflow-hidden pt-20 pb-6">
           {/* The strip: an intro frame, then one frame per step. Vertical scroll slides it sideways. */}
           <motion.div ref={stripRef} style={{ x }} className="flex min-h-0 flex-1 items-stretch gap-6 px-[6vw] md:px-[12vw] lg:px-[calc((100vw-min(68vw,1040px))/2)] will-change-transform">

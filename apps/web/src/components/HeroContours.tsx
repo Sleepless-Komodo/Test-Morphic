@@ -109,10 +109,12 @@ export default function HeroContours({ className = '' }: { className?: string })
     let visible = true;
     const start = performance.now();
 
-    // Perf budget: the field is soft background texture, so it renders at 75% of CSS size
-    // (never above 1x DPR) and redraws at ~30fps; its drift is slow enough that this is invisible.
-    const RENDER_SCALE = 0.75;
-    const FRAME_MS = 33;
+    // Perf budget: the field is soft background texture.
+    // On mobile screens, render at 0.45x scale (hardware bilinear upscaled by GPU) and ~24fps (42ms).
+    // This maintains the exact same slow drifting contour visual while cutting GPU fillrate by ~65%.
+    const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+    const RENDER_SCALE = isMobile ? 0.45 : 0.75;
+    const FRAME_MS = isMobile ? 42 : 33;
     let lastDraw = 0;
 
     const resize = () => {
