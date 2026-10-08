@@ -5,7 +5,6 @@ import Link from 'next/link';
 import { motion, useScroll, useSpring, useTransform } from 'framer-motion';
 import { ArrowUpRight } from 'lucide-react';
 import { useTranslation } from '@/lib/i18n';
-import { useReducedMotionSafe } from '@/lib/use-reduced-motion-safe';
 import AnimatedText from '@/components/AnimatedText';
 import HeroContours from '@/components/HeroContours';
 
@@ -51,15 +50,14 @@ function Words({ text, className }: { text: string; className: string }) {
 export default function HeroOpening({ isLoggedIn = false }: HeroOpeningProps) {
   const { t, locale } = useTranslation();
   const sectionRef = useRef<HTMLElement>(null);
-  const reduced = useReducedMotionSafe();
 
   // Scroll: the stage recedes as a card while the copy lifts and the contours sink (depth).
   const { scrollYProgress } = useScroll({ target: sectionRef, offset: ['start start', 'end start'] });
   const progress = useSpring(scrollYProgress, { stiffness: 200, damping: 40 });
-  const stageScale = useTransform(progress, [0, 1], [1, reduced ? 1 : 0.92]);
-  const copyY = useTransform(progress, [0, 1], [0, reduced ? 0 : -180]);
-  const copyOpacity = useTransform(progress, [0, 0.55], [1, reduced ? 1 : 0]);
-  const fieldY = useTransform(progress, [0, 1], [0, reduced ? 0 : 140]);
+  const stageScale = useTransform(progress, [0, 1], [1, 0.92]);
+  const copyY = useTransform(progress, [0, 1], [0, -180]);
+  const copyOpacity = useTransform(progress, [0, 0.55], [1, 0]);
+  const fieldY = useTransform(progress, [0, 1], [0, 140]);
 
   const headline1 = t?.hero?.headline || (locale === 'id' ? 'Satu Kunci API' : 'One Single API Key');
   const headline2 =
@@ -83,7 +81,7 @@ export default function HeroOpening({ isLoggedIn = false }: HeroOpeningProps) {
         />
 
         <motion.div
-          initial={reduced ? false : 'hidden'}
+          initial="hidden"
           animate="visible"
           variants={containerVariants}
           className="mx-auto flex w-full max-w-6xl flex-col items-center px-4 sm:px-6 pt-28 sm:pt-32 pb-20 sm:pb-24 text-center"

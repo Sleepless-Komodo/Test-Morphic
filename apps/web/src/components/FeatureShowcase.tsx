@@ -11,7 +11,6 @@ import {
   type MotionValue,
 } from 'framer-motion';
 import { useTranslation } from '@/lib/i18n';
-import { useReducedMotionSafe } from '@/lib/use-reduced-motion-safe';
 
 // One drawing, read top to bottom: every model's line bends into the Morphic gateway,
 // then a single line runs down through what the gateway does and ends at your app.
@@ -480,7 +479,6 @@ function Drawing({ geo, progress, en }: { geo: Geo; progress: MotionValue<number
 
 export default function FeatureShowcase() {
   const { locale } = useTranslation();
-  const reduced = useReducedMotionSafe();
   const mobile = useIsMobile();
   const geo = mobile ? mobileGeo() : desktopGeo();
   const trackRef = useRef<HTMLDivElement>(null);
@@ -489,24 +487,12 @@ export default function FeatureShowcase() {
   const smooth = useSpring(scrollYProgress, { stiffness: 140, damping: 32, mass: 0.35, restDelta: 0.0002 });
   // Pans the drawing so `focus` (a y in drawing units) sits at the viewport middle.
   const cameraY = useTransform(smooth, geo.cameraAt, geo.focus.map((f) => `${(-f / geo.h) * 100}%`));
-  const done = useMotionValue(1);
 
   const en = locale === 'en';
   const summary = en
     ? 'OpenAI, Gemini, Claude, Grok, Llama, Mistral, DeepSeek, Qwen, Kimi, GLM, MiniMax and Yi all route through the Morphic Gateway, which checks one key, bills one balance and answers your app in the OpenAI format.'
     : 'OpenAI, Gemini, Claude, Grok, Llama, Mistral, DeepSeek, Qwen, Kimi, GLM, MiniMax dan Yi semuanya lewat Morphic Gateway, yang mengecek satu key, memotong satu saldo, dan menjawab aplikasi kamu dalam format OpenAI.';
   const width = mobile ? 'max-w-[400px]' : 'max-w-[900px]';
-
-  if (reduced) {
-    return (
-      <section id="gateway" className="bg-white py-20 scroll-mt-20">
-        <p className="sr-only">{summary}</p>
-        <div className={`mx-auto px-4 ${width}`}>
-          <Drawing geo={geo} progress={done} en={en} />
-        </div>
-      </section>
-    );
-  }
 
   return (
     <section id="gateway" className="relative bg-white scroll-mt-20">

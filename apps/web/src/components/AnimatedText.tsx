@@ -1,7 +1,6 @@
 'use client';
 
 import React from 'react';
-import { useReducedMotionSafe } from '@/lib/use-reduced-motion-safe';
 
 interface AnimatedTextProps {
   text: string;
@@ -11,15 +10,9 @@ interface AnimatedTextProps {
 /**
  * AnimatedText Component
  * Produces a slick vertical roll-up ticker micro-interaction on parent hover (.group).
- * Fully accessible with screen-reader text fallback and reduced-motion detection.
+ * Fully accessible with screen-reader text fallback.
  */
 export default function AnimatedText({ text, className = '' }: AnimatedTextProps) {
-  const reduced = useReducedMotionSafe();
-
-  if (reduced) {
-    return <span className={className}>{text}</span>;
-  }
-
   return (
     <>
       <span

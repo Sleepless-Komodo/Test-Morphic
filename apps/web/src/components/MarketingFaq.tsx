@@ -3,7 +3,6 @@
 import { useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useTranslation } from '@/lib/i18n';
-import { useReducedMotionSafe } from '@/lib/use-reduced-motion-safe';
 import { API_BASE_URL } from '@/lib/utils';
 import { Plus } from 'lucide-react';
 
@@ -69,8 +68,7 @@ const FAQS: FaqItem[] = [
 ];
 
 /** Answer text that resolves word by word out of a soft blur. */
-function RevealText({ text, reduced }: { text: string; reduced: boolean }) {
-  if (reduced) return <>{text}</>;
+function RevealText({ text }: { text: string }) {
   return (
     <>
       {text.split(' ').map((w, i) => (
@@ -93,8 +91,7 @@ export default function MarketingFaq() {
   const { locale, t } = useTranslation();
   const [openIndex, setOpenIndex] = useState<number | null>(0);
   const [hovered, setHovered] = useState<number | null>(null);
-  const reduced = useReducedMotionSafe();
-  const spring = reduced ? { duration: 0 } : { type: 'spring' as const, stiffness: 380, damping: 34 };
+  const spring = { type: 'spring' as const, stiffness: 380, damping: 34 };
   const highlight = hovered ?? openIndex;
   const shown = (openIndex ?? 0) + 1;
 
@@ -103,7 +100,7 @@ export default function MarketingFaq() {
       <div className="px-5 sm:px-8 py-20 lg:py-28 text-neutral-950">
         <div className="mx-auto grid max-w-5xl items-start gap-10 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] lg:gap-16">
           <motion.div
-            initial={reduced ? false : { opacity: 0, y: 18 }}
+            initial={{ opacity: 0, y: 18 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true, margin: '-60px' }}
             transition={{ duration: 0.7, ease: EASE }}
@@ -122,9 +119,9 @@ export default function MarketingFaq() {
                 <AnimatePresence mode="popLayout" initial={false}>
                   <motion.span
                     key={shown}
-                    initial={reduced ? false : { y: '100%', opacity: 0 }}
+                    initial={{ y: '100%', opacity: 0 }}
                     animate={{ y: '0%', opacity: 1 }}
-                    exit={reduced ? undefined : { y: '-100%', opacity: 0 }}
+                    exit={{ y: '-100%', opacity: 0 }}
                     transition={{ duration: 0.55, ease: EASE }}
                   >
                     {String(shown).padStart(2, '0')}
@@ -145,7 +142,7 @@ export default function MarketingFaq() {
               return (
                 <motion.li
                   key={idx}
-                  initial={reduced ? false : { opacity: 0, y: 20 }}
+                  initial={{ opacity: 0, y: 20 }}
                   whileInView={{ opacity: 1, y: 0 }}
                   viewport={{ once: true, margin: '-40px' }}
                   transition={{ duration: 0.6, delay: idx * 0.06, ease: EASE }}
@@ -194,14 +191,14 @@ export default function MarketingFaq() {
                       <motion.div
                         id={panelId}
                         key="answer"
-                        initial={reduced ? false : { height: 0, opacity: 0 }}
+                        initial={{ height: 0, opacity: 0 }}
                         animate={{ height: 'auto', opacity: 1 }}
-                        exit={reduced ? undefined : { height: 0, opacity: 0 }}
+                        exit={{ height: 0, opacity: 0 }}
                         transition={{ duration: 0.5, ease: EASE }}
                         className="relative overflow-hidden"
                       >
                         <p suppressHydrationWarning className="px-5 pb-6 pl-[3.25rem] text-[15px] leading-relaxed text-neutral-300">
-                          <RevealText key={locale} text={answer} reduced={reduced} />
+                          <RevealText key={locale} text={answer} />
                         </p>
                       </motion.div>
                     )}

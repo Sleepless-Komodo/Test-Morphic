@@ -14,7 +14,6 @@ import {
 } from 'framer-motion';
 import { ArrowUpRight, Check, Copy } from 'lucide-react';
 import { useTranslation } from '@/lib/i18n';
-import { useReducedMotionSafe } from '@/lib/use-reduced-motion-safe';
 import { API_BASE_URL } from '@/lib/utils';
 
 // Closing scene: every model the page has shown spirals into a single key as you scroll.
@@ -120,7 +119,6 @@ function Word({ word, progress, at }: { word: string; progress: MotionValue<numb
 export default function ClosingKey() {
   const { locale } = useTranslation();
   const en = locale === 'en';
-  const reduced = useReducedMotionSafe();
   const trackRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const { scrollYProgress } = useScroll({ target: trackRef, offset: ['start start', 'end end'] });
@@ -152,27 +150,6 @@ export default function ClosingKey() {
   const ctaY = useTransform(progress, [0.86, 0.94], [16, 0]);
 
   const lines = en ? ['Every model.', 'One key.'] : ['Semua model.', 'Satu key.'];
-
-  if (reduced) {
-    return (
-      <section className="bg-white px-4 py-24" aria-labelledby="closing-title">
-        <div className="mx-auto flex max-w-3xl flex-col items-center gap-10 text-center">
-          <div className="flex flex-wrap justify-center gap-2">
-            {LOGOS.map(([label, src]) => (
-              <span key={label} className="grid h-11 w-11 place-items-center rounded-full border border-neutral-200 bg-white">
-                <Image src={src} alt={label} width={22} height={22} unoptimized className="h-[22px] w-[22px]" />
-              </span>
-            ))}
-          </div>
-          <KeyChip count={N} grow={1} />
-          <h2 id="closing-title" className="font-heading text-5xl sm:text-7xl font-extrabold tracking-tight text-neutral-950">
-            {lines[0]} <span className="text-neutral-400">{lines[1]}</span>
-          </h2>
-          <CopyUrl en={en} />
-        </div>
-      </section>
-    );
-  }
 
   let wordIndex = 0;
   return (

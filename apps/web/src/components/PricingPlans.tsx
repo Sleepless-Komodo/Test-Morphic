@@ -16,7 +16,6 @@ import {
 } from 'framer-motion';
 import { ArrowUpRight, Check } from 'lucide-react';
 import { useTranslation } from '@/lib/i18n';
-import { useReducedMotionSafe } from '@/lib/use-reduced-motion-safe';
 
 const EASE = [0.16, 1, 0.3, 1] as const;
 const STACK_SPRING = { type: 'spring' as const, stiffness: 260, damping: 28, mass: 0.8 };
@@ -43,20 +42,15 @@ type Plan = {
 
 /** Counts the numeric part of a formatted price ("Rp 49,000") to its new value. */
 function RollingPrice({ price, locale }: { price: string; locale: string }) {
-  const reduced = useReducedMotionSafe();
   const target = Number(price.replace(/\D/g, ''));
   const prefix = price.match(/^\D*/)?.[0] ?? '';
   const value = useMotionValue(target);
   const text = useTransform(value, (v) => prefix + Math.round(v).toLocaleString(locale === 'en' ? 'en-US' : 'id-ID'));
 
   useEffect(() => {
-    if (reduced) {
-      value.set(target);
-      return;
-    }
     const c = animate(value, target, { duration: 0.7, ease: EASE });
     return () => c.stop();
-  }, [target, reduced, value]);
+  }, [target, value]);
 
   return <motion.span className="tabular-nums">{text}</motion.span>;
 }
@@ -133,7 +127,6 @@ function FanSlot({ offset, zIndex, enter, children }: { offset: number; zIndex: 
 
 export default function PricingPlans({ isLoggedIn = false, showPricingHubLink = true }: PricingPlansProps) {
   const { t, locale } = useTranslation();
-  const reduced = useReducedMotionSafe();
   const en = locale === 'en';
   const [mode, setMode] = useState<Mode>('credits');
   // Index the user picked; null falls back to the tier the copy marks popular.
@@ -143,9 +136,7 @@ export default function PricingPlans({ isLoggedIn = false, showPricingHubLink = 
   // Scroll-linked entrance: 0 as the section's top meets the bottom of the screen, 1 once it is well in.
   const sectionRef = useRef<HTMLElement>(null);
   const { scrollYProgress: enterRaw } = useScroll({ target: sectionRef, offset: ['start end', 'start 0.15'] });
-  const enterSpring = useSpring(enterRaw, { stiffness: 140, damping: 32, mass: 0.35 });
-  const settled = useMotionValue(1);
-  const enter = reduced ? settled : enterSpring;
+  const enter = useSpring(enterRaw, { stiffness: 140, damping: 32, mass: 0.35 });
   const descOpacity = useTransform(enter, [0.35, 0.7], [0, 1]);
   const descY = useTransform(enter, [0.35, 0.7], [16, 0]);
   const stageTilt = useTransform(enter, [0.3, 1], [32, 0]);
@@ -165,7 +156,7 @@ export default function PricingPlans({ isLoggedIn = false, showPricingHubLink = 
   const glare = useMotionTemplate`radial-gradient(420px circle at ${glareX} ${glareY}, rgba(255,255,255,0.16), transparent 55%)`;
 
   const onPointerMove = (e: PointerEvent<HTMLDivElement>) => {
-    if (reduced || e.pointerType !== 'mouse') return;
+    if (e.pointerType !== 'mouse') return;
     const r = e.currentTarget.getBoundingClientRect();
     px.set((e.clientX - r.left) / r.width);
     py.set((e.clientY - r.top) / r.height);
@@ -255,7 +246,7 @@ export default function PricingPlans({ isLoggedIn = false, showPricingHubLink = 
                   <motion.span
                     layoutId="pricing-tab"
                     className="absolute inset-0 rounded-full bg-neutral-950"
-                    transition={reduced ? { duration: 0 } : { type: 'spring', stiffness: 420, damping: 36 }}
+                    transition={{ type: 'spring', stiffness: 420, damping: 36 }}
                   />
                 )}
                 <span className="relative">{tab.label}</span>
@@ -283,14 +274,14 @@ export default function PricingPlans({ isLoggedIn = false, showPricingHubLink = 
                       tabIndex={-1}
                       aria-hidden={!front}
                       onClick={() => setPicked(i)}
-                      initial={reduced ? false : { opacity: 0, y: 40, scale: 0.9 }}
+                      initial={{ opacity: 0, y: 40, scale: 0.9 }}
                       animate={{
                         y: rel * -22,
                         scale: 1 - rel * 0.07,
                         opacity: rel > 2 ? 0 : 1 - rel * 0.3,
                         rotateZ: rel === 0 ? 0 : rel % 2 ? -2.5 : 2.5,
                       }}
-                      transition={reduced ? { duration: 0 } : STACK_SPRING}
+                      transition={STACK_SPRING}
                       className={`absolute inset-0 text-left ${front ? 'cursor-default' : 'cursor-pointer'} ${
                         front ? 'shadow-[0_30px_60px_-24px_rgba(10,10,10,0.55)]' : ''
                       } rounded-[22px]`}
@@ -329,7 +320,7 @@ export default function PricingPlans({ isLoggedIn = false, showPricingHubLink = 
                       <motion.span
                         layoutId={`pricing-pick-${mode}`}
                         className="absolute inset-0 rounded-full bg-neutral-950"
-                        transition={reduced ? { duration: 0 } : { type: 'spring', stiffness: 420, damping: 36 }}
+                        transition={{ type: 'spring', stiffness: 420, damping: 36 }}
                       />
                     )}
                     <span className="relative">{p.name}</span>
@@ -355,9 +346,9 @@ export default function PricingPlans({ isLoggedIn = false, showPricingHubLink = 
             <AnimatePresence mode="wait" initial={false}>
               <motion.div
                 key={`${mode}-${plan.name}`}
-                initial={reduced ? false : { opacity: 0, y: 12, filter: 'blur(6px)' }}
+                initial={{ opacity: 0, y: 12, filter: 'blur(6px)' }}
                 animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-                exit={reduced ? undefined : { opacity: 0, y: -8, filter: 'blur(6px)' }}
+                exit={{ opacity: 0, y: -8, filter: 'blur(6px)' }}
                 transition={{ duration: 0.35, ease: EASE }}
               >
                 <p className="mt-4 max-w-md text-[15px] leading-relaxed text-neutral-600">{plan.desc}</p>
@@ -373,7 +364,7 @@ export default function PricingPlans({ isLoggedIn = false, showPricingHubLink = 
                   {plan.features.map((f, i) => (
                     <motion.li
                       key={f}
-                      initial={reduced ? false : { opacity: 0, x: -10 }}
+                      initial={{ opacity: 0, x: -10 }}
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ duration: 0.4, delay: 0.06 + i * 0.05, ease: EASE }}
                       className="flex items-start gap-3 text-sm text-neutral-800"

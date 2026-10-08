@@ -4,7 +4,7 @@ import { useEffect, useRef } from 'react';
 
 // Morphic = shapes that morph. The hero background is a topographic contour field
 // of slowly drifting noise; the lines bend and brighten around the pointer.
-// One WebGL2 fragment shader, paused offscreen, one static frame under reduced motion.
+// One WebGL2 fragment shader, paused offscreen. Its drift is slow, so it runs under reduced motion too.
 
 const VERT = `#version 300 es
 in vec2 p;
@@ -103,7 +103,6 @@ export default function HeroContours({ className = '' }: { className?: string })
     const uMouse = gl.getUniformLocation(prog, 'uMouse');
     const uMouseOn = gl.getUniformLocation(prog, 'uMouseOn');
 
-    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const host = canvas.parentElement!;
     const mouse = { x: 0.5, y: 0.5, tx: 0.5, ty: 0.5, on: 0, ton: 0 };
     let frame = 0;
@@ -122,7 +121,6 @@ export default function HeroContours({ className = '' }: { className?: string })
       canvas.height = Math.round(canvas.clientHeight * dpr);
       gl.viewport(0, 0, canvas.width, canvas.height);
       gl.uniform2f(uRes, canvas.width, canvas.height);
-      if (reduced) draw(0);
     };
 
     const draw = (time: number) => {
@@ -146,7 +144,7 @@ export default function HeroContours({ className = '' }: { className?: string })
       frame = requestAnimationFrame(loop);
     };
     const kick = () => {
-      if (!reduced && !frame && visible && !document.hidden) frame = requestAnimationFrame(loop);
+      if (!frame && visible && !document.hidden) frame = requestAnimationFrame(loop);
     };
 
     const onMove = (e: PointerEvent) => {
@@ -168,10 +166,8 @@ export default function HeroContours({ className = '' }: { className?: string })
     });
     io.observe(canvas);
     document.addEventListener('visibilitychange', kick);
-    if (!reduced) {
-      host.addEventListener('pointermove', onMove);
-      host.addEventListener('pointerleave', onLeave);
-    }
+    host.addEventListener('pointermove', onMove);
+    host.addEventListener('pointerleave', onLeave);
     resize();
     kick();
 
