@@ -7,7 +7,7 @@ import PricingPlans from '@/components/PricingPlans';
 import PricingCalculator from '@/components/PricingCalculator';
 import PricingComparisonTable from '@/components/PricingComparisonTable';
 import PricingFaq from '@/components/PricingFaq';
-import LandingApiCta from '@/components/LandingApiCta';
+import ClosingKey from '@/components/ClosingKey';
 import Footer from '@/components/Footer';
 
 export const metadata = {
@@ -25,7 +25,7 @@ export default async function PricingPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#fafafa] text-neutral-900 selection:bg-neutral-900 selection:text-white flex flex-col justify-between overflow-x-hidden">
+    <main className="min-h-screen bg-[#fafafa] text-neutral-900 selection:bg-neutral-900 selection:text-white relative flex flex-col justify-between overflow-x-clip">
       {/* 1. Floating Navbar */}
       <Navbar session={session} />
 
@@ -41,8 +41,8 @@ export default async function PricingPage() {
       {/* 5. Dedicated Billing & Payment FAQ */}
       <PricingFaq />
 
-      {/* 6. High-Impact Dark Contrast Conversion Banner */}
-      <LandingApiCta isLoggedIn={!!session} />
+      {/* 6. Closing: every model into one key */}
+      <ClosingKey />
 
       {/* 7. Horizon Deck Footer */}
       <Footer />

@@ -212,7 +212,13 @@ export default function PricingPlans({ isLoggedIn = false, showPricingHubLink = 
   ];
 
   return (
-    <section ref={sectionRef} id="pricing" className="relative z-10 bg-[#fafafa] px-4 sm:px-6 py-20 lg:py-28 scroll-mt-20">
+    <section
+      ref={sectionRef}
+      id="pricing"
+      className={`relative z-10 bg-[#fafafa] px-4 sm:px-6 ${
+        showPricingHubLink ? 'py-20 lg:py-28' : 'pt-28 pb-20 sm:pt-36 sm:pb-24 lg:pt-40 lg:pb-28'
+      } scroll-mt-20`}
+    >
       <div className="mx-auto max-w-5xl">
         <div
           className="mb-12 flex flex-col gap-6 md:flex-row md:items-end md:justify-between"
