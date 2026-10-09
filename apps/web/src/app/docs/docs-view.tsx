@@ -149,7 +149,15 @@ function OsSelector({
   );
 }
 
-function CopyButton({ text, label }: { text: string; label?: string }) {
+function CopyButton({
+  text,
+  label,
+  compactOnMobile = true,
+}: {
+  text: string;
+  label?: string;
+  compactOnMobile?: boolean;
+}) {
   const [copied, setCopied] = useState(false);
   const { locale } = useTranslation();
   const isId = locale === 'id';
@@ -160,19 +168,35 @@ function CopyButton({ text, label }: { text: string; label?: string }) {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const defaultFullLabel = isId ? 'Salin Semua' : 'Copy All';
+  const defaultShortLabel = isId ? 'Salin' : 'Copy';
+  const displayFullLabel = label || defaultFullLabel;
+  const displayShortLabel = label || defaultShortLabel;
+
   return (
     <button
       type="button"
       onClick={handleCopy}
-      aria-label={label || (isId ? 'Salin Semua' : 'Copy All')}
+      aria-label={displayFullLabel}
       className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-700/80 bg-neutral-800 px-2 py-1 text-[11px] font-semibold text-neutral-300 transition-colors hover:bg-neutral-700 hover:text-white cursor-pointer shrink-0"
     >
       {copied ? (
-        <Check className="h-3 w-3 text-emerald-400" />
+        <Check className="h-3 w-3 text-emerald-400 shrink-0" />
       ) : (
-        <Copy className="h-3 w-3" />
+        <Copy className="h-3 w-3 shrink-0" />
       )}
-      <span>{copied ? (isId ? 'Tersalin' : 'Copied') : (label || (isId ? 'Salin Semua' : 'Copy All'))}</span>
+      {compactOnMobile ? (
+        <>
+          <span className="hidden sm:inline">
+            {copied ? (isId ? 'Tersalin' : 'Copied') : displayFullLabel}
+          </span>
+          <span className="sm:hidden">
+            {copied ? (isId ? 'Tersalin' : 'Copied') : displayShortLabel}
+          </span>
+        </>
+      ) : (
+        <span>{copied ? (isId ? 'Tersalin' : 'Copied') : displayFullLabel}</span>
+      )}
     </button>
   );
 }
@@ -188,83 +212,42 @@ function CodeBlock({
 }) {
   const { locale } = useTranslation();
   const isId = locale === 'id';
-  const [copiedLineIndex, setCopiedLineIndex] = useState<number | null>(null);
-
-  const lines = code.split('\n');
-  const isMultiLine = lines.length > 1;
   const isShell = ['bash', 'sh', 'shell', 'zsh', 'powershell', 'cmd'].includes((language ?? '').toLowerCase());
-
-  const handleCopyLine = (index: number, lineText: string) => {
-    // Strip terminal prompt symbols ($ or >) if present at start
-    const cleaned = lineText.replace(/^\s*[$>]\s+/, '').trimEnd();
-    navigator.clipboard.writeText(cleaned);
-    setCopiedLineIndex(index);
-    setTimeout(() => setCopiedLineIndex(null), 1800);
-  };
 
   return (
     <div className="rounded-xl bg-neutral-950 border border-neutral-800/90 overflow-hidden text-neutral-200 shadow-2xs my-3 group/block">
-      <div className="flex items-center justify-between px-3.5 py-2 border-b border-neutral-800/80 bg-neutral-900/60">
-        <div className="flex items-center gap-2">
-          <div className="flex gap-1.5">
+      <div className="flex items-center justify-between gap-2 px-3 sm:px-3.5 py-2 border-b border-neutral-800/80 bg-neutral-900/60 min-w-0">
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          <div className="flex gap-1.5 shrink-0" aria-hidden="true">
             <div className="w-2.5 h-2.5 rounded-full bg-[#ff5f56] border border-[#e0443e]/50" />
             <div className="w-2.5 h-2.5 rounded-full bg-[#ffbd2e] border border-[#dea123]/50" />
             <div className="w-2.5 h-2.5 rounded-full bg-[#27c93f] border border-[#1aab29]/50" />
           </div>
           {filename && (
-            <span className="font-mono text-[11px] text-neutral-500 font-medium ml-2">
+            <span
+              title={filename}
+              className="font-mono text-[11px] text-neutral-400 font-medium ml-1 truncate max-w-[150px] xs:max-w-[200px] sm:max-w-xs md:max-w-md block"
+            >
               {filename}
             </span>
           )}
         </div>
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2 shrink-0">
           {language && (
-            <span className="text-[10px] font-mono uppercase tracking-wider text-neutral-500 font-semibold">
+            <span className="text-[10px] font-mono uppercase tracking-wider text-neutral-500 font-semibold hidden sm:inline">
               {language}
             </span>
           )}
           <CopyButton text={code} label={isId ? 'Salin Semua' : 'Copy All'} />
         </div>
       </div>
-      {isShell && isMultiLine ? (
-        // Shell: copy one command at a time. Lines wrap rather than scroll, and the
-        // button is select-none so it never ends up in copied text.
-        <div className="p-3 sm:p-4 font-mono text-xs leading-relaxed">
-          {lines.map((line, idx) => {
-            const canCopy = line.trim().length > 0 && !/^\s*(#|\/\/|REM\b|::)/i.test(line);
-            return (
-              <div
-                key={idx}
-                className="group/line flex items-start gap-2 -mx-3 sm:-mx-4 px-3 sm:px-4 py-0.5 rounded hover:bg-neutral-900/90 transition-colors"
-              >
-                <code className="flex-1 min-w-0 whitespace-pre-wrap break-words text-neutral-200 selection:bg-neutral-800">
-                  {line || ' '}
-                </code>
-                {canCopy && (
-                  <button
-                    type="button"
-                    onClick={() => handleCopyLine(idx, line)}
-                    aria-label={isId ? `Salin baris ${idx + 1}` : `Copy line ${idx + 1}`}
-                    title={isId ? 'Salin baris ini' : 'Copy this line'}
-                    className={`select-none shrink-0 grid place-items-center w-5 h-5 rounded-md border transition cursor-pointer focus-visible:opacity-100 ${
-                      copiedLineIndex === idx
-                        ? 'opacity-100 bg-emerald-950/80 border-emerald-500/50 text-emerald-400'
-                        : 'opacity-0 group-hover/line:opacity-100 bg-neutral-900 border-neutral-700/80 text-neutral-400 hover:text-white hover:border-neutral-600'
-                    }`}
-                  >
-                    {copiedLineIndex === idx ? <Check className="w-2.5 h-2.5" /> : <Copy className="w-2.5 h-2.5" />}
-                  </button>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      ) : (
-        // Everything else (JSON, code, configs) is one block with a single scroll, if it needs one.
-        <pre className="p-3 sm:p-4 overflow-x-auto font-mono text-xs leading-relaxed text-neutral-200 selection:bg-neutral-800 m-0">
-          <code>{code}</code>
-        </pre>
-      )}
+      <pre
+        className={`p-3.5 sm:p-4 font-mono text-xs leading-relaxed text-neutral-200 selection:bg-white/20 selection:text-white select-text m-0 ${
+          isShell ? 'whitespace-pre-wrap break-words' : 'overflow-x-auto'
+        }`}
+      >
+        <code>{code}</code>
+      </pre>
     </div>
   );
 }
@@ -461,7 +444,7 @@ claude "Analyze this repository architecture"`,
             menuPath: 'Command Prompt (CMD)',
             code: `set MORPHIC_API_KEY=mp-xxxxxxxxxxxxxxxxxxxx
 powershell -NoProfile -ExecutionPolicy Bypass -Command "$env:MORPHIC_API_KEY='%MORPHIC_API_KEY%'; irm ${QUICKSTART_URL}/opencode.ps1 | iex"`,
-            extraFile: 'opencode.json (manual, optional)',
+            extraFile: 'opencode.json (opsional)',
             extraLanguage: 'json',
             extraCode: config,
           }
@@ -471,7 +454,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "$env:MORPHIC_API_KEY='%M
             menuPath: 'Windows PowerShell',
             code: `$env:MORPHIC_API_KEY = "mp-xxxxxxxxxxxxxxxxxxxx"
 irm ${QUICKSTART_URL}/opencode.ps1 | iex`,
-            extraFile: 'opencode.json (manual, optional)',
+            extraFile: 'opencode.json (opsional)',
             extraLanguage: 'json',
             extraCode: config,
           };
@@ -485,7 +468,7 @@ irm ${QUICKSTART_URL}/opencode.ps1 | iex`,
       menuPath: os === 'macos' ? 'macOS Terminal → paste → opencode' : 'Linux Terminal → paste → opencode',
       code: `export MORPHIC_API_KEY=mp-xxxxxxxxxxxxxxxxxxxx
 curl -fsSL ${QUICKSTART_URL}/opencode.sh | bash`,
-      extraFile: 'opencode.json (manual, optional)',
+      extraFile: 'opencode.json (opsional)',
       extraLanguage: 'json',
       extraCode: config,
     };
@@ -594,7 +577,7 @@ hermes --model deepseek-v4`,
       file: 'continue.config.json',
       language: 'json',
       code: continueConfig,
-      extraFile: 'cline_settings.json (ekstensi Cline / Roo Code)',
+      extraFile: 'cline_settings.json (Cline / Roo)',
       extraLanguage: 'json',
       extraCode: clineConfig,
     };
@@ -1227,11 +1210,11 @@ curl ${CHAT_URL} \\
           {sidebarNav}
         </aside>
 
-        {/* Mobile Floating Drawer Button */}
+        {/* Mobile Floating Drawer Button (High contrast white pill that never blends into dark code blocks) */}
         <button
           type="button"
           onClick={() => setMobileSidebarOpen(true)}
-          className="lg:hidden fixed bottom-6 left-6 z-40 px-3.5 py-2.5 rounded-full bg-neutral-950 text-white shadow-2xl cursor-pointer hover:bg-neutral-800 transition flex items-center gap-2 text-xs font-bold"
+          className="lg:hidden fixed bottom-6 left-6 z-40 px-3.5 py-2.5 rounded-full bg-white text-neutral-950 border-2 border-neutral-300 shadow-2xl hover:bg-neutral-50 hover:border-neutral-400 ring-2 ring-black/5 transition flex items-center gap-2 text-xs font-bold cursor-pointer"
           aria-label="Open Documentation Table of Contents"
         >
           <Menu className="h-4 w-4" />

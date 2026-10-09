@@ -55,33 +55,201 @@ function RollingPrice({ price, locale }: { price: string; locale: string }) {
   return <motion.span className="tabular-nums">{text}</motion.span>;
 }
 
-/** The plan as a physical pass: what you get, big, on a black card. */
-function PassCard({ plan, kind }: { plan: Plan; kind: string }) {
+interface TierMaterial {
+  background: string;
+  borderColor: string;
+  radialHighlight: string;
+  sheenOverlay: string;
+  kindClass: string;
+  brandTextClass: string;
+  logoRing: string;
+  titleClass: string;
+  amountClass: string;
+  unitClass: string;
+  priceClass: string;
+}
+
+function getTierMaterial(mode: Mode, index: number, name: string): TierMaterial {
+  const n = name.toLowerCase();
+
+  if (mode === 'credits') {
+    // 1. Starter Dev: Cool Titanium Silver
+    if (n.includes('starter') || index === 0) {
+      return {
+        background: 'linear-gradient(145deg, #161c24 0%, #0d1117 100%)',
+        borderColor: 'rgba(203, 213, 225, 0.22)',
+        radialHighlight: 'radial-gradient(ellipse 70% 60% at 0% 0%, rgba(226, 232, 240, 0.18), transparent 70%)',
+        sheenOverlay:
+          'linear-gradient(115deg, transparent 0%, rgba(255, 255, 255, 0.02) 40%, rgba(255, 255, 255, 0.07) 50%, rgba(255, 255, 255, 0.01) 60%, transparent 100%)',
+        kindClass: 'text-slate-300 border-slate-400/25 bg-slate-400/10',
+        brandTextClass: 'text-slate-100',
+        logoRing: 'ring-1 ring-slate-400/25',
+        titleClass: 'text-slate-100',
+        amountClass: 'text-white',
+        unitClass: 'text-slate-400',
+        priceClass: 'text-slate-300',
+      };
+    }
+    // 2. Pro Agent: Champagne Obsidian Gold
+    if (n.includes('pro') || index === 1) {
+      return {
+        background: 'linear-gradient(145deg, #1b1610 0%, #0d0a07 100%)',
+        borderColor: 'rgba(245, 158, 11, 0.28)',
+        radialHighlight: 'radial-gradient(ellipse 70% 60% at 0% 0%, rgba(251, 191, 36, 0.18), transparent 70%)',
+        sheenOverlay:
+          'linear-gradient(115deg, transparent 0%, rgba(245, 158, 11, 0.03) 40%, rgba(251, 191, 36, 0.08) 50%, rgba(245, 158, 11, 0.02) 60%, transparent 100%)',
+        kindClass: 'text-amber-300 border-amber-500/25 bg-amber-500/10',
+        brandTextClass: 'text-amber-100',
+        logoRing: 'ring-1 ring-amber-500/30',
+        titleClass: 'text-amber-100',
+        amountClass: 'text-amber-50',
+        unitClass: 'text-amber-200/70',
+        priceClass: 'text-amber-200/90',
+      };
+    }
+    // 3. Heavy Coder: Void Onyx Black
+    return {
+      background: 'linear-gradient(145deg, #0e0e11 0%, #050506 100%)',
+      borderColor: 'rgba(255, 255, 255, 0.16)',
+      radialHighlight: 'radial-gradient(ellipse 70% 60% at 0% 0%, rgba(255, 255, 255, 0.12), transparent 70%)',
+      sheenOverlay:
+        'linear-gradient(115deg, transparent 0%, rgba(255, 255, 255, 0.02) 40%, rgba(255, 255, 255, 0.06) 50%, rgba(255, 255, 255, 0.01) 60%, transparent 100%)',
+      kindClass: 'text-neutral-300 border-white/10 bg-white/5',
+      brandTextClass: 'text-neutral-100',
+      logoRing: 'ring-1 ring-white/15',
+      titleClass: 'text-neutral-100',
+      amountClass: 'text-white',
+      unitClass: 'text-neutral-400',
+      priceClass: 'text-neutral-300',
+    };
+  }
+
+  // Daily pass tiers
+  if (n.includes('all-access') || index === 3) {
+    return {
+      background: 'linear-gradient(145deg, #1b1610 0%, #0d0a07 100%)',
+      borderColor: 'rgba(245, 158, 11, 0.28)',
+      radialHighlight: 'radial-gradient(ellipse 70% 60% at 0% 0%, rgba(251, 191, 36, 0.18), transparent 70%)',
+      sheenOverlay:
+        'linear-gradient(115deg, transparent 0%, rgba(245, 158, 11, 0.03) 40%, rgba(251, 191, 36, 0.08) 50%, rgba(245, 158, 11, 0.02) 60%, transparent 100%)',
+      kindClass: 'text-amber-300 border-amber-500/25 bg-amber-500/10',
+      brandTextClass: 'text-amber-100',
+      logoRing: 'ring-1 ring-amber-500/30',
+      titleClass: 'text-amber-100',
+      amountClass: 'text-amber-50',
+      unitClass: 'text-amber-200/70',
+      priceClass: 'text-amber-200/90',
+    };
+  }
+  if (n.includes('r1') || index === 2) {
+    return {
+      background: 'linear-gradient(145deg, #0e1715 0%, #060d0b 100%)',
+      borderColor: 'rgba(20, 184, 166, 0.22)',
+      radialHighlight: 'radial-gradient(ellipse 70% 60% at 0% 0%, rgba(20, 184, 166, 0.14), transparent 70%)',
+      sheenOverlay:
+        'linear-gradient(115deg, transparent 0%, rgba(20, 184, 166, 0.03) 40%, rgba(20, 184, 166, 0.06) 50%, transparent 100%)',
+      kindClass: 'text-teal-300 border-teal-500/20 bg-teal-500/10',
+      brandTextClass: 'text-teal-100',
+      logoRing: 'ring-1 ring-teal-500/25',
+      titleClass: 'text-teal-100',
+      amountClass: 'text-teal-50',
+      unitClass: 'text-teal-200/70',
+      priceClass: 'text-teal-200/90',
+    };
+  }
+  if (n.includes('qwen') || index === 1) {
+    return {
+      background: 'linear-gradient(145deg, #14121d 0%, #0a0912 100%)',
+      borderColor: 'rgba(168, 85, 247, 0.22)',
+      radialHighlight: 'radial-gradient(ellipse 70% 60% at 0% 0%, rgba(168, 85, 247, 0.14), transparent 70%)',
+      sheenOverlay:
+        'linear-gradient(115deg, transparent 0%, rgba(168, 85, 247, 0.03) 40%, rgba(168, 85, 247, 0.06) 50%, transparent 100%)',
+      kindClass: 'text-purple-300 border-purple-500/20 bg-purple-500/10',
+      brandTextClass: 'text-purple-100',
+      logoRing: 'ring-1 ring-purple-500/25',
+      titleClass: 'text-purple-100',
+      amountClass: 'text-purple-50',
+      unitClass: 'text-purple-200/70',
+      priceClass: 'text-purple-200/90',
+    };
+  }
+  return {
+    background: 'linear-gradient(145deg, #101622 0%, #080c14 100%)',
+    borderColor: 'rgba(148, 163, 184, 0.22)',
+    radialHighlight: 'radial-gradient(ellipse 70% 60% at 0% 0%, rgba(148, 163, 184, 0.14), transparent 70%)',
+    sheenOverlay:
+      'linear-gradient(115deg, transparent 0%, rgba(148, 163, 184, 0.03) 40%, rgba(148, 163, 184, 0.06) 50%, transparent 100%)',
+    kindClass: 'text-slate-300 border-slate-400/20 bg-slate-400/10',
+    brandTextClass: 'text-slate-100',
+    logoRing: 'ring-1 ring-slate-400/25',
+    titleClass: 'text-slate-100',
+    amountClass: 'text-white',
+    unitClass: 'text-slate-400',
+    priceClass: 'text-slate-300',
+  };
+}
+
+/** The plan as a physical metallic pass with tier-specific finishes. */
+function PassCard({
+  plan,
+  kind,
+  mode,
+  index,
+}: {
+  plan: Plan;
+  kind: string;
+  mode: Mode;
+  index: number;
+}) {
+  const mat = getTierMaterial(mode, index, plan.name);
+
   return (
-    <div className="relative flex h-full flex-col justify-between overflow-hidden rounded-[22px] border border-white/10 bg-[#0a0a0a] p-6 sm:p-7 text-white">
+    <div
+      className="relative flex h-full flex-col justify-between overflow-hidden rounded-[22px] border p-6 sm:p-7 text-white shadow-inner"
+      style={{
+        background: mat.background,
+        borderColor: mat.borderColor,
+      }}
+    >
       <div
         aria-hidden="true"
         className="pointer-events-none absolute inset-0"
-        style={{ background: 'radial-gradient(ellipse 70% 60% at 0% 0%, rgba(255,255,255,0.14), transparent 70%)' }}
+        style={{ background: mat.radialHighlight }}
+      />
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0"
+        style={{ background: mat.sheenOverlay }}
       />
       <div className="relative flex items-center justify-between">
         <span className="flex items-center gap-2.5">
-          <span className="relative h-8 w-8 overflow-hidden rounded-lg">
+          <span className={`relative h-8 w-8 overflow-hidden rounded-lg ${mat.logoRing}`}>
             <Image src="/morphic-symbol.jpg" alt="" fill sizes="32px" className="object-cover scale-[1.9]" />
           </span>
-          <span className="text-sm font-semibold">Morphic</span>
+          <span className={`text-sm font-semibold tracking-tight ${mat.brandTextClass}`}>Morphic</span>
         </span>
-        <span className="font-mono text-[11px] tracking-[0.14em] text-neutral-400">{kind}</span>
+        <span
+          className={`font-mono text-[10px] sm:text-[11px] tracking-[0.14em] uppercase font-medium px-2.5 py-0.5 rounded-full border backdrop-blur-sm ${mat.kindClass}`}
+        >
+          {kind}
+        </span>
       </div>
 
       <div className="relative">
-        <div className="font-mono text-4xl sm:text-5xl font-semibold tracking-tight tabular-nums">{plan.amount}</div>
-        <div className="mt-1 text-sm text-neutral-400">{plan.unit}</div>
+        <div className={`font-mono text-4xl sm:text-5xl font-semibold tracking-tight tabular-nums ${mat.amountClass}`}>
+          {plan.amount}
+        </div>
+        <div className={`mt-1 text-sm font-medium ${mat.unitClass}`}>{plan.unit}</div>
       </div>
 
-      <div className="relative flex items-end justify-between gap-4">
-        <span className="text-base font-semibold">{plan.name}</span>
-        <span className="font-mono text-sm text-neutral-300">{plan.price}</span>
+      <div className="relative flex items-end justify-between gap-4 pt-2.5 border-t border-white/[0.08]">
+        <div className="min-w-0">
+          <span className={`block text-base font-semibold truncate ${mat.titleClass}`}>{plan.name}</span>
+          <span className="block text-[10px] font-mono tracking-wider text-neutral-400 uppercase">Authorized Pass</span>
+        </div>
+        <span className={`font-mono text-sm sm:text-base font-semibold tabular-nums whitespace-nowrap ${mat.priceClass}`}>
+          {plan.price}
+        </span>
       </div>
     </div>
   );
@@ -283,16 +451,17 @@ export default function PricingPlans({ isLoggedIn = false, showPricingHubLink = 
                       initial={{ opacity: 0, y: 40, scale: 0.9 }}
                       animate={{
                         y: rel * -22,
-                        scale: 1 - rel * 0.07,
-                        opacity: rel > 2 ? 0 : 1 - rel * 0.3,
+                        scale: 1 - rel * 0.06,
+                        opacity: rel > 2 ? 0 : 1,
+                        filter: rel === 0 ? 'brightness(1)' : 'brightness(0.82)',
                         rotateZ: rel === 0 ? 0 : rel % 2 ? -2.5 : 2.5,
                       }}
                       transition={STACK_SPRING}
                       className={`absolute inset-0 text-left ${front ? 'cursor-default' : 'cursor-pointer'} ${
-                        front ? 'shadow-[0_30px_60px_-24px_rgba(10,10,10,0.55)]' : ''
+                        front ? 'shadow-[0_30px_60px_-24px_rgba(10,10,10,0.55)]' : 'shadow-[0_12px_28px_-10px_rgba(0,0,0,0.4)]'
                       } rounded-[22px]`}
                     >
-                      <PassCard plan={p} kind={kind} />
+                      <PassCard plan={p} kind={kind} mode={mode} index={i} />
                       {front && (
                         <motion.span
                           aria-hidden="true"
