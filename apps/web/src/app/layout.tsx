@@ -1,11 +1,47 @@
 import type { Metadata, Viewport } from 'next';
 import { cookies, headers } from 'next/headers';
+import NavigationProgress from '@/components/NavigationProgress';
 import { LanguageProvider, Locale } from '@/lib/i18n';
 import './globals.css';
 
 export const metadata: Metadata = {
+  metadataBase: new URL('https://morphic.cloud'),
   title: 'Morphic: Satu API untuk Berbagai Model AI',
-  description: 'Akses API Claude 3.5, DeepSeek V4, Qwen Max, dan Kimi melalui satu endpoint OpenAI-compatible dengan pembayaran QRIS lokal.',
+  description:
+    'Akses API Claude 3.5, DeepSeek V4, Qwen Max, dan Kimi melalui satu endpoint OpenAI-compatible dengan pembayaran QRIS lokal.',
+  icons: {
+    icon: [
+      { url: '/favicon.svg', type: 'image/svg+xml' },
+      { url: '/favicon.ico', sizes: 'any' },
+      { url: '/icon.png', type: 'image/png', sizes: '128x128' },
+    ],
+    shortcut: '/favicon.svg',
+    apple: '/icon.png',
+  },
+  openGraph: {
+    title: 'Morphic: Satu API untuk Berbagai Model AI',
+    description:
+      'Akses API Claude 3.5, DeepSeek V4, Qwen Max, dan Kimi melalui satu endpoint OpenAI-compatible dengan pembayaran QRIS lokal.',
+    url: 'https://morphic.cloud',
+    siteName: 'Morphic AI Gateway',
+    images: [
+      {
+        url: '/morphic-symbol.jpg',
+        width: 1024,
+        height: 824,
+        alt: 'Morphic Logo',
+      },
+    ],
+    locale: 'id_ID',
+    type: 'website',
+  },
+  twitter: {
+    card: 'summary',
+    title: 'Morphic: Satu API untuk Berbagai Model AI',
+    description:
+      'Akses API Claude 3.5, DeepSeek V4, Qwen Max, dan Kimi melalui satu endpoint OpenAI-compatible dengan pembayaran QRIS lokal.',
+    images: ['/morphic-symbol.jpg'],
+  },
 };
 
 export const viewport: Viewport = {
@@ -34,6 +70,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         />
       </head>
       <body className="bg-[#fafafa] text-neutral-900 antialiased selection:bg-neutral-900 selection:text-white font-body min-h-screen">
+        <NavigationProgress />
         <LanguageProvider initialLocale={initialLocale}>{children}</LanguageProvider>
       </body>
     </html>

@@ -258,7 +258,41 @@ export function DashboardShell({ session, balance, isAdmin = false, children }: 
   );
 
   return (
-    <div className="min-h-screen bg-[#fafafa] text-neutral-900 font-body selection:bg-neutral-900 selection:text-white flex items-start">
+    <div className="min-h-screen bg-[#fafafa] text-neutral-900 font-body selection:bg-neutral-900 selection:text-white flex flex-col lg:flex-row items-stretch lg:items-start">
+      {/* Mobile Top Header (Sticky) */}
+      <header className="lg:hidden sticky top-0 z-30 w-full flex items-center justify-between px-4 py-3 bg-white/95 backdrop-blur-md border-b border-neutral-200/90 shadow-2xs">
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setMobileNavOpen(true)}
+            className="p-2 -ml-1 rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-800 hover:text-neutral-950 hover:bg-neutral-100 transition-colors cursor-pointer"
+            aria-label="Open Navigation Menu"
+          >
+            <Menu className="h-5 w-5" />
+          </button>
+          <Link href="/" className="flex items-center">
+            <Image
+              src="/morphic-brand-clean.png"
+              alt="Morphic logo"
+              width={100}
+              height={24}
+              priority
+              className="h-5.5 w-auto object-contain"
+            />
+          </Link>
+        </div>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/dashboard/billing"
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-neutral-100 border border-neutral-200 text-xs font-mono font-semibold text-neutral-800 hover:bg-neutral-200/70 transition-colors"
+          >
+            <Coins className="w-3.5 h-3.5 text-neutral-600" />
+            <span>{formatCredits(balance)}</span>
+          </Link>
+          <LanguageToggle />
+        </div>
+      </header>
+
       {/* Desktop Sidebar */}
       <aside className="hidden lg:flex w-64 shrink-0 flex-col sticky top-0 h-screen overflow-y-auto bg-white border-r border-neutral-200/90 py-4">
         {sidebarContent}
@@ -269,11 +303,11 @@ export function DashboardShell({ session, balance, isAdmin = false, children }: 
         <div className="w-full max-w-7xl mx-auto">{children}</div>
       </main>
 
-      {/* Mobile: Floating Menu Button */}
+      {/* Mobile: Floating Menu Button (High contrast, clearly visible over dark cURL/CLI cards) */}
       <button
         type="button"
         onClick={() => setMobileNavOpen(true)}
-        className="lg:hidden fixed bottom-5 left-5 z-40 p-3 rounded-full bg-neutral-950 text-white shadow-2xl cursor-pointer hover:bg-neutral-800 transition-colors"
+        className="lg:hidden fixed bottom-5 left-5 z-40 p-3 rounded-full bg-white text-neutral-950 border-2 border-neutral-300 shadow-2xl hover:bg-neutral-100 hover:border-neutral-400 ring-2 ring-black/5 transition-all cursor-pointer"
         aria-label="Open Navigation Menu"
       >
         <Menu className="h-5 w-5" />
