@@ -43,17 +43,27 @@ app.use(
 app.use('/v1/*', requestId);
 
 app.onError((err, c) => {
-  console.error('[API Error]:', err);
-
   if (err instanceof HTTPException) {
-    return err.getResponse();
+    // HTTPException is thrown intentionally (auth, validation, etc.) — safe to surface.
+    return c.json(
+      {
+        error: {
+          message: err.message,
+          type: 'internal_error',
+          code: 'internal_error',
+        },
+      },
+      err.status,
+    );
   }
 
-  const isDev = process.env.NODE_ENV !== 'production';
+  // Unexpected errors: log server-side, return generic message regardless of NODE_ENV.
+  // Previously used `NODE_ENV !== 'production'` which leaked messages when NODE_ENV was unset.
+  console.error('[API Error]:', err);
   return c.json(
     {
       error: {
-        message: isDev ? err.message : 'Internal Server Error',
+        message: 'Internal Server Error',
         type: 'internal_error',
         code: 'internal_error',
       },

@@ -26,14 +26,18 @@ async function activeModels() {
   return models;
 }
 
+// Strict allowlist: hostname labels + optional port. Rejects any shell metacharacters
+// (quotes, semicolons, backticks, $, spaces, etc.) before they reach script templates.
+const SAFE_HOST_RE = /^[a-zA-Z0-9.-]+(:[0-9]{1,5})?$/;
+
 const gatewayBase = (c: { req: { url: string; header: (name: string) => string | undefined } }) => {
   if (process.env.NEXT_PUBLIC_GATEWAY_URL) {
     return `${process.env.NEXT_PUBLIC_GATEWAY_URL.replace(/\/+$/, '')}/v1`;
   }
-  const host = c.req.header('x-forwarded-host') || c.req.header('host');
+  const rawHost = c.req.header('x-forwarded-host') || c.req.header('host');
   const proto = c.req.header('x-forwarded-proto') || (c.req.url.startsWith('https') ? 'https' : 'http');
-  if (host) {
-    return `${proto}://${host}/v1`;
+  if (rawHost && SAFE_HOST_RE.test(rawHost)) {
+    return `${proto}://${rawHost}/v1`;
   }
   return `${new URL(c.req.url).origin.replace(/\/+$/, '')}/v1`;
 };
@@ -121,7 +125,7 @@ echo "  Run: opencode   then pick a model with /models"
 
   return c.body(script, 200, {
     'Content-Type': 'text/x-shellscript; charset=utf-8',
-    'Cache-Control': 'public, max-age=60',
+    'Cache-Control': 'private, no-store',
   });
 });
 
@@ -207,7 +211,7 @@ ${modelsJson}
 
   return c.body(script, 200, {
     'Content-Type': 'text/plain; charset=utf-8',
-    'Cache-Control': 'public, max-age=60',
+    'Cache-Control': 'private, no-store',
   });
 });
 

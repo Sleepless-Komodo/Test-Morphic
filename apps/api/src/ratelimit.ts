@@ -117,8 +117,22 @@ export async function trackConcurrency(
   const token = `${Date.now()}:${Math.random().toString(36).slice(2)}`;
   const setKey = `cc:${keyId}`;
   const now = Date.now();
-  const minTimestamp = now - CONCURRENCY_TTL_SECONDS * 1000;
 
+  // RedisRateLimitStore: use the atomic Lua acquire to eliminate the TOCTOU race
+  // where two concurrent callers both read count < max and both get admitted.
+  // InMemoryRateLimitStore: the JS event loop is single-threaded so the two-step
+  // is effectively atomic in-process; no change needed there.
+  if ('acquireConcurrency' in rateLimitStore) {
+    const { RedisRateLimitStore } = await import('./lib/redis-store');
+    if (rateLimitStore instanceof RedisRateLimitStore) {
+      const acquired = await rateLimitStore.acquireConcurrency(
+        setKey, token, now, max, CONCURRENCY_TTL_SECONDS,
+      );
+      return { acquired, token };
+    }
+  }
+
+  const minTimestamp = now - CONCURRENCY_TTL_SECONDS * 1000;
   const current = await rateLimitStore.getConcurrency(setKey, minTimestamp);
   if (current >= max) {
     return { acquired: false, token };
