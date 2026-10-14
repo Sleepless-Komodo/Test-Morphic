@@ -691,6 +691,8 @@ payments.get('/paypal/verify/:paymentId', async (c) => {
           return c.json({ status: 'pending', message: 'Payment is being verified.' });
         }
 
+        if (order.captureId) await saveCaptureId(paymentId, order.captureId);
+
         // Rescue path: processPaymentSuccess can rescue open, failed, or expired payment rows to 'paid'
         const res = await fulfilPayment(paymentId);
         if (res.success) {

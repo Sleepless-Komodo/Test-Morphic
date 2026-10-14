@@ -154,6 +154,13 @@ async function capture(token: string, orderId: string, paymentId: string) {
   });
 }
 
+async function verify(token: string, paymentId: string) {
+  return app.request(`/v1/payments/paypal/verify/${paymentId}`, {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
 async function refetch(id: string) {
   const [row] = await db.select().from(s.payments).where(eq(s.payments.id, id));
   return row;
@@ -364,4 +371,37 @@ test('T6: a capture whose order binding mismatches is flagged for review and not
 
   assert.equal((await refetch(payment.id))?.status, 'needs_review');
   assert.equal(await getBalance(user.id), 0);
+});
+
+test('P5-2: verify route recovers a paid payment, grants credits once, and persists capture_id', { timeout: 30000 }, async () => {
+  const { user, payment, token } = await mkPaypal({ status: 'pending' });
+  const captureId = `CAP-VERIFY-${Date.now()}`;
+
+  await withPaypal(
+    {
+      onCapture: () => new Response('{}', { status: 200 }),
+      getOrderBody: () => {
+        const order = paidOrder(payment.externalId!, payment.id, '50.00') as any;
+        order.purchase_units[0].payments.captures[0].id = captureId;
+        return order;
+      },
+    },
+    async () => {
+      const res = await verify(token, payment.id);
+      assert.equal(res.status, 200);
+      const body = await res.json();
+      assert.equal(body.status, 'paid');
+      assert.equal(body.recovered, true);
+    },
+  );
+
+  const updated = await refetch(payment.id);
+  assert.equal(updated?.status, 'paid');
+  assert.equal(updated?.captureId, captureId, 'captureId must be persisted by the verify route');
+  assert.equal(await getBalance(user.id), payment.credits);
+
+  // Calling verify again when already paid must be idempotent and not grant double credits
+  const res2 = await verify(token, payment.id);
+  assert.equal(res2.status, 200);
+  assert.equal(await getBalance(user.id), payment.credits);
 });
