@@ -10,7 +10,7 @@ import { redeem } from './routes/redeem';
 import { catalog } from './routes/catalog';
 import { quickstart } from './routes/quickstart';
 import { requestId } from './middleware/request-id';
-import { getTrustedClientIp } from './lib/ip';
+import { getTrustedClientIp, isLoopbackIp } from './lib/ip';
 import { checkRateLimit } from './ratelimit';
 
 const app = new Hono();
@@ -21,8 +21,8 @@ const app = new Hono();
 const WEBHOOK_IP_RPM = Number(process.env.WEBHOOK_IP_RPM ?? 120);
 app.use('/webhooks/*', async (c, next) => {
   const ip = getTrustedClientIp(c);
-  // No resolvable IP means every such caller shares one bucket; skip rather than block them all.
-  if (ip !== 'unknown') {
+  // No resolvable IP or loopback address means callers would share one bucket; skip rather than block them all.
+  if (ip !== 'unknown' && !isLoopbackIp(ip)) {
     const rl = await checkRateLimit(ip, WEBHOOK_IP_RPM, 'rlwh');
     if (!rl.ok) {
       c.header('Retry-After', String(rl.retryAfter));
