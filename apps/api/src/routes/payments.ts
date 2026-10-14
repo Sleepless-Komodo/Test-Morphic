@@ -391,6 +391,7 @@ payments.post('/paypal/create-order', async (c) => {
 
   // Step 4: Determine USD cents amount (IDR packages converted at IDR_PER_USD)
   const usdAmountCents = packagePriceUsdCents(pkg.priceCents, pkg.currency);
+  const paymentCurrency = 'USD' as const;
 
   // Step 5: Generate idempotency key & insert new pending payment row
   const idempotencyKey = randomUUID();
@@ -403,20 +404,20 @@ payments.post('/paypal/create-order', async (c) => {
       externalId: `temp:${idempotencyKey}`,
       packageId: pkg.id,
       amountCents: usdAmountCents,
-      currency: 'USD',
+      currency: paymentCurrency,
       credits: pkg.creditAllowance ?? 0,
       status: 'pending',
     })
     .returning();
 
-  // Step 5: Call PayPal createOrder API
-  const amountStr = paypal.centsToPaypalAmount(usdAmountCents);
+  // Step 6: Call PayPal createOrder API using the exact integer cents stored on the row
+  const amountStr = paypal.centsToPaypalAmount(payment.amountCents);
 
   let paypalResult;
   try {
     paypalResult = await paypal.createOrder({
       amount: amountStr,
-      currency: 'USD',
+      currency: paymentCurrency,
       paymentId: payment.id,
       idempotencyKey,
     });
