@@ -22,12 +22,46 @@ export interface AlertConfig {
 const lastAlertMap = new Map<string, number>();
 
 /**
+ * Escapes characters that have special meaning in Telegram HTML parse mode.
+ * Order is strictly: & -> &amp;, then < -> &lt;, then > -> &gt;.
+ */
+export function escapeTelegramHtml(str: string): string {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/**
+ * Sanitizes an alert message for Telegram HTML parse mode.
+ * Preserves intentional allowed Telegram HTML tags (<b>, <code>, <i>, <a>, etc.)
+ * while escaping raw <, >, and & in all dynamic/untrusted text segments.
+ */
+export function sanitizeTelegramHtml(html: string): string {
+  const tagRegex = /<\/?(?:b|strong|i|em|u|ins|s|strike|del|span|tg-spoiler|code|pre|blockquote)(?:\s+[^>]*)?>|<a(?:\s+href="[^"]*")?\s*>|<\/a>/gi;
+  let lastIndex = 0;
+  let result = '';
+  let match: RegExpExecArray | null;
+
+  while ((match = tagRegex.exec(html)) !== null) {
+    const textBefore = html.slice(lastIndex, match.index);
+    result += escapeTelegramHtml(textBefore);
+    result += match[0];
+    lastIndex = tagRegex.lastIndex;
+  }
+
+  const remaining = html.slice(lastIndex);
+  result += escapeTelegramHtml(remaining);
+
+  return result;
+}
+
+/**
  * Sends notification via Telegram Bot API if configured
  */
-async function sendTelegramAlert(message: string): Promise<void> {
+export async function sendTelegramAlert(message: string): Promise<void> {
   const token = process.env.ALERT_TELEGRAM_BOT_TOKEN;
   const chatId = process.env.ALERT_TELEGRAM_CHAT_ID;
   if (!token || !chatId) return;
+
+  const safeMessage = sanitizeTelegramHtml(message);
 
   try {
     const url = `https://api.telegram.org/bot${token}/sendMessage`;
@@ -36,12 +70,14 @@ async function sendTelegramAlert(message: string): Promise<void> {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         chat_id: chatId,
-        text: message,
+        text: safeMessage,
         parse_mode: 'HTML',
       }),
     });
     if (!res.ok) {
-      console.error('[alert] Telegram notification failed:', res.statusText);
+      const errBody = (await res.json().catch(() => ({}))) as { description?: string };
+      const desc = errBody?.description ?? res.statusText;
+      console.error(`[alert] Telegram notification failed (${res.status}): ${desc}`);
     }
   } catch (err) {
     console.error('[alert] Failed to send Telegram notification:', err);
@@ -165,7 +201,7 @@ export async function checkProviderHealth(config: AlertConfig = {}): Promise<Pro
         health.lastAlertAt = new Date(now);
 
         const errorPct = (health.errorRate * 100).toFixed(1);
-        const alertMsg = `⚠️ <b>PROVIDER ALERT</b>: Provider <code>${health.providerName}</code> error rate is <b>${errorPct}%</b> (${health.errorRequests}/${health.totalRequests} failed in the last 5m).`;
+        const alertMsg = `⚠️ <b>PROVIDER ALERT</b>: Provider <code>${escapeTelegramHtml(health.providerName)}</code> error rate is <b>${errorPct}%</b> (${health.errorRequests}/${health.totalRequests} failed in the last 5m).`;
 
         console.error(`[ALERT] High error rate for provider ${health.providerName}: ${errorPct}% (${health.errorRequests}/${health.totalRequests})`);
 
