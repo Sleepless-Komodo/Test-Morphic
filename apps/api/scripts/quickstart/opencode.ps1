@@ -18,7 +18,7 @@ $ErrorActionPreference = 'Stop'
 # ── Colour helpers ────────────────────────────────────────
 function Write-Ok($msg)   { Write-Host "  " -NoNewline; Write-Host "✓" -ForegroundColor Green  -NoNewline; Write-Host " $msg" }
 function Write-Say($msg)  { Write-Host "  " -NoNewline; Write-Host "›" -ForegroundColor Cyan   -NoNewline; Write-Host " $msg" }
-function Write-Warn($msg) { Write-Host "  " -NoNewline; Write-Host " -ForegroundColor Yellow -NoNewline; Write-Host " $msg" }
+function Write-Warn($msg) { Write-Host "  " -NoNewline; Write-Host "!" -ForegroundColor Yellow -NoNewline; Write-Host " $msg" }
 function Write-Hr         { Write-Host ("─" * 46) -ForegroundColor DarkGray }
 function Write-Die($msg)  {
     Write-Host ""

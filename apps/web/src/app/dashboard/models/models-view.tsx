@@ -353,7 +353,7 @@ export function ModelsView({ initialModels }: { initialModels: any[] }) {
             )}
           </button>
         </div>
-        <pre className="p-4 rounded-2xl bg-neutral-900/90 border border-neutral-800/90 text-neutral-200 text-xs overflow-x-auto font-mono leading-relaxed select-all">
+        <pre className="p-4 rounded-2xl bg-neutral-900/90 border border-neutral-800/90 text-neutral-200 text-xs overflow-x-auto font-mono leading-relaxed select-all selection:bg-white/20 selection:text-white">
           {curlCommand}
         </pre>
       </div>

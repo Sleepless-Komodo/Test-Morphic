@@ -36,7 +36,7 @@ export default function ModelsCatalogFull({ isLoggedIn = false }: { isLoggedIn?:
   }, [selectedCategory, searchQuery]);
 
   return (
-    <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 pt-32 pb-24">
+    <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-32 pb-24">
       {/* Header Section */}
       <div className="text-center max-w-3xl mx-auto mb-12">
         <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-neutral-100 border border-neutral-200 text-neutral-800 text-xs font-semibold mb-4 shadow-sm">

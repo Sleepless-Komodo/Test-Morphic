@@ -12,6 +12,8 @@ export interface ResolvedRoute {
   modelId: string;
   contextLength: number;
   pricing: { inputCreditsPer1m: number; outputCreditsPer1m: number };
+  /** Provider cost in credits per 1M tokens; null unless both directions are configured. */
+  upstreamPricing: { inputCreditsPer1m: number; outputCreditsPer1m: number } | null;
   providerId: string;
   isUsingFallback: boolean;
   deprecationWarning: string | null;
@@ -28,6 +30,8 @@ interface ModelRow {
   contextLength: number;
   inputCreditsPer1m: number;
   outputCreditsPer1m: number;
+  providerCostInputPer1m: number | null;
+  providerCostOutputPer1m: number | null;
   modelStatus: string;
   replacementModelAlias: string | null;
   fallbackProviderId: string | null;
@@ -48,6 +52,8 @@ async function resolveModelRow(publicModelId: string): Promise<ModelRow | null> 
       contextLength: s.models.contextLength,
       inputCreditsPer1m: s.models.inputCreditsPer1m,
       outputCreditsPer1m: s.models.outputCreditsPer1m,
+      providerCostInputPer1m: s.models.providerCostInputPer1m,
+      providerCostOutputPer1m: s.models.providerCostOutputPer1m,
       modelStatus: s.models.status,
       replacementModelAlias: s.models.replacementModelAlias,
       fallbackProviderId: s.models.fallbackProviderId,
@@ -89,6 +95,11 @@ function buildRoute(
       inputCreditsPer1m: row.inputCreditsPer1m,
       outputCreditsPer1m: row.outputCreditsPer1m,
     },
+    // ponytail: one cost per model; the fallback provider is assumed to charge the same.
+    upstreamPricing:
+      row.providerCostInputPer1m != null && row.providerCostOutputPer1m != null
+        ? { inputCreditsPer1m: row.providerCostInputPer1m, outputCreditsPer1m: row.providerCostOutputPer1m }
+        : null,
     providerId: prov.id,
     isUsingFallback: options.isUsingFallback,
     deprecationWarning: options.deprecationWarning,
@@ -126,7 +137,11 @@ export async function resolveModelWithFallback(
   }
 
   // 3. Fallback Provider Check
-  if (row.fallbackProviderId) {
+  return resolveFallback(row, publicModelId);
+}
+
+async function resolveFallback(row: ModelRow, publicModelId: string): Promise<ResolvedRoute | null> {
+  if (row.fallbackProviderId && row.fallbackProviderId !== row.providerId) {
     const [fallbackProvider] = await db
       .select({
         id: s.providers.id,
@@ -152,6 +167,20 @@ export async function resolveModelWithFallback(
   return null; // Primary & Fallback providers unavailable
 }
 
+/**
+ * Runtime failover: the route just failed upstream (network error / 5xx). Returns the model's
+ * fallback-provider route when one is configured, active and its circuit is not open.
+ */
+export async function resolveRuntimeFallback(
+  failed: ResolvedRoute,
+  publicModelId: string,
+): Promise<ResolvedRoute | null> {
+  if (failed.isUsingFallback) return null;
+  const row = await resolveModelRow(publicModelId);
+  if (!row || row.modelId !== failed.modelId) return null;
+  return resolveFallback(row, publicModelId);
+}
+
 /** Backwards-compatible alias for resolveModelWithFallback */
 export async function resolveModel(publicModelId: string): Promise<ResolvedRoute | null> {
   return resolveModelWithFallback(publicModelId);
@@ -172,18 +201,25 @@ export class OpenAiCompatibleAdapter implements IAiProviderAdapter {
   async dispatchRequest(req: UpstreamRequest): Promise<Response> {
     const { route, body, stream } = req;
     const url = `${route.baseUrl.replace(/\/$/, '')}/chat/completions`;
-    const payload = { ...body, model: route.providerModelId, stream };
+    const payload: Record<string, unknown> = { ...body, model: route.providerModelId, stream };
+    // Ask for the final usage chunk so streamed requests bill real token counts, not estimates.
+    if (stream) {
+      const opts = typeof body.stream_options === 'object' && body.stream_options !== null ? body.stream_options : {};
+      payload.stream_options = { ...opts, include_usage: true };
+    }
 
     const headers: Record<string, string> = { 'content-type': 'application/json', 'connection': 'close' };
     if (route.credential) headers['authorization'] = `Bearer ${route.credential}`;
 
+    // Client disconnect aborts the upstream call too, so we stop paying for tokens nobody reads.
     const timeoutSignal = AbortSignal.timeout(UPSTREAM_TIMEOUT_MS);
-    
+    const signal = req.signal ? AbortSignal.any([req.signal, timeoutSignal]) : timeoutSignal;
+
     return fetch(url, {
       method: 'POST',
       headers,
       body: JSON.stringify(payload),
-      signal: timeoutSignal,
+      signal,
     });
   }
 }

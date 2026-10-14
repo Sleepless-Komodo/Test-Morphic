@@ -10,7 +10,7 @@ import {
   index,
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
-import { relations } from 'drizzle-orm';
+import { relations, sql } from 'drizzle-orm';
 
 const now = () => timestamp('created_at', { withTimezone: true }).notNull().defaultNow();
 const updatedAt = () => timestamp('updated_at', { withTimezone: true }).notNull().defaultNow();
@@ -157,6 +157,7 @@ export const models = pgTable(
     capabilities: jsonb('capabilities').$type<string[]>().notNull().default([]),
     inputCreditsPer1m: integer('input_credits_per_1m').notNull(),
     outputCreditsPer1m: integer('output_credits_per_1m').notNull(),
+    // Upstream price in CREDITS per 1M tokens (same unit as the sell price above), for margin tracking.
     providerCostInputPer1m: integer('provider_cost_input_per_1m'),
     providerCostOutputPer1m: integer('provider_cost_output_per_1m'),
     status: text('status', { enum: ['active', 'inactive', 'deprecated'] }).notNull().default('active'),
@@ -213,9 +214,10 @@ export const creditLedger = pgTable(
   'credit_ledger',
   {
     id: uuid('id').primaryKey().defaultRandom(),
+    // restrict: financial history must outlive the account (accounts are soft-deleted instead).
     userId: uuid('user_id')
       .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
+      .references(() => users.id, { onDelete: 'restrict' }),
     entryType: text('entry_type', {
       enum: [
         'purchase',
@@ -239,6 +241,9 @@ export const creditLedger = pgTable(
   (t) => [
     index('ledger_user_idx').on(t.userId),
     index('ledger_reservation_idx').on(t.reservationId),
+    // A payment can be credited once. Only purchases: reservation/release rows share a requestId
+    // reference by design, and admin adjustments reuse `admin:<id>`.
+    uniqueIndex('ledger_purchase_reference_unique').on(t.reference).where(sql`${t.entryType} = 'purchase'`),
   ],
 );
 
@@ -317,7 +322,7 @@ export const usageRecords = pgTable(
     id: uuid('id').primaryKey().defaultRandom(),
     userId: uuid('user_id')
       .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
+      .references(() => users.id, { onDelete: 'restrict' }),
     apiKeyId: uuid('api_key_id').references(() => apiKeys.id, { onDelete: 'set null' }),
     // Nullable + set null: deleting a provider/model keeps this billing row, just unlinked.
     modelId: uuid('model_id').references(() => models.id, { onDelete: 'set null' }),
@@ -327,6 +332,9 @@ export const usageRecords = pgTable(
     completionTokens: integer('completion_tokens').notNull().default(0),
     totalTokens: integer('total_tokens').notNull().default(0),
     creditsConsumed: bigint('credits_consumed', { mode: 'number' }).notNull().default(0),
+    // What the provider charged us, in credits at the model's provider_cost_*_per_1m rates.
+    // Null when the model has no provider cost configured.
+    upstreamCostCredits: bigint('upstream_cost_credits', { mode: 'number' }),
     latencyMs: integer('latency_ms'),
     status: text('status', { enum: ['success', 'error'] }).notNull(),
     error: text('error'),
@@ -344,7 +352,7 @@ export const payments = pgTable(
     id: uuid('id').primaryKey().defaultRandom(),
     userId: uuid('user_id')
       .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
+      .references(() => users.id, { onDelete: 'restrict' }),
     provider: text('provider').notNull(),
     externalId: text('external_id').notNull().unique(),
     packageId: uuid('package_id').references(() => packages.id, { onDelete: 'set null' }),

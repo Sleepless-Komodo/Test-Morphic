@@ -6,33 +6,29 @@ import { useTranslation } from '@/lib/i18n';
 
 export default function Footer() {
   const { locale, t } = useTranslation();
-  const [mousePos, setMousePos] = useState<{ x: number; y: number; px: number; py: number }>({
-    x: 50,
-    y: 50,
-    px: 600,
-    py: 200,
-  });
   const [isHovered, setIsHovered] = useState(false);
   const footerRef = useRef<HTMLElement>(null);
   const textContainerRef = useRef<HTMLDivElement>(null);
+  const frameRef = useRef(0);
 
+  // Pointer position goes straight into CSS variables, at most once per frame,
+  // so moving the mouse never re-renders the footer.
   const handleMouseMove = (e: React.MouseEvent<HTMLElement>) => {
-    if (!footerRef.current) return;
-    const rect = footerRef.current.getBoundingClientRect();
-    const px = e.clientX - rect.left;
-    const py = e.clientY - rect.top;
-    const x = (px / rect.width) * 100;
-    const y = (py / rect.height) * 100;
-
-    let textPx = px;
-    let textPy = py;
-    if (textContainerRef.current) {
-      const textRect = textContainerRef.current.getBoundingClientRect();
-      textPx = e.clientX - textRect.left;
-      textPy = e.clientY - textRect.top;
-    }
-
-    setMousePos({ x, y, px: textPx, py: textPy });
+    const { clientX, clientY } = e;
+    if (frameRef.current) return;
+    frameRef.current = requestAnimationFrame(() => {
+      frameRef.current = 0;
+      const footer = footerRef.current;
+      if (!footer) return;
+      const rect = footer.getBoundingClientRect();
+      footer.style.setProperty('--mx', `${((clientX - rect.left) / rect.width) * 100}%`);
+      footer.style.setProperty('--my', `${((clientY - rect.top) / rect.height) * 100}%`);
+      const text = textContainerRef.current?.getBoundingClientRect();
+      if (text) {
+        footer.style.setProperty('--tx', `${clientX - text.left}px`);
+        footer.style.setProperty('--ty', `${clientY - text.top}px`);
+      }
+    });
   };
 
   return (
@@ -48,7 +44,7 @@ export default function Footer() {
         className="absolute inset-0 pointer-events-none transition-opacity duration-300 will-change-transform"
         style={{
           opacity: isHovered ? 0.6 : 0.16,
-          background: `radial-gradient(750px circle at ${mousePos.x}% ${mousePos.y}%, rgba(255, 255, 255, 0.25), transparent 60%)`,
+          background: 'radial-gradient(750px circle at var(--mx, 50%) var(--my, 50%), rgba(255, 255, 255, 0.25), transparent 60%)',
         }}
       />
 
@@ -150,8 +146,8 @@ export default function Footer() {
           className="absolute inset-0 w-full h-full pointer-events-none transition-opacity duration-200 flex items-end justify-center"
           style={{
             opacity: isHovered ? 1 : 0,
-            maskImage: `radial-gradient(420px circle at ${mousePos.px}px ${mousePos.py}px, black 0%, black 35%, transparent 80%)`,
-            WebkitMaskImage: `radial-gradient(420px circle at ${mousePos.px}px ${mousePos.py}px, black 0%, black 35%, transparent 80%)`,
+            maskImage: 'radial-gradient(420px circle at var(--tx, 600px) var(--ty, 200px), black 0%, black 35%, transparent 80%)',
+            WebkitMaskImage: 'radial-gradient(420px circle at var(--tx, 600px) var(--ty, 200px), black 0%, black 35%, transparent 80%)',
           }}
         >
           <svg

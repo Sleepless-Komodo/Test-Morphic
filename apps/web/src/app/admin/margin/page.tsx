@@ -162,7 +162,7 @@ export default async function AdminMargin({ searchParams }: { searchParams: Prom
   const { period, since } = parsePeriod((await searchParams).period);
 
   return (
-    <div className="max-w-6xl space-y-6">
+    <div className="w-full space-y-6">
       <AutoRefresh intervalMs={60_000} />
       <div className="flex flex-col gap-4 border-b border-neutral-200/80 pb-5 sm:flex-row sm:items-end sm:justify-between">
         <div>

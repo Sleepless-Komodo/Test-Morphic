@@ -138,7 +138,7 @@ export default function LoginView({ googleConfigured, githubConfigured }: LoginV
               <div className="space-y-3">
                 <Link
                   href="/dashboard"
-                  className="w-full py-3 px-5 rounded-2xl bg-neutral-950 hover:bg-neutral-800 text-white text-xs sm:text-sm font-semibold flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm"
+                  className="w-full py-3 px-5 rounded-full bg-neutral-950 hover:bg-neutral-800 text-white text-xs sm:text-sm font-semibold flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm"
                 >
                   <LayoutDashboard className="h-4 w-4" />
                   <span suppressHydrationWarning>{t.login.goToDashboard}</span>
@@ -149,7 +149,7 @@ export default function LoginView({ googleConfigured, githubConfigured }: LoginV
                     await signOut();
                     window.location.reload();
                   }}
-                  className="w-full py-2.5 px-4 rounded-2xl border border-neutral-200 hover:bg-neutral-50 text-neutral-600 hover:text-neutral-900 text-xs font-semibold flex items-center justify-center gap-2 transition-all cursor-pointer"
+                  className="w-full py-2.5 px-4 rounded-full border border-neutral-200 hover:bg-neutral-50 text-neutral-600 hover:text-neutral-900 text-xs font-semibold flex items-center justify-center gap-2 transition-all cursor-pointer"
                 >
                   <LogOut className="h-3.5 w-3.5" />
                   <span suppressHydrationWarning>{t.login.switchAccount}</span>
@@ -192,7 +192,7 @@ export default function LoginView({ googleConfigured, githubConfigured }: LoginV
                   type="button"
                   disabled={loadingProvider !== null || isPending}
                   onClick={() => handleSocialLogin('google')}
-                  className="w-full py-3 px-5 rounded-2xl border border-neutral-300 bg-white hover:bg-neutral-50 hover:border-neutral-400 text-neutral-800 text-xs sm:text-sm font-semibold flex items-center justify-center gap-3 transition-all cursor-pointer shadow-xs disabled:opacity-60 disabled:cursor-not-allowed"
+                  className="w-full py-3 px-5 rounded-full border border-neutral-300 bg-white hover:bg-neutral-50 hover:border-neutral-400 text-neutral-800 text-xs sm:text-sm font-semibold flex items-center justify-center gap-3 transition-all cursor-pointer shadow-xs disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   {loadingProvider === 'google' ? (
                     <Loader2 className="h-4 w-4 animate-spin text-neutral-600" />
@@ -207,7 +207,7 @@ export default function LoginView({ googleConfigured, githubConfigured }: LoginV
                   type="button"
                   disabled={loadingProvider !== null || isPending}
                   onClick={() => handleSocialLogin('github')}
-                  className="w-full py-3 px-5 rounded-2xl bg-neutral-950 hover:bg-neutral-800 text-white text-xs sm:text-sm font-semibold flex items-center justify-center gap-3 transition-all cursor-pointer shadow-xs disabled:opacity-60 disabled:cursor-not-allowed"
+                  className="w-full py-3 px-5 rounded-full bg-neutral-950 hover:bg-neutral-800 text-white text-xs sm:text-sm font-semibold flex items-center justify-center gap-3 transition-all cursor-pointer shadow-xs disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   {loadingProvider === 'github' ? (
                     <Loader2 className="h-4 w-4 animate-spin text-white" />
@@ -229,7 +229,7 @@ export default function LoginView({ googleConfigured, githubConfigured }: LoginV
                 {/* Continue with Email Button (leads to /login/email) */}
                 <Link
                   href="/login/email"
-                  className="w-full py-3 px-5 rounded-2xl border border-neutral-300 bg-white hover:bg-neutral-50 hover:border-neutral-400 text-neutral-800 text-xs sm:text-sm font-semibold flex items-center justify-center gap-2.5 transition-all cursor-pointer shadow-xs"
+                  className="w-full py-3 px-5 rounded-full border border-neutral-300 bg-white hover:bg-neutral-50 hover:border-neutral-400 text-neutral-800 text-xs sm:text-sm font-semibold flex items-center justify-center gap-2.5 transition-all cursor-pointer shadow-xs"
                 >
                   <Mail className="h-4 w-4 text-neutral-600" />
                   <span suppressHydrationWarning>{t.login.continueWithEmail}</span>

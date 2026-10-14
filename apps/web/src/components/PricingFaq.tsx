@@ -1,10 +1,9 @@
 'use client';
 
-import React, { useState } from 'react';
-import { motion } from 'framer-motion';
+import { useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { useTranslation } from '@/lib/i18n';
-import { useReducedMotionSafe } from '@/lib/use-reduced-motion-safe';
-import { HelpCircle, Plus } from 'lucide-react';
+import { Plus } from 'lucide-react';
 
 const EASE = [0.16, 1, 0.3, 1] as const;
 
@@ -78,108 +77,137 @@ const BILLING_FAQS: BillingFaqItem[] = [
 
 export default function PricingFaq() {
   const { locale } = useTranslation();
-  const reduced = useReducedMotionSafe();
   const [openIndex, setOpenIndex] = useState<number | null>(0);
+  const [hovered, setHovered] = useState<number | null>(null);
+  const spring = { type: 'spring' as const, stiffness: 380, damping: 34 };
+  const highlight = hovered ?? openIndex;
+  const shown = (openIndex ?? 0) + 1;
 
-  const toggle = (idx: number) => {
-    setOpenIndex(openIndex === idx ? null : idx);
-  };
+  const title =
+    locale === 'en'
+      ? 'Frequently asked questions on billing'
+      : 'Pertanyaan seputar saldo & pembayaran';
+  const desc =
+    locale === 'en'
+      ? 'Everything you need to know about QRIS top-ups, credit validity, and corporate invoices.'
+      : 'Informasi lengkap seputar masa aktif kuota, pembayaran instan QRIS, dan bukti transaksi resmi.';
 
   return (
-    <section className="relative z-10 py-16 lg:py-24 px-4 sm:px-6 bg-white border-t border-neutral-200/80">
-      <div className="max-w-5xl mx-auto">
-        {/* Section Header */}
-        <motion.div
-          initial={reduced ? false : { opacity: 0, y: 14 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, margin: '-50px' }}
-          transition={{ duration: 0.5, ease: EASE }}
-          className="text-center max-w-3xl mx-auto mb-12 sm:mb-16"
-        >
-          <div className="inline-flex items-center gap-2 text-xs sm:text-sm font-mono uppercase tracking-[0.2em] text-neutral-500 font-bold mb-3">
-            <HelpCircle className="w-3.5 h-3.5 text-neutral-900" />
-            <span>{locale === 'en' ? 'Billing & Payments' : 'Tanya Jawab Billing'}</span>
-          </div>
-          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-heading font-extrabold tracking-tight text-neutral-950">
-            {locale === 'en'
-              ? 'Frequently Asked Questions on Billing'
-              : 'Pertanyaan Seputar Saldo & Pembayaran'}
-          </h2>
-          <p className="mt-4 text-neutral-600 font-body text-base sm:text-lg leading-relaxed max-w-2xl mx-auto">
-            {locale === 'en'
-              ? 'Everything you need to know about QRIS top-ups, credit validity, and invoicing.'
-              : 'Informasi lengkap seputar masa aktif kuota, pembayaran instan QRIS, dan invoice pengeluaran.'}
-          </p>
-        </motion.div>
+    <section id="faq" className="relative z-10 bg-white scroll-mt-20 border-t border-neutral-200/80">
+      <span id="billing-faq" className="sr-only scroll-mt-20 block" />
+      <div className="px-5 sm:px-8 py-20 lg:py-28 text-neutral-950">
+        <div className="mx-auto grid max-w-5xl items-start gap-10 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] lg:gap-16">
+          {/* Sticky Left Editorial Header */}
+          <motion.div
+            initial={{ opacity: 0, y: 18 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, margin: '-60px' }}
+            transition={{ duration: 0.7, ease: EASE }}
+            className="lg:sticky lg:top-32"
+          >
+            <h2 suppressHydrationWarning className="font-heading text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight text-balance">
+              {title}
+            </h2>
+            <p suppressHydrationWarning className="mt-4 max-w-sm text-base leading-relaxed text-neutral-600">
+              {desc}
+            </p>
 
-        {/* Numbered Hairline Accordion List */}
-        <motion.div
-          initial={reduced ? false : { opacity: 0, y: 16 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, margin: '-40px' }}
-          transition={{ duration: 0.55, delay: 0.1, ease: EASE }}
-          className="rounded-3xl border border-neutral-200/90 bg-[#fafafa] p-4 sm:p-8 shadow-xs divide-y divide-neutral-200/80"
-        >
-          {BILLING_FAQS.map((item, idx) => {
-            const isOpen = openIndex === idx;
-            const question = item.q[locale] || item.q.en || item.q.id;
-            const answer = item.a[locale] || item.a.en || item.a.id;
-
-            return (
-              <div key={idx} className="transition-colors">
-                <button
-                  type="button"
-                  onClick={() => toggle(idx)}
-                  aria-expanded={isOpen}
-                  className="w-full py-5 sm:py-6 text-left flex items-center justify-between gap-4 sm:gap-6 cursor-pointer group rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 focus-visible:ring-offset-2"
-                >
-                  <span className="flex items-baseline gap-3 sm:gap-4 min-w-0 pr-2">
-                    <span
-                      className={`font-mono text-xs sm:text-sm tabular-nums shrink-0 transition-colors ${
-                        isOpen ? 'text-neutral-950 font-bold' : 'text-neutral-500 group-hover:text-neutral-700'
-                      }`}
-                    >
-                      {String(idx + 1).padStart(2, '0')}
-                    </span>
-                    <span
-                      suppressHydrationWarning
-                      className={`font-heading text-base sm:text-lg tracking-tight transition-colors ${
-                        isOpen
-                          ? 'text-neutral-950 font-bold'
-                          : 'text-neutral-800 font-semibold group-hover:text-neutral-950'
-                      }`}
-                    >
-                      {question}
-                    </span>
-                  </span>
-
-                  <span
-                    className={`h-8 w-8 rounded-full border border-neutral-200 flex items-center justify-center shrink-0 transition-transform duration-200 bg-white ${
-                      isOpen ? 'rotate-45 border-neutral-900 text-neutral-900' : 'text-neutral-500 group-hover:text-neutral-900'
-                    }`}
+            {/* Large rolling index */}
+            <div className="mt-10 hidden items-end gap-3 lg:flex" aria-hidden="true">
+              <span className="relative inline-flex h-[5.5rem] overflow-hidden font-heading text-[5.5rem] font-extrabold leading-none tracking-tight tabular-nums">
+                <AnimatePresence mode="popLayout" initial={false}>
+                  <motion.span
+                    key={shown}
+                    initial={{ y: '100%', opacity: 0 }}
+                    animate={{ y: '0%', opacity: 1 }}
+                    exit={{ y: '-100%', opacity: 0 }}
+                    transition={{ duration: 0.55, ease: EASE }}
                   >
-                    <Plus className="h-4 w-4" />
-                  </span>
-                </button>
+                    {String(shown).padStart(2, '0')}
+                  </motion.span>
+                </AnimatePresence>
+              </span>
+              <span className="mb-2 font-mono text-sm text-neutral-400">/ {String(BILLING_FAQS.length).padStart(2, '0')}</span>
+            </div>
+          </motion.div>
 
-                <div
-                  className={`grid transition-[grid-template-rows,opacity] duration-300 ease-out ${
-                    isOpen ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'
-                  }`}
+          {/* Right Column Accordion List */}
+          <ul onMouseLeave={() => setHovered(null)} className="flex flex-col gap-1">
+            {BILLING_FAQS.map((faq, idx) => {
+              const isOpen = openIndex === idx;
+              const question = faq.q[locale] || faq.q.en || faq.q.id;
+              const answer = faq.a[locale] || faq.a.en || faq.a.id;
+              const panelId = `billing-faq-panel-${idx}`;
+
+              return (
+                <motion.li
+                  key={idx}
+                  initial={{ opacity: 0, y: 20 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true, margin: '-40px' }}
+                  transition={{ duration: 0.6, delay: idx * 0.06, ease: EASE }}
+                  onMouseEnter={() => setHovered(idx)}
+                  className="relative rounded-2xl"
                 >
-                  <div className="overflow-hidden">
-                    <div
-                      suppressHydrationWarning
-                      className="pb-6 pl-7 sm:pl-9 pr-4 text-xs sm:text-sm text-neutral-600 font-body leading-relaxed"
+                  {highlight === idx && (
+                    <motion.span
+                      layoutId="billing-faq-highlight"
+                      aria-hidden="true"
+                      className={`absolute inset-0 rounded-2xl transition-colors duration-300 ${isOpen ? 'bg-neutral-950' : 'bg-neutral-100'}`}
+                      transition={spring}
+                    />
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setOpenIndex(isOpen ? null : idx)}
+                    aria-expanded={isOpen}
+                    aria-controls={panelId}
+                    className="relative flex w-full items-center justify-between gap-5 rounded-2xl px-5 py-5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 focus-visible:ring-offset-2 cursor-pointer"
+                  >
+                    <span className="flex min-w-0 items-baseline gap-4">
+                      <span className="shrink-0 font-mono text-sm tabular-nums transition-colors duration-300 text-neutral-400">
+                        {String(idx + 1).padStart(2, '0')}
+                      </span>
+                      <span
+                        suppressHydrationWarning
+                        className={`text-lg font-semibold tracking-tight transition-colors duration-300 ${isOpen ? 'text-white' : 'text-neutral-900'}`}
+                      >
+                        {question}
+                      </span>
+                    </span>
+                    <motion.span
+                      animate={{ rotate: isOpen ? 45 : 0 }}
+                      transition={spring}
+                      className={`grid h-9 w-9 shrink-0 place-items-center rounded-full border transition-colors duration-300 ${
+                        isOpen ? 'border-white bg-white text-neutral-950' : 'border-neutral-300 text-neutral-600'
+                      }`}
                     >
-                      {answer}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </motion.div>
+                      <Plus className="h-4 w-4" />
+                    </motion.span>
+                  </button>
+
+                  <AnimatePresence initial={false}>
+                    {isOpen && (
+                      <motion.div
+                        id={panelId}
+                        key="answer"
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.5, ease: EASE }}
+                        className="relative overflow-hidden"
+                      >
+                        <p suppressHydrationWarning className="px-5 pb-6 pl-[3.25rem] text-[15px] leading-relaxed text-neutral-300">
+                          {answer}
+                        </p>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </motion.li>
+              );
+            })}
+          </ul>
+        </div>
       </div>
     </section>
   );

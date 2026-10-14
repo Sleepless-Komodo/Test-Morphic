@@ -5,6 +5,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { db, schema as s } from '@morphic/db';
 import { grantCredits, getBalance, reconcileBalance, sweepExpiredReservations } from '@morphic/db/billing';
 import { requireAdmin } from '@/lib/actions';
+import { softDeleteUser } from '@/lib/account-deletion';
 import { randomInt } from 'node:crypto';
 import { normalizeCatalog, type CatalogResult } from '@/lib/provider-catalog';
 import { invalidate } from '@/lib/memo';
@@ -74,10 +75,16 @@ export async function deleteUserByAdmin(formData: FormData) {
 
   if (!target) return;
 
-  await db.delete(s.users).where(eq(s.users.id, id));
+  // Soft-delete: a hard delete would be refused by the ledger/payments FKs (financial retention).
+  await softDeleteUser(id);
   await audit(admin.id, 'delete', 'user', id, { email: target.email, role: target.role });
 
   revalidatePath('/admin/users');
+}
+
+function optionalInt(v: FormDataEntryValue | null): number | null {
+  const n = Number(String(v ?? '').trim() || NaN);
+  return Number.isInteger(n) && n >= 0 ? n : null;
 }
 
 export async function saveModel(formData: FormData) {
@@ -97,6 +104,11 @@ export async function saveModel(formData: FormData) {
     inputCreditsPer1m: Number(formData.get('inputCreditsPer1m')),
     outputCreditsPer1m: Number(formData.get('outputCreditsPer1m')),
     status: String(formData.get('status') || 'active') as 'active' | 'inactive',
+    // Upstream cost (credits / 1M) for margin tracking; blank clears it, absent field leaves it alone.
+    ...(formData.has('providerCostInputPer1m') && {
+      providerCostInputPer1m: optionalInt(formData.get('providerCostInputPer1m')),
+      providerCostOutputPer1m: optionalInt(formData.get('providerCostOutputPer1m')),
+    }),
   };
   if (id) {
     await db.update(s.models).set(values).where(eq(s.models.id, id));

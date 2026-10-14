@@ -1,420 +1,516 @@
 'use client';
 
-import React from 'react';
-import { motion } from 'framer-motion';
+import { useEffect, useRef, useSyncExternalStore } from 'react';
+import {
+  motion,
+  useMotionValue,
+  useMotionValueEvent,
+  useScroll,
+  useSpring,
+  useTransform,
+  type MotionValue,
+} from 'framer-motion';
 import { useTranslation } from '@/lib/i18n';
-import { useReducedMotionSafe } from '@/lib/use-reduced-motion-safe';
 
-const EASE = [0.16, 1, 0.3, 1] as const;
+// One drawing, read top to bottom: every model's line bends into the Morphic gateway,
+// then a single line runs down through what the gateway does and ends at your app.
+// Scroll is the timeline; a "camera" pans the drawing so the moving tips stay near the
+// middle of the pinned viewport. No SVG filters: every frame repaints the strokes, and
+// blur filters are what make that expensive.
 
-// Palette from DESIGN.md: zinc neutrals + emerald only where something is live.
-const INK = '#09090b';
-const LINE = '#e4e4e7';
-const LINE_STRONG = '#d4d4d8';
-const MUTED = '#a1a1aa';
-const LIVE = '#10b981';
+const INK = '#0a0a0a';
+const RAIL = '#ececec';
+const BORDER = '#e5e5e5';
+const LABEL_GAP = 52; // keeps the outgoing line clear of the gateway label
+const TAIL_PX = 42; // comet tail length in drawing units
 
-function Visual({ viewBox, className, children }: { viewBox: string; className: string; children: React.ReactNode }) {
+// Real marks only (vendored LobeHub SVGs, see public/logos/README.md).
+const MODELS = [
+  { label: 'OpenAI', logo: '/logos/openai.svg' },
+  { label: 'Gemini', logo: '/logos/gemini-color.svg' },
+  { label: 'Claude', logo: '/logos/claude-color.svg' },
+  { label: 'Grok', logo: '/logos/grok.svg' },
+  { label: 'Llama', logo: '/logos/meta-color.svg' },
+  { label: 'Mistral', logo: '/logos/mistral-color.svg' },
+  { label: 'DeepSeek', logo: '/logos/deepseek-color.svg' },
+  { label: 'Qwen', logo: '/logos/qwen-color.svg' },
+  { label: 'Kimi', logo: '/logos/kimi-color.svg' },
+  { label: 'GLM', logo: '/logos/zhipu-color.svg' },
+  { label: 'MiniMax', logo: '/logos/minimax-color.svg' },
+  { label: 'Yi', logo: '/logos/yi.svg' },
+];
+
+type Seg = { d: string; range: [number, number] };
+type ModelNodeGeo = { x: number; y: number; appear: [number, number] };
+type Geo = {
+  w: number;
+  h: number;
+  cx: number;
+  r: number;
+  labelY: number;
+  nodes: ModelNodeGeo[];
+  inbound: Seg[];
+  gateY: number;
+  gate: number;
+  spine: Seg;
+  checks: { y: number; at: number }[];
+  endY: number;
+  cameraAt: number[];
+  focus: number[];
+};
+
+const GATE_IN: [number, number] = [0.3, 0.42];
+const GATE_PULSE: [number, number] = [0.42, 0.52];
+const SPINE: [number, number] = [0.52, 0.9];
+const END_IN: [number, number] = [0.9, 0.95];
+
+function build({
+  w,
+  r,
+  points,
+  gateY,
+  gate,
+  endY,
+  bend,
+  checksY,
+  labelY,
+  focus,
+}: {
+  w: number;
+  r: number;
+  points: { x: number; y: number }[];
+  gateY: number;
+  gate: number;
+  endY: number;
+  bend: number;
+  checksY: number[];
+  labelY: number;
+  focus: number[];
+}): Geo {
+  const cx = w / 2;
+  const gateTop = gateY - gate / 2;
+  const spineTop = gateY + gate / 2 + LABEL_GAP;
+  const spineEnd = endY - 34;
+  const tipAt = (y: number) => SPINE[0] + ((y - spineTop) / (spineEnd - spineTop)) * (SPINE[1] - SPINE[0]);
+  return {
+    w,
+    h: endY + 130,
+    cx,
+    r,
+    labelY,
+    nodes: points.map((p, i) => ({ ...p, appear: [0.01 + i * 0.008, 0.07 + i * 0.008] })),
+    // Left to right sweep, each line ending at the gateway's top edge.
+    inbound: points.map((p, i) => ({
+      d: `M${p.x} ${p.y + r} C ${p.x} ${p.y + r + bend}, ${cx} ${gateTop - bend * 1.6}, ${cx} ${gateTop}`,
+      range: [0.1 + i * 0.012, 0.28 + i * 0.012] as [number, number],
+    })),
+    gateY,
+    gate,
+    spine: { d: `M${cx} ${spineTop} V${spineEnd}`, range: SPINE },
+    checks: checksY.map((y) => ({ y, at: tipAt(y) })),
+    endY,
+    cameraAt: [0, 0.1, 0.32, 0.52, 0.9, 1],
+    focus,
+  };
+}
+
+function desktopGeo(): Geo {
+  // Models sit on a wide arc above the gateway.
+  const points = MODELS.map((_, i) => {
+    const a = ((165 - (i * 150) / (MODELS.length - 1)) * Math.PI) / 180;
+    return { x: Math.round(500 + 430 * Math.cos(a)), y: Math.round(600 - 330 * Math.sin(a)) };
+  });
+  return build({
+    w: 1000,
+    r: 28,
+    points,
+    gateY: 1040,
+    gate: 140,
+    endY: 2010,
+    bend: 150,
+    checksY: [1360, 1560, 1760],
+    labelY: 150,
+    focus: [430, 430, 1040, 1040, 1900, 2010],
+  });
+}
+
+// Phones: the models in a 4 by 3 grid, then the same single spine.
+function mobileGeo(): Geo {
+  const cols = [62, 154, 246, 338];
+  const rows = [250, 350, 450];
+  const points = MODELS.map((_, i) => ({ x: cols[i % 4], y: rows[Math.floor(i / 4)] + (i % 2) * 16 }));
+  return build({
+    w: 400,
+    r: 22,
+    points,
+    gateY: 780,
+    gate: 112,
+    endY: 1640,
+    bend: 90,
+    checksY: [1060, 1240, 1420],
+    labelY: 150,
+    focus: [400, 400, 780, 780, 1540, 1640],
+  });
+}
+
+const MOBILE_QUERY = '(max-width: 767px)';
+function useIsMobile() {
+  return useSyncExternalStore(
+    (cb) => {
+      const m = window.matchMedia(MOBILE_QUERY);
+      m.addEventListener('change', cb);
+      return () => m.removeEventListener('change', cb);
+    },
+    () => window.matchMedia(MOBILE_QUERY).matches,
+    () => false,
+  );
+}
+
+/** Faint rail, the inked stretch drawn by scroll, and a comet riding the tip. */
+function Route({ seg, progress }: { seg: Seg; progress: MotionValue<number> }) {
+  const drawn = useTransform(progress, seg.range, [0, 1], { clamp: true });
+  const pathRef = useRef<SVGPathElement>(null);
+  const cometRef = useRef<SVGGElement>(null);
+  // Points along the path, sampled once. Reading geometry during scroll (getPointAtLength)
+  // between transform writes forced a layout per dot per frame; a lookup table reads nothing.
+  const lutRef = useRef<{ pts: Float32Array; len: number } | null>(null);
+
+  useEffect(() => {
+    const path = pathRef.current;
+    if (!path) return;
+    const len = path.getTotalLength();
+    const n = Math.max(2, Math.ceil(len / 4));
+    const pts = new Float32Array(n * 2);
+    for (let i = 0; i < n; i++) {
+      const p = path.getPointAtLength((i / (n - 1)) * len);
+      pts[i * 2] = p.x;
+      pts[i * 2 + 1] = p.y;
+    }
+    lutRef.current = { pts, len };
+  }, [seg.d]);
+
+  // Head follows the tip via the lookup table; the tail is a short dash of the same path.
+  const tail = useTransform(drawn, (v) => (lutRef.current ? Math.min(v, TAIL_PX / lutRef.current.len) : 0));
+  const tailOffset = useTransform([drawn, tail], ([v, t]: number[]) => Math.max(0, v - t));
+  const cometOpacity = useTransform(drawn, (v) => (v > 0.001 && v < 0.999 ? 1 : 0));
+
+  useMotionValueEvent(drawn, 'change', (v) => {
+    const head = cometRef.current;
+    const lut = lutRef.current;
+    if (!head || !lut || v <= 0.001 || v >= 0.999) return;
+    const { pts } = lut;
+    const last = pts.length / 2 - 1;
+    const f = v * last;
+    const i = Math.min(last - 1, Math.floor(f));
+    const t = f - i;
+    const x = pts[i * 2] + (pts[i * 2 + 2] - pts[i * 2]) * t;
+    const y = pts[i * 2 + 1] + (pts[i * 2 + 3] - pts[i * 2 + 1]) * t;
+    head.setAttribute('transform', `translate(${x} ${y})`);
+  });
+
   return (
-    <div className={`relative w-full flex items-center justify-center select-none px-4 ${className}`} aria-hidden="true">
-      <svg viewBox={viewBox} className="w-full h-full" fill="none">
-        {children}
+    <g>
+      <motion.path ref={pathRef} d={seg.d} stroke={INK} strokeWidth={1.5} fill="none" style={{ pathLength: drawn }} />
+      <motion.g style={{ opacity: cometOpacity }}>
+        <motion.path
+          d={seg.d}
+          stroke={INK}
+          strokeWidth={3}
+          strokeLinecap="round"
+          strokeOpacity={0.35}
+          fill="none"
+          style={{ pathLength: tail, pathOffset: tailOffset }}
+        />
+        <g ref={cometRef}>
+          <circle r={11} fill={INK} opacity={0.08} />
+          <circle r={3.5} fill={INK} />
+        </g>
+      </motion.g>
+    </g>
+  );
+}
+
+function ModelNode({
+  x,
+  y,
+  r,
+  label,
+  logo,
+  appear,
+  sendAt,
+  progress,
+  small,
+}: {
+  x: number;
+  y: number;
+  r: number;
+  label: string;
+  logo: string;
+  appear: [number, number];
+  sendAt: number;
+  progress: MotionValue<number>;
+  small: boolean;
+}) {
+  const on = useTransform(progress, appear, [0, 1], { clamp: true });
+  const scale = useTransform(on, [0, 1], [0.6, 1]);
+  const lift = useTransform(on, [0, 1], [-14, 0]);
+  // The border inks in as this model's line leaves for the gateway.
+  const stroke = useTransform(progress, [sendAt, sendAt + 0.03], [BORDER, INK]);
+  const ring = useTransform(progress, [sendAt, sendAt + 0.08], [0, 1], { clamp: true });
+  const ringR = useTransform(ring, [0, 1], [r, r * 1.9]);
+  const ringOpacity = useTransform(ring, [0, 0.1, 1], [0, 0.28, 0]);
+  const logoSize = r * 1.15;
+
+  return (
+    <g>
+      <motion.circle cx={x} cy={y} r={ringR} fill="none" stroke={INK} strokeWidth={1} style={{ opacity: ringOpacity }} />
+      <motion.g style={{ opacity: on, y: lift }}>
+        <motion.g style={{ scale }}>
+          <motion.circle cx={x} cy={y} r={r} fill="#fff" strokeWidth={1} style={{ stroke }} />
+          <image href={logo} x={x - logoSize / 2} y={y - logoSize / 2} width={logoSize} height={logoSize} />
+        </motion.g>
+        <text x={x} y={y + r + (small ? 18 : 24)} textAnchor="middle" fill="#404040" fontSize={small ? 12 : 14} fontWeight={600}>
+          {label}
+        </text>
+      </motion.g>
+    </g>
+  );
+}
+
+function Gateway({ geo, progress }: { geo: Geo; progress: MotionValue<number> }) {
+  const { cx, gateY, gate } = geo;
+  const appear = useTransform(progress, GATE_IN, [0, 1], { clamp: true });
+  const tileScale = useTransform(progress, [GATE_IN[0], GATE_IN[1], 0.46, 0.52], [0.82, 1, 1.06, 1]);
+  const tileY = useTransform(appear, [0, 1], [18, 0]);
+  const pulse = useTransform(progress, GATE_PULSE, [0, 1], { clamp: true });
+  const ringScale = useTransform(pulse, [0, 1], [1, 2]);
+  const ringOpacity = useTransform(pulse, [0, 0.1, 1], [0, 0.4, 0]);
+  const glow = useTransform(progress, [0.36, 0.45, 0.62], [0, 1, 0.6]);
+  const orbitOn = useTransform(progress, [0.3, 0.46], [0, 1], { clamp: true });
+  const orbitSpin = useTransform(progress, [0.3, 0.6], [0, 140], { clamp: true });
+  const outerDraw = useTransform(progress, [0.38, 0.56], [0, 1], { clamp: true });
+  const rx = gate * 0.26;
+
+  return (
+    <g>
+      <motion.circle cx={cx} cy={gateY} r={gate * 1.6} fill="url(#gate-glow)" style={{ opacity: glow }} />
+      <motion.circle cx={cx} cy={gateY} r={gate * 1.02} stroke={BORDER} strokeWidth={1} fill="none" style={{ pathLength: outerDraw, rotate: -90 }} />
+      <motion.g style={{ rotate: orbitSpin }}>
+        <motion.circle
+          cx={cx}
+          cy={gateY}
+          r={gate * 0.8}
+          stroke="#a3a3a3"
+          strokeWidth={1.25}
+          strokeDasharray="2 9"
+          strokeLinecap="round"
+          fill="none"
+          style={{ opacity: orbitOn }}
+        />
+        <motion.circle cx={cx} cy={gateY - gate * 0.8} r={3} fill={INK} style={{ opacity: orbitOn }} />
+      </motion.g>
+      <motion.rect
+        x={cx - gate / 2}
+        y={gateY - gate / 2}
+        width={gate}
+        height={gate}
+        rx={rx}
+        fill="none"
+        stroke={INK}
+        style={{ scale: ringScale, opacity: ringOpacity }}
+      />
+      <motion.g style={{ opacity: appear, y: tileY }}>
+        <motion.g style={{ scale: tileScale }}>
+          <clipPath id="gw-clip">
+            <rect x={cx - gate / 2} y={gateY - gate / 2} width={gate} height={gate} rx={rx} />
+          </clipPath>
+          <ellipse cx={cx} cy={gateY + gate / 2 + 6} rx={gate * 0.55} ry={14} fill="url(#shadow)" />
+          <rect x={cx - gate / 2} y={gateY - gate / 2} width={gate} height={gate} rx={rx} fill="#000" />
+          <image
+            href="/morphic-symbol.jpg"
+            x={cx - gate}
+            y={gateY - gate * 0.8}
+            width={gate * 2}
+            height={gate * 1.6}
+            clipPath="url(#gw-clip)"
+            preserveAspectRatio="xMidYMid slice"
+          />
+        </motion.g>
+        <text x={cx} y={gateY + gate / 2 + 34} textAnchor="middle" fill="#525252" fontSize={15} fontWeight={600} letterSpacing="0.04em">
+          Morphic Gateway
+        </text>
+      </motion.g>
+    </g>
+  );
+}
+
+/** A stop on the spine: its dot fills and its label inks in when the comet passes. */
+function Checkpoint({
+  x,
+  y,
+  at,
+  title,
+  detail,
+  progress,
+}: {
+  x: number;
+  y: number;
+  at: number;
+  title: string;
+  detail: string;
+  progress: MotionValue<number>;
+}) {
+  const on = useTransform(progress, [at - 0.01, at + 0.02], [0, 1], { clamp: true });
+  const fill = useTransform(on, [0, 1], ['#ffffff', INK]);
+  const textOpacity = useTransform(on, [0, 1], [0.25, 1]);
+  const shift = useTransform(on, [0, 1], [-8, 0]);
+  return (
+    <g>
+      <motion.circle cx={x} cy={y} r={6} stroke={INK} strokeWidth={1.5} style={{ fill }} />
+      <motion.g style={{ opacity: textOpacity, x: shift }}>
+        <text x={x + 20} y={y - 2} fill={INK} fontSize={16} fontWeight={700}>
+          {title}
+        </text>
+        <text x={x + 20} y={y + 18} fill="#737373" fontSize={13} fontWeight={500}>
+          {detail}
+        </text>
+      </motion.g>
+    </g>
+  );
+}
+
+function EndNode({ geo, progress, title, caption }: { geo: Geo; progress: MotionValue<number>; title: string; caption: string }) {
+  const on = useTransform(progress, END_IN, [0, 1], { clamp: true });
+  const scale = useTransform(on, [0, 1], [0.85, 1]);
+  const captionOn = useTransform(progress, [0.94, 0.99], [0, 1]);
+  const { cx, endY } = geo;
+  return (
+    <g>
+      <motion.g style={{ opacity: on, scale }}>
+        <ellipse cx={cx} cy={endY + 36} rx={100} ry={12} fill="url(#shadow)" />
+        <rect x={cx - 92} y={endY - 34} width={184} height={68} rx={34} fill={INK} />
+        <text x={cx} y={endY + 6} textAnchor="middle" fill="#fff" fontSize={18} fontWeight={700}>
+          {title}
+        </text>
+      </motion.g>
+      <motion.text x={cx} y={endY + 74} textAnchor="middle" fill="#525252" fontSize={15} fontWeight={500} style={{ opacity: captionOn }}>
+        {caption}
+      </motion.text>
+    </g>
+  );
+}
+
+function Drawing({ geo, progress, en }: { geo: Geo; progress: MotionValue<number>; en: boolean }) {
+  const small = geo.w < 600;
+  const checks = en
+    ? [
+        ['One key', 'checked once for every model'],
+        ['One balance', 'credits billed per request'],
+        ['One format', 'answers in the OpenAI shape'],
+      ]
+    : [
+        ['Satu key', 'dicek sekali untuk semua model'],
+        ['Satu saldo', 'kredit dipotong per request'],
+        ['Satu format', 'jawaban dalam format OpenAI'],
+      ];
+
+  const viewBox = `0 0 ${geo.w} ${geo.h}`;
+  const segs = [...geo.inbound, geo.spine];
+  // Three stacked layers so each rasters on its own: the rails never change after the first
+  // paint, the nodes change only as they appear, and only the ink layer repaints while scrolling.
+  const layer = 'absolute inset-0 h-full w-full overflow-visible will-change-transform';
+
+  return (
+    <div className="relative">
+      <svg viewBox={viewBox} className="block h-auto w-full overflow-visible will-change-transform" fill="none" aria-hidden="true">
+        <text x={geo.cx} y={geo.labelY} textAnchor="middle" fill="#737373" fontSize={13} fontWeight={600} letterSpacing="0.18em">
+          THE GATEWAY
+        </text>
+        {segs.map((s, i) => (
+          <path key={i} d={s.d} stroke={RAIL} strokeWidth={1.25} fill="none" />
+        ))}
+      </svg>
+
+      <svg viewBox={viewBox} className={layer} fill="none" aria-hidden="true">
+        <defs>
+          <radialGradient id="gate-glow">
+            <stop offset="0%" stopColor="#a3a3a3" stopOpacity="0.32" />
+            <stop offset="100%" stopColor="#a3a3a3" stopOpacity="0" />
+          </radialGradient>
+          <radialGradient id="shadow">
+            <stop offset="0%" stopColor={INK} stopOpacity="0.12" />
+            <stop offset="100%" stopColor={INK} stopOpacity="0" />
+          </radialGradient>
+        </defs>
+        {segs.map((s, i) => (
+          <Route key={`ink-${geo.w}-${i}`} seg={s} progress={progress} />
+        ))}
+        <Gateway geo={geo} progress={progress} />
+        {geo.checks.map((c, i) => (
+          <Checkpoint key={i} x={geo.cx} y={c.y} at={c.at} title={checks[i][0]} detail={checks[i][1]} progress={progress} />
+        ))}
+        <EndNode
+          geo={geo}
+          progress={progress}
+          title={en ? 'Your app' : 'Aplikasi kamu'}
+          caption={en ? 'One key. Every model.' : 'Satu key. Semua model.'}
+        />
+      </svg>
+
+      <svg viewBox={viewBox} className={layer} fill="none" aria-hidden="true">
+        {geo.nodes.map((n, i) => (
+          <ModelNode
+            key={`${geo.w}-${MODELS[i].label}`}
+            x={n.x}
+            y={n.y}
+            r={geo.r}
+            label={MODELS[i].label}
+            logo={MODELS[i].logo}
+            appear={n.appear}
+            sendAt={geo.inbound[i].range[0]}
+            progress={progress}
+            small={small}
+          />
+        ))}
       </svg>
     </div>
   );
 }
 
-/** Logo inside a hairline circle. Brand-colored marks are desaturated to keep the section monochrome. */
-function LogoNode({ x, y, r = 18, src, dim = false }: { x: number; y: number; r?: number; src: string; dim?: boolean }) {
-  const s = r * 0.95;
-  return (
-    <g opacity={dim ? 0.4 : 1}>
-      <circle cx={x} cy={y} r={r} fill="#fff" stroke={LINE} />
-      <image href={src} x={x - s / 2} y={y - s / 2} width={s} height={s} style={{ filter: 'grayscale(1)' }} />
-    </g>
-  );
-}
-
-// Morphic symbol traced from /morphic-symbol.jpg, centered on 0,0 and 100 units wide.
-// Inset polygons + a round-joined stroke reproduce the logo's rounded corners.
-const MORPHIC_MARK = [
-  'M-14.4 -26.3L-8.2 -18.7L-38.6 25.3L-44.3 16.7Z',
-  'M19.7 -26L26.2 -18.6L-3.5 25.4L-8.8 17Z',
-  'M38 -1.5L44.1 6.3L32.3 22.3L27.2 13.9Z',
-];
-
-function GatewayMark({ x, y, size = 46 }: { x: number; y: number; size?: number }) {
-  const h = size / 2;
-  return (
-    <g>
-      <rect x={x - h - 6} y={y - h - 6} width={size + 12} height={size + 12} rx={size * 0.36} fill="#fff" stroke={LINE} />
-      <rect x={x - h} y={y - h} width={size} height={size} rx={size * 0.27} fill="#fff" stroke={LINE_STRONG} />
-      <g
-        transform={`translate(${x} ${y}) scale(${(size * 0.66) / 100})`}
-        fill={INK}
-        stroke={INK}
-        strokeWidth={9.5}
-        strokeLinejoin="round"
-      >
-        {MORPHIC_MARK.map((d) => <path key={d} d={d} />)}
-      </g>
-    </g>
-  );
-}
-
-/** Route that draws itself in once when the card scrolls into view. Dashed routes fade instead. */
-function Route({ d, stroke, width = 1, delay = 0, dash }: { d: string; stroke: string; width?: number; delay?: number; dash?: string }) {
-  const reduced = useReducedMotionSafe();
-  return (
-    <motion.path
-      d={d}
-      stroke={stroke}
-      strokeWidth={width}
-      strokeDasharray={dash}
-      initial={reduced ? false : dash ? { opacity: 0 } : { pathLength: 0, opacity: 0 }}
-      whileInView={dash ? { opacity: 1 } : { pathLength: 1, opacity: 1 }}
-      viewport={{ once: true, margin: '-40px' }}
-      transition={{ duration: 0.9, delay, ease: EASE }}
-    />
-  );
-}
-
-/** Marker that travels a route, rests, and repeats. Not rendered under reduced motion. */
-function Packet({ path, dur = 3, delay = 0, children }: { path: string; dur?: number; delay?: number; children?: React.ReactNode }) {
-  const reduced = useReducedMotionSafe();
-  if (reduced) return null;
-  const timing = { dur: `${dur}s`, begin: `${delay}s`, repeatCount: 'indefinite' };
-  return (
-    <g opacity={0}>
-      {children ?? <circle r={2.5} fill={LIVE} />}
-      <animateMotion {...timing} path={path} keyPoints="0;1;1" keyTimes="0;0.6;1" calcMode="spline" keySplines="0.45 0 0.25 1;0 0 1 1" />
-      <animate {...timing} attributeName="opacity" values="0;1;1;0;0" keyTimes="0;0.1;0.5;0.6;1" />
-    </g>
-  );
-}
-
-// Trig results can differ in the last digit between Node and the browser; rounding keeps SSR and hydration attributes identical.
-const round2 = (n: number) => Math.round(n * 100) / 100;
-
-/** Visual 1: one gateway, six providers. One route is live. */
-function RoutingVisual() {
-  const cx = 180, cy = 105;
-  const nodes = [
-    '/logos/openai.svg',
-    '/logos/claude-color.svg',
-    '/logos/deepseek-color.svg',
-    '/logos/qwen-color.svg',
-    '/logos/kimi-color.svg',
-    '/logos/zhipu-color.svg',
-  ].map((src, i) => {
-    const a = (i * Math.PI) / 3;
-    return { src, x: round2(cx + 128 * Math.cos(a)), y: round2(cy + 70 * Math.sin(a)) };
-  });
-  const live = 1;
-  const routes = nodes.map(({ x, y }) => {
-    const dx = x - cx, dy = y - cy, d = Math.hypot(dx, dy);
-    const ux = dx / d, uy = dy / d;
-    return `M${round2(cx + ux * 36)} ${round2(cy + uy * 36)}L${round2(x - ux * 22)} ${round2(y - uy * 22)}`;
-  });
-  return (
-    <Visual viewBox="0 0 360 210" className={ROW1}>
-      {routes.map((d, i) => (
-        <Route key={d} d={d} delay={i * 0.07} stroke={i === live ? LIVE : LINE_STRONG} width={i === live ? 1.5 : 1} />
-      ))}
-      <Packet path={routes[live]} dur={2.8} delay={1} />
-      {nodes.map((n) => <LogoNode key={n.src} {...n} />)}
-      <GatewayMark x={cx} y={cy} size={44} />
-    </Visual>
-  );
-}
-
-/** Visual 2: requests go in, nothing comes out the other side. */
-function RetentionVisual() {
-  const cx = 180, cy = 105;
-  return (
-    <Visual viewBox="0 0 360 210" className={ROW1}>
-      <defs>
-        <linearGradient id="retention-out" gradientUnits="userSpaceOnUse" x1={234} x2={320} y1={0} y2={0}>
-          <stop offset="0" stopColor={MUTED} />
-          <stop offset="1" stopColor={LINE_STRONG} stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      {[0.3, 0.6, 1].map((o, i) => (
-        <rect key={i} x={40 + i * 22} y={cy - 4} width={14} height={8} rx={3} fill={MUTED} opacity={o} />
-      ))}
-      <line x1={110} y1={cy} x2={126} y2={cy} stroke={LINE_STRONG} />
-      <Packet path={`M117 ${cy}H158`} dur={3.2} delay={0.6}>
-        <rect x={-7} y={-4} width={14} height={8} rx={3} fill={MUTED} />
-      </Packet>
-      <rect x={cx - 54} y={cy - 54} width={108} height={108} rx={30} stroke={LINE} />
-      <rect x={cx - 43} y={cy - 43} width={86} height={86} rx={24} stroke={LINE_STRONG} />
-      <rect x={cx - 30} y={cy - 30} width={60} height={60} rx={17} fill={INK} />
-      <path d={`M${cx - 7} ${cy - 3}v-5a7 7 0 0 1 14 0v5`} stroke="#fff" strokeWidth={2} strokeLinecap="round" />
-      <rect x={cx - 11} y={cy - 3} width={22} height={17} rx={4} fill="#fff" />
-      <circle cx={cx} cy={cy + 5.5} r={2.2} fill={INK} />
-      <line x1={234} y1={cy} x2={320} y2={cy} stroke="url(#retention-out)" />
-    </Visual>
-  );
-}
-
-/** Visual 3: tokens drifting through parallel lanes; the middle lane is the live stream and moves fastest. */
-function StreamingVisual() {
-  const reduced = useReducedMotionSafe();
-  const lanes: [number, number][][] = [
-    [[30, 22], [86, 14], [128, 34], [204, 18], [262, 26], [318, 14]],
-    [[52, 30], [110, 18], [158, 22], [214, 38], [290, 20]],
-    [[24, 16], [58, 26], [100, 20], [136, 30], [182, 16], [214, 28], [256, 18], [290, 24], [328, 14]],
-    [[40, 18], [92, 36], [168, 14], [212, 22], [268, 32]],
-    [[66, 26], [140, 16], [186, 30], [248, 14], [296, 28]],
-  ];
-  const seconds = [16, 21, 9, 18, 24];
-  return (
-    <Visual viewBox="0 0 360 210" className={ROW1}>
-      <defs>
-        <linearGradient id="stream-fade" x1="0" x2="1">
-          <stop offset="0" stopColor="#fff" stopOpacity="0" />
-          <stop offset="0.18" stopColor="#fff" />
-          <stop offset="0.82" stopColor="#fff" />
-          <stop offset="1" stopColor="#fff" stopOpacity="0" />
-        </linearGradient>
-        <mask id="stream-mask">
-          <rect width="360" height="210" fill="url(#stream-fade)" />
-        </mask>
-      </defs>
-      <g mask="url(#stream-mask)">
-        {lanes.map((pills, i) => {
-          const y = 55 + i * 25;
-          const fill = i === 2 ? LIVE : i % 2 ? LINE_STRONG : MUTED;
-          return (
-            <g key={i}>
-              <line x1={0} y1={y} x2={360} y2={y} stroke={LINE} />
-              {/* Pills are drawn twice, one viewBox-width apart, so the 360-unit drift loops seamlessly. */}
-              <g>
-                {[0, -360].flatMap((off) =>
-                  pills.map(([x, w]) => <rect key={`${off}:${x}`} x={x + off} y={y - 3} width={w} height={6} rx={3} fill={fill} />),
-                )}
-                {!reduced && (
-                  <animateTransform attributeName="transform" type="translate" from="0 0" to="360 0" dur={`${seconds[i]}s`} repeatCount="indefinite" />
-                )}
-              </g>
-            </g>
-          );
-        })}
-      </g>
-    </Visual>
-  );
-}
-
-/** Visual 4: one standard endpoint fanning out to the editors that already speak it. */
-function IntegrationVisual() {
-  const ides = [
-    { src: '/logos/cursor.svg', y: 44 },
-    { src: '/logos/cline.svg', y: 100 },
-    { src: '/logos/windsurf.svg', y: 156 },
-  ];
-  return (
-    <Visual viewBox="50 0 460 200" className={ROW2}>
-      <circle cx={70} cy={100} r={3} fill={MUTED} />
-      <Route d="M73 100H150" stroke={LINE_STRONG} />
-      {ides.map(({ src, y }, i) => {
-        const d = `M334 100H372C396 100 396 ${y} 420 ${y}H448`;
-        return (
-          <g key={src}>
-            <Route d={d} stroke={LINE_STRONG} delay={0.3 + i * 0.1} />
-            <Packet path={d} dur={3.2} delay={1.2 + i * 0.35}>
-              <circle r={2} fill={LIVE} />
-            </Packet>
-            <LogoNode x={470} y={y} r={20} src={src} />
-          </g>
-        );
-      })}
-      <rect x={150} y={78} width={184} height={44} rx={12} fill={INK} />
-      <circle cx={170} cy={100} r={3} fill={LIVE} />
-      <text x={184} y={104} fill="#fff" fontSize={12} fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace">
-        /v1/chat/completions
-      </text>
-    </Visual>
-  );
-}
-
-/** Visual 5: the first provider drops out; traffic moves to the next one. */
-function FailoverVisual() {
-  const gx = 160;
-  const nodes = ['/logos/openai.svg', '/logos/claude-color.svg', '/logos/deepseek-color.svg', '/logos/qwen-color.svg'];
-  const failed = 0, live = 1;
-  const liveY = 40 + live * 40;
-  return (
-    <Visual viewBox="30 0 440 200" className={ROW2}>
-      <Route d={`M40 100H${gx - 30}`} stroke={LIVE} width={1.5} />
-      {nodes.map((src, i) => {
-        const y = 40 + i * 40;
-        const path = `M${gx + 30} 100C300 100 300 ${y} 422 ${y}`;
-        return (
-          <g key={src}>
-            {i === failed ? (
-              <>
-                <Route d={path} stroke={LINE_STRONG} dash="3 4" delay={0.3} />
-                <path d="M385 36l8 8M393 36l-8 8" stroke={MUTED} strokeWidth={1.5} strokeLinecap="round" />
-              </>
-            ) : (
-              <Route d={path} stroke={i === live ? LIVE : LINE} width={i === live ? 1.5 : 1} delay={0.3 + i * 0.08} />
-            )}
-            <LogoNode x={440} y={y} r={17} src={src} dim={i === failed} />
-          </g>
-        );
-      })}
-      {/* One packet rides the incoming line, passes under the gateway, and continues on the live route. */}
-      <Packet path={`M40 100H${gx + 30}C300 100 300 ${liveY} 422 ${liveY}`} dur={3.6} delay={1.2} />
-      <GatewayMark x={gx} y={100} size={46} />
-    </Visual>
-  );
-}
-
-const ROW1 = 'h-[190px] sm:h-[210px]';
-const ROW2 = 'h-[180px] sm:h-[200px]';
-
 export default function FeatureShowcase() {
-  const { t } = useTranslation();
-  const reduced = useReducedMotionSafe();
+  const { locale } = useTranslation();
+  const mobile = useIsMobile();
+  const geo = mobile ? mobileGeo() : desktopGeo();
+  const trackRef = useRef<HTMLDivElement>(null);
+  const { scrollYProgress } = useScroll({ target: trackRef, offset: ['start start', 'end end'] });
+  // One critically damped spring smooths wheel steps for both the drawing and the camera.
+  // On mobile touch screens, use restDelta 0.002 and lighter mass to avoid CPU overload on low-spec chips.
+  const smooth = useSpring(
+    scrollYProgress,
+    mobile
+      ? { stiffness: 120, damping: 26, mass: 0.28, restDelta: 0.002 }
+      : { stiffness: 140, damping: 32, mass: 0.35, restDelta: 0.0002 }
+  );
+  // Pans the drawing so `focus` (a y in drawing units) sits at the viewport middle.
+  const cameraY = useTransform(smooth, geo.cameraAt, geo.focus.map((f) => `${(-f / geo.h) * 100}%`));
 
-  const stats = [
-    { value: t.showcase.stat1Value, label: t.showcase.stat1Label },
-    { value: t.showcase.stat2Value, label: t.showcase.stat2Label },
-    { value: t.showcase.stat3Value, label: t.showcase.stat3Label },
-    { value: t.showcase.stat4Value, label: t.showcase.stat4Label },
-  ];
+  const en = locale === 'en';
+  const summary = en
+    ? 'OpenAI, Gemini, Claude, Grok, Llama, Mistral, DeepSeek, Qwen, Kimi, GLM, MiniMax and Yi all route through the Morphic Gateway, which checks one key, bills one balance and answers your app in the OpenAI format.'
+    : 'OpenAI, Gemini, Claude, Grok, Llama, Mistral, DeepSeek, Qwen, Kimi, GLM, MiniMax dan Yi semuanya lewat Morphic Gateway, yang mengecek satu key, memotong satu saldo, dan menjawab aplikasi kamu dalam format OpenAI.';
+  const width = mobile ? 'max-w-[400px]' : 'max-w-[900px]';
 
   return (
-    <section id="gateway" className="relative z-10 px-4 sm:px-6 py-24 lg:py-32 overflow-hidden bg-[#fafafa] scroll-mt-20">
-      <div className="max-w-6xl mx-auto">
-        {/* Section Header */}
-        <motion.div
-          initial={reduced ? false : { opacity: 0, y: 14, filter: 'blur(4px)' }}
-          whileInView={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-          viewport={{ once: true, margin: '-60px' }}
-          transition={{ duration: 0.5, ease: EASE }}
-          className="text-center max-w-3xl mx-auto mb-16 sm:mb-20"
-        >
-          <div className="inline-flex items-center px-3.5 py-1 rounded-xl border border-neutral-200 bg-white text-xs font-mono uppercase tracking-[0.2em] text-neutral-500 font-bold mb-5 shadow-2xs">
-            {t.showcase.badge}
-          </div>
-          <h2 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight text-neutral-950 font-heading mb-5">
-            {t.showcase.title}
-          </h2>
-          <p className="text-neutral-600 font-body text-base sm:text-lg md:text-xl leading-relaxed max-w-2xl mx-auto">
-            {t.showcase.desc}
-          </p>
-        </motion.div>
-
-        {/* Master Asymmetric Grid Container (Laravel AI style 3 + 2 layout with crosshairs) */}
-        <div className="relative border border-neutral-200 bg-white rounded-3xl overflow-hidden shadow-xs">
-          {/* ── ROW 1: 3 Columns (Visual on top, Text on bottom) ── */}
-          <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-neutral-200 border-b border-neutral-200">
-            {/* Col 1: Multi-Provider Routing */}
-            <div className="flex flex-col justify-between">
-              <div className="border-b border-neutral-100 bg-neutral-50/50 flex items-center justify-center">
-                <RoutingVisual />
-              </div>
-              <div className="p-7 sm:p-8 flex flex-col justify-start">
-                <h3 className="text-lg font-bold text-neutral-950 font-heading mb-2 leading-snug">
-                  {t.showcase.card0Title}
-                </h3>
-                <p className="text-xs sm:text-sm text-neutral-600 font-body leading-relaxed">
-                  {t.showcase.card0Desc}
-                </p>
-              </div>
-            </div>
-
-            {/* Col 2: Zero Retention & Encryption */}
-            <div className="flex flex-col justify-between">
-              <div className="border-b border-neutral-100 bg-neutral-50/50 flex items-center justify-center">
-                <RetentionVisual />
-              </div>
-              <div className="p-7 sm:p-8 flex flex-col justify-start">
-                <h3 className="text-lg font-bold text-neutral-950 font-heading mb-2 leading-snug">
-                  {t.showcase.card6Title}
-                </h3>
-                <p className="text-xs sm:text-sm text-neutral-600 font-body leading-relaxed">
-                  {t.showcase.card6Desc}
-                </p>
-              </div>
-            </div>
-
-            {/* Col 3: SSE Streaming & Concurrency */}
-            <div className="flex flex-col justify-between">
-              <div className="border-b border-neutral-100 bg-neutral-50/50 flex items-center justify-center">
-                <StreamingVisual />
-              </div>
-              <div className="p-7 sm:p-8 flex flex-col justify-start">
-                <h3 className="text-lg font-bold text-neutral-950 font-heading mb-2 leading-snug">
-                  {t.showcase.card2Title}
-                </h3>
-                <p className="text-xs sm:text-sm text-neutral-600 font-body leading-relaxed">
-                  {t.showcase.card2Desc}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* ── ROW 2: 2 Columns 50% - 50% (Inverted Cadence: Text on top, Visual on bottom) ── */}
-          <div className="relative grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-neutral-200 border-b border-neutral-200">
-            {/* Top row crosshair intersections */}
-            <span className="hidden md:flex absolute top-0 left-1/3 -translate-x-1/2 -translate-y-1/2 text-neutral-400 font-mono text-sm font-light select-none pointer-events-none z-20">
-              +
-            </span>
-            <span className="hidden md:flex absolute top-0 left-2/3 -translate-x-1/2 -translate-y-1/2 text-neutral-400 font-mono text-sm font-light select-none pointer-events-none z-20">
-              +
-            </span>
-
-            {/* Col 1 (50% wide): 100% OpenAI Format Compatible */}
-            <div className="flex flex-col justify-between">
-              <div className="p-7 sm:p-8">
-                <h3 className="text-lg sm:text-xl font-bold text-neutral-950 font-heading mb-2 leading-snug">
-                  {t.showcase.card1Title}
-                </h3>
-                <p className="text-xs sm:text-sm text-neutral-600 font-body leading-relaxed">
-                  {t.showcase.card1Desc}
-                </p>
-              </div>
-              <div className="border-t border-neutral-100 bg-neutral-50/40 flex items-center justify-center">
-                <IntegrationVisual />
-              </div>
-            </div>
-
-            {/* Col 2 (50% wide): Automatic Multi-Provider Failover */}
-            <div className="flex flex-col justify-between">
-              <div className="p-7 sm:p-8">
-                <h3 className="text-lg sm:text-xl font-bold text-neutral-950 font-heading mb-2 leading-snug">
-                  {t.showcase.card7Title}
-                </h3>
-                <p className="text-xs sm:text-sm text-neutral-600 font-body leading-relaxed">
-                  {t.showcase.card7Desc}
-                </p>
-              </div>
-              <div className="border-t border-neutral-100 bg-neutral-50/40 flex items-center justify-center">
-                <FailoverVisual />
-              </div>
-            </div>
-          </div>
-
-          {/* ── ROW 3: 4-Stat Strip (Proven Factual Metrics) ── */}
-          <div className="relative grid grid-cols-2 lg:grid-cols-4 divide-y lg:divide-y-0 divide-neutral-200 lg:divide-x bg-white">
-            {/* Row 2 crosshair intersection */}
-            <span className="hidden md:flex absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 text-neutral-400 font-mono text-sm font-light select-none pointer-events-none z-20">
-              +
-            </span>
-
-            {stats.map((stat) => (
-              <div key={stat.label} className="p-7 sm:p-8 flex flex-col justify-center">
-                <div className="text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight text-neutral-950 font-heading">
-                  {stat.value}
-                </div>
-                <div className="mt-2 font-mono text-[10px] sm:text-[11px] tracking-[0.18em] uppercase font-bold text-neutral-500">
-                  {stat.label}
-                </div>
-              </div>
-            ))}
-          </div>
+    <section id="gateway" className="relative bg-white scroll-mt-20">
+      <p className="sr-only">{summary}</p>
+      <div ref={trackRef} className={`relative ${mobile ? 'h-[320vh]' : 'h-[520vh]'}`}>
+        <div className="sticky top-0 h-[100svh] overflow-hidden">
+          <motion.div
+            style={{ y: cameraY, x: '-50%' }}
+            className={`absolute left-1/2 top-1/2 w-[calc(100%-32px)] will-change-transform ${width}`}
+          >
+            <Drawing geo={geo} progress={smooth} en={en} />
+          </motion.div>
         </div>
       </div>
     </section>

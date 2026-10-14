@@ -75,6 +75,8 @@ export default async function AdminModels() {
         capabilities: s.models.capabilities,
         inputCreditsPer1m: s.models.inputCreditsPer1m,
         outputCreditsPer1m: s.models.outputCreditsPer1m,
+        providerCostInputPer1m: s.models.providerCostInputPer1m,
+        providerCostOutputPer1m: s.models.providerCostOutputPer1m,
         status: s.models.status,
         providerName: s.providers.name,
       })
@@ -84,7 +86,7 @@ export default async function AdminModels() {
   ]);
 
   return (
-    <div className="space-y-6 max-w-6xl">
+    <div className="space-y-6 w-full">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pb-5 border-b border-neutral-200/80">
         <div>

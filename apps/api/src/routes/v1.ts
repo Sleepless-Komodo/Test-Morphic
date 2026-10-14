@@ -1,21 +1,46 @@
-import { randomUUID } from 'node:crypto';
 import { Hono } from 'hono';
+import { bodyLimit } from 'hono/body-limit';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { streamSSE } from 'hono/streaming';
 import { chatCompletionRequestSchema } from '@morphic/shared/types';
 import { estimatePromptTokens } from '@morphic/shared/credits';
-import { resolveModelWithFallback, callProvider, normalizeUpstreamError } from '../domain/router';
+import {
+  resolveModelWithFallback,
+  resolveRuntimeFallback,
+  callProvider,
+  normalizeUpstreamError,
+  type ResolvedRoute,
+} from '../domain/router';
 import { recordSuccess, recordFailure } from '../domain/circuit-breaker';
 import { logRequest } from '../middleware/logger';
 import { reserve, settle, InsufficientCreditsError } from '@morphic/db/billing';
-import { apiKeyAuth, gatewayGuards } from '../middleware/auth';
+import { apiKeyAuth, gatewayGuards, ipRateLimit } from '../middleware/auth';
+import { notifyLowBalance } from '../lib/notify';
+import { alertNegativeMargin } from '../lib/alert';
 
 const v1 = new Hono();
 
+const MAX_BODY_BYTES = 10 * 1024 * 1024; // PRD §14.1
+
+// Size cap first, before auth or JSON parsing touch the body.
+v1.use(
+  '/chat/*',
+  bodyLimit({
+    maxSize: MAX_BODY_BYTES,
+    onError: (c) =>
+      c.json(
+        { error: { message: 'payload too large, maximum allowed size is 10MB', type: 'invalid_request_error', code: 'payload_too_large' } },
+        413,
+      ),
+  }),
+);
+
 // Apply API key authentication and rate limiting specifically to inference & model endpoints
-v1.use('/models', apiKeyAuth, gatewayGuards({ rpm: 120, concurrency: 5 }));
-v1.use('/models/*', apiKeyAuth, gatewayGuards({ rpm: 120, concurrency: 5 }));
-v1.use('/chat/*', apiKeyAuth, gatewayGuards({ rpm: 120, concurrency: 5 }));
+// '/models/*' also matches '/models' itself; a separate '/models' entry ran the guards twice.
+v1.use('/models/*', ipRateLimit, apiKeyAuth, gatewayGuards({ rpm: 120, concurrency: 5 }));
+v1.use('/chat/*', ipRateLimit, apiKeyAuth, gatewayGuards({ rpm: 120, concurrency: 5 }));
+
+const isTimeoutError = (e: unknown) => (e as Error)?.name === 'TimeoutError' || String(e).includes('timeout');
 
 v1.get('/models', async (c) => {
   const { db, schema: s } = await import('@morphic/db');
@@ -92,7 +117,7 @@ v1.get('/models/:id', async (c) => {
 
 
 v1.post('/chat/completions', async (c) => {
-  const requestId = randomUUID();
+  const requestId = c.get('requestId');
   const startedAt = Date.now();
   const { keyId, userId } = c.get('apiKey');
   const t = (label: string) => console.log(`[${requestId.slice(0,8)}] +${Date.now()-startedAt}ms ${label}`);
@@ -153,8 +178,8 @@ v1.post('/chat/completions', async (c) => {
   }
   const body = parsed.data;
 
-  const route = await resolveModelWithFallback(body.model);
-  if (!route) {
+  const resolved = await resolveModelWithFallback(body.model);
+  if (!resolved) {
     logRequest({
       requestId,
       userId,
@@ -182,6 +207,8 @@ v1.post('/chat/completions', async (c) => {
       404,
     );
   }
+
+  let route: ResolvedRoute = resolved;
 
   if (route.deprecationWarning) {
     c.header('X-Morphic-Warning', route.deprecationWarning);
@@ -264,20 +291,47 @@ v1.post('/chat/completions', async (c) => {
   t('reserve: done');
 
   // 2. Call provider (generic OpenAI-compatible adapter)
-  let upstream: Response;
   const gatewayLatencyMs = Date.now() - startedAt;
 
   t('callProvider: start');
-  try {
-    upstream = await callProvider({
-      route,
-      body: body as unknown as Record<string, unknown>,
-      stream: wantsStream,
-      signal: c.req.raw.signal,
-    });
-  } catch (e: any) {
+  const dispatch = async (r: ResolvedRoute): Promise<{ res: Response } | { err: unknown }> => {
+    try {
+      return {
+        res: await callProvider({
+          route: r,
+          body: body as unknown as Record<string, unknown>,
+          stream: wantsStream,
+          signal: c.req.raw.signal,
+        }),
+      };
+    } catch (err) {
+      return { err };
+    }
+  };
+  let attempt = await dispatch(route);
+
+  // Runtime failover: primary unreachable or 5xx -> one retry on the model's fallback provider,
+  // under the same reservation. Timeouts are not retried (no time budget left), nor are clients
+  // that already disconnected.
+  const retryable =
+    'err' in attempt ? !isTimeoutError(attempt.err) && !c.req.raw.signal.aborted : attempt.res.status >= 500;
+  if (retryable) {
+    const fallback = await resolveRuntimeFallback(route, body.model);
+    if (fallback?.credential) {
+      if (normalizeUpstreamError('err' in attempt ? 'network' : attempt.res.status).countAsFailure) {
+        await recordFailure(route.providerId);
+      }
+      if ('res' in attempt) await attempt.res.body?.cancel().catch(() => {});
+      t(`failover: ${route.providerName} -> ${fallback.providerName}`);
+      route = fallback;
+      attempt = await dispatch(route);
+    }
+  }
+
+  if ('err' in attempt) {
+    const e = attempt.err;
     t('callProvider: FAILED (network/timeout)');
-    const isTimeout = e?.name === 'TimeoutError' || String(e).includes('timeout');
+    const isTimeout = isTimeoutError(e);
     const norm = normalizeUpstreamError(isTimeout ? 'timeout' : 'network');
 
     if (norm.countAsFailure) {
@@ -290,6 +344,7 @@ v1.post('/chat/completions', async (c) => {
       promptTokens,
       completionTokens: 0,
       pricing: route.pricing,
+      upstreamPricing: route.upstreamPricing,
       requestId,
       status: 'error',
       error: String(e),
@@ -319,6 +374,7 @@ v1.post('/chat/completions', async (c) => {
       norm.httpStatus as ContentfulStatusCode,
     );
   }
+  const upstream = attempt.res;
 
   t(`callProvider: done status=${upstream.status}`);
 
@@ -335,6 +391,7 @@ v1.post('/chat/completions', async (c) => {
       promptTokens,
       completionTokens: 0,
       pricing: route.pricing,
+      upstreamPricing: route.upstreamPricing,
       requestId,
       status: 'error',
       error: `upstream ${upstream.status}: ${errText.slice(0, 500)}`,
@@ -383,7 +440,7 @@ v1.post('/chat/completions', async (c) => {
       let buffer = '';
       let usage: { prompt_tokens?: number; completion_tokens?: number } | null = null;
       let lastKnownCompletionTokens = 0;
-      let chunksReceived = 0;
+      let completionText = '';
       let failed = false;
 
       try {
@@ -406,7 +463,7 @@ v1.post('/chat/completions', async (c) => {
               if (j.usage?.completion_tokens != null) {
                 lastKnownCompletionTokens = j.usage.completion_tokens;
               }
-              chunksReceived++;
+              completionText += deltaText(j);
             } catch {
               // partial chunk, ignore
             }
@@ -423,7 +480,7 @@ v1.post('/chat/completions', async (c) => {
                 if (j.usage?.completion_tokens != null) {
                   lastKnownCompletionTokens = j.usage.completion_tokens;
                 }
-                chunksReceived++;
+                completionText += deltaText(j);
               } catch {
                 // ignore
               }
@@ -436,13 +493,10 @@ v1.post('/chat/completions', async (c) => {
       }
 
       const promptT = usage?.prompt_tokens ?? promptTokens;
+      // Upstream that ignores stream_options.include_usage: estimate from the text actually streamed.
       const completionT =
         usage?.completion_tokens ??
-        (lastKnownCompletionTokens > 0
-          ? lastKnownCompletionTokens
-          : chunksReceived > 0
-            ? Math.max(1, chunksReceived * 8)
-            : 0);
+        (lastKnownCompletionTokens > 0 ? lastKnownCompletionTokens : estimatePromptTokens(completionText));
 
       const settleRes = await settle({
         reservation,
@@ -450,11 +504,13 @@ v1.post('/chat/completions', async (c) => {
         promptTokens: promptT,
         completionTokens: completionT,
         pricing: route.pricing,
+        upstreamPricing: route.upstreamPricing,
         requestId,
         status: failed ? 'error' : 'success',
         latencyMs: Date.now() - startedAt,
         streamed: true,
       });
+      afterSettle(userId, reservation.sourceType, body.model, settleRes);
 
       logRequest({
         requestId,
@@ -492,11 +548,13 @@ v1.post('/chat/completions', async (c) => {
     promptTokens: promptT,
     completionTokens: completionT,
     pricing: route.pricing,
+    upstreamPricing: route.upstreamPricing,
     requestId,
     status: 'success',
     latencyMs: Date.now() - startedAt,
     streamed: false,
   });
+  afterSettle(userId, reservation.sourceType, body.model, settleRes);
 
   logRequest({
     requestId,
@@ -517,5 +575,27 @@ v1.post('/chat/completions', async (c) => {
 
   return c.body(text, upstream.status as ContentfulStatusCode, { 'content-type': 'application/json' });
 });
+
+/** Post-settlement side effects; fire-and-forget so they never delay or fail the response. */
+function afterSettle(
+  userId: string,
+  source: 'balance' | 'entitlement',
+  model: string,
+  res: { actualCredits: number; upstreamCostCredits: number | null },
+) {
+  if (source === 'balance') void notifyLowBalance(userId);
+  if (res.upstreamCostCredits != null && res.actualCredits < res.upstreamCostCredits) {
+    void alertNegativeMargin(model, res.actualCredits, res.upstreamCostCredits);
+  }
+}
+
+/** Text of one streamed chat chunk (all choices), for token estimation when usage is missing. */
+function deltaText(chunk: { choices?: { delta?: { content?: unknown } }[] }): string {
+  let out = '';
+  for (const ch of chunk.choices ?? []) {
+    if (typeof ch.delta?.content === 'string') out += ch.delta.content;
+  }
+  return out;
+}
 
 export { v1 };

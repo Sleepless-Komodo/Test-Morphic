@@ -152,7 +152,7 @@ res = client.chat.completions.create(
             <div className="flex justify-end mb-2">
               <CopyButton text={curlSnippet} locale={locale} />
             </div>
-            <pre className="text-xs font-mono text-neutral-200 leading-relaxed overflow-x-auto">
+            <pre className="text-xs font-mono text-neutral-200 leading-relaxed overflow-x-auto selection:bg-white/20 selection:text-white">
               {curlSnippet}
             </pre>
           </div>
@@ -187,7 +187,7 @@ res = client.chat.completions.create(
               </div>
               <CopyButton text={sdkLang === 'node' ? nodeSnippet : pythonSnippet} locale={locale} />
             </div>
-            <pre className="text-xs font-mono text-neutral-200 leading-relaxed overflow-x-auto max-h-[220px]">
+            <pre className="text-xs font-mono text-neutral-200 leading-relaxed overflow-x-auto max-h-[220px] selection:bg-white/20 selection:text-white">
               {sdkLang === 'node' ? nodeSnippet : pythonSnippet}
             </pre>
           </div>

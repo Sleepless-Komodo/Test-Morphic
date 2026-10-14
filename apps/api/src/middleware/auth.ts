@@ -3,6 +3,7 @@ import type { Context, Next } from 'hono';
 import { db, schema as s } from '@morphic/db';
 import { eq, and } from 'drizzle-orm';
 import { checkRateLimit, trackConcurrency, releaseConcurrency } from '../ratelimit';
+import { getTrustedClientIp } from '../lib/ip';
 
 export interface AuthedKey {
   keyId: string;
@@ -74,29 +75,38 @@ export async function apiKeyAuth(c: Context, next: Next) {
   await next();
 }
 
+function rateLimited(c: Context, message: string, code: string, retryAfter: number) {
+  c.header('Retry-After', String(retryAfter));
+  return c.json({ error: { message, type: 'rate_limit_error', code } }, 429);
+}
+
+const IP_RPM = Number(process.env.GATEWAY_IP_RPM ?? 300);
+
+/** Per-IP flood guard for the gateway; runs before key lookup so bad-key floods are capped too. */
+export async function ipRateLimit(c: Context, next: Next) {
+  const ip = getTrustedClientIp(c);
+  // No resolvable IP means every such caller would share one bucket; skip rather than block them all.
+  if (ip !== 'unknown') {
+    const rl = await checkRateLimit(ip, IP_RPM, 'rlip');
+    if (!rl.ok) return rateLimited(c, 'too many requests from this IP address', 'ip_rate_limit_exceeded', rl.retryAfter);
+  }
+  await next();
+}
+
 export function gatewayGuards(limit: { rpm: number; concurrency: number }) {
   return async (c: Context, next: Next) => {
     const { keyId } = c.get('apiKey');
 
-    if (!(await checkRateLimit(keyId, limit.rpm))) {
-      return c.json(
-        { error: { message: 'rate limit exceeded', type: 'rate_limit_error', code: 'rate_limit_exceeded' } },
-        429,
-      );
+    const rl = await checkRateLimit(keyId, limit.rpm);
+    c.header('X-RateLimit-Limit-Requests', String(limit.rpm));
+    c.header('X-RateLimit-Remaining-Requests', String(rl.remaining));
+    if (!rl.ok) {
+      return rateLimited(c, `rate limit exceeded, please retry after ${rl.retryAfter} seconds`, 'rate_limit_exceeded', rl.retryAfter);
     }
 
     const slot = await trackConcurrency(keyId, limit.concurrency);
     if (!slot.acquired) {
-      return c.json(
-        {
-          error: {
-            message: 'concurrency limit exceeded',
-            type: 'rate_limit_error',
-            code: 'concurrency_limit_exceeded',
-          },
-        },
-        429,
-      );
+      return rateLimited(c, 'concurrency limit exceeded', 'concurrency_limit_exceeded', 1);
     }
     try {
       await next();

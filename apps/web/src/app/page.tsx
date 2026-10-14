@@ -6,10 +6,9 @@ import Navbar from '@/components/Navbar';
 import HeroOpening from '@/components/HeroOpening';
 import HowItWorksSteps from '@/components/HowItWorksSteps';
 import FeatureShowcase from '@/components/FeatureShowcase';
-import MagicTerminal from '@/components/MagicTerminal';
 import PricingPlans from '@/components/PricingPlans';
-import LandingApiCta from '@/components/LandingApiCta';
 import MarketingFaq from '@/components/MarketingFaq';
+import ClosingKey from '@/components/ClosingKey';
 import Footer from '@/components/Footer';
 
 export default async function Home() {
@@ -29,13 +28,10 @@ export default async function Home() {
       <HeroOpening isLoggedIn={!!session} />
 
       {/* 3. 4 Langkah Mudah Menggunakan API Key AI (Integrasi IDE) */}
-      <HowItWorksSteps isLoggedIn={!!session} />
+      <HowItWorksSteps />
 
       {/* 3.5 Asymmetric Image Showcase — visual breathing room */}
       <FeatureShowcase />
-
-      {/* 4. Interactive Multi-IDE Terminal (Separate Section) */}
-      <MagicTerminal />
 
       {/* 5.5 Transparent Pricing & Token Packs */}
       <PricingPlans isLoggedIn={!!session} />
@@ -43,8 +39,8 @@ export default async function Home() {
       {/* 6. Editorial FAQ with Sticky Header */}
       <MarketingFaq />
 
-      {/* 7. High-Impact Dark Contrast CTA Area */}
-      <LandingApiCta isLoggedIn={!!session} />
+      {/* 7. Closing: every model into one key */}
+      <ClosingKey />
 
       {/* 8. Footer with Submerged Wireframe Morphic Horizon */}
       <Footer />

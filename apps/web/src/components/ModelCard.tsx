@@ -71,14 +71,14 @@ export default function ModelCard({ model, isLoggedIn = false }: ModelCardProps)
         </div>
 
         {/* Short Useful Description */}
-        <p className="text-xs text-neutral-600 font-body leading-relaxed line-clamp-2 h-9 mb-6">
+        <p className="text-xs text-neutral-600 font-body leading-relaxed line-clamp-2 min-h-[2.5rem] mb-6">
           {desc}
         </p>
       </div>
 
       {/* Daily rate, context window, and action */}
       <div>
-        <div className="grid grid-cols-1 gap-3 mb-5 bg-neutral-50 p-3.5 rounded-xl">
+        <div className="grid grid-cols-1 gap-3 mb-5 bg-neutral-50 p-3.5 rounded-xl border border-neutral-100">
           {/* Price Section */}
           <div>
             <span className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wider block mb-1">
@@ -101,10 +101,10 @@ export default function ModelCard({ model, isLoggedIn = false }: ModelCardProps)
           </div>
         </div>
 
-        {/* Action Button: Use Model */}
+        {/* Action Button: Use Model (Unified rounded-full pill) */}
         <Link
           href={isLoggedIn ? '/dashboard/keys' : '/login'}
-          className="w-full py-2.5 px-4 rounded-xl bg-neutral-950 hover:bg-neutral-800 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-sm group/btn"
+          className="w-full py-2.5 px-5 rounded-full bg-neutral-950 hover:bg-neutral-800 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs group/btn"
         >
           <span>{t.models.useModel}</span>
           <ArrowUpRight className="w-3.5 h-3.5 transition-transform group-hover/btn:translate-x-0.5 group-hover/btn:-translate-y-0.5" />

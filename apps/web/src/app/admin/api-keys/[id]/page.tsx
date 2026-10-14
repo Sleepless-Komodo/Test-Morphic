@@ -142,7 +142,7 @@ export default async function AdminApiKeyDetail({
   const num = 'py-2 px-3 text-right font-mono tabular-nums';
 
   return (
-    <div className="max-w-6xl space-y-6">
+    <div className="w-full space-y-6">
       <AutoRefresh />
       <Link href={`/admin/api-keys?period=${period.key}`} className="inline-flex items-center gap-1.5 text-xs font-semibold text-neutral-600 hover:text-neutral-950">
         <ArrowLeft className="h-3.5 w-3.5" />

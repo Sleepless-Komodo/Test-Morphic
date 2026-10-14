@@ -140,7 +140,30 @@ export function AdminShell({ user, children }: AdminShellProps) {
   );
 
   return (
-    <div className="min-h-screen flex bg-[#fafafa] text-neutral-900 selection:bg-neutral-900 selection:text-white">
+    <div className="min-h-screen flex flex-col lg:flex-row bg-[#fafafa] text-neutral-900 selection:bg-neutral-900 selection:text-white">
+      {/* Mobile Top Header (Sticky) */}
+      <header className="lg:hidden sticky top-0 z-30 w-full flex items-center justify-between px-4 py-3 bg-white/95 backdrop-blur-md border-b border-neutral-200/90 shadow-2xs">
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setMobileOpen(true)}
+            className="p-2 -ml-1 rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-800 hover:text-neutral-950 hover:bg-neutral-100 transition-colors cursor-pointer"
+            aria-label={t.admin.adminMenu}
+          >
+            <Menu className="h-5 w-5" />
+          </button>
+          <div className="flex items-center gap-2">
+            <span className="font-heading font-extrabold text-sm sm:text-base text-neutral-950 tracking-tight">
+              {t.admin.brandTitle}
+            </span>
+            <span className="px-1.5 py-0.5 rounded-full bg-neutral-950 text-white font-mono text-[9px] font-bold tracking-wider uppercase">
+              {t.admin.adminBadge}
+            </span>
+          </div>
+        </div>
+        <LanguageToggle />
+      </header>
+
       {/* Desktop Sidebar (Permanent) */}
       <aside className="hidden lg:flex flex-col w-64 border-r border-neutral-200/90 bg-white p-5 shrink-0 sticky top-0 h-screen">
         {sidebarContent}
@@ -148,14 +171,14 @@ export function AdminShell({ user, children }: AdminShellProps) {
 
       {/* Main Content Area */}
       <main className="flex-1 min-w-0 w-full p-4 sm:p-6 md:p-8 lg:p-10 overflow-x-auto">
-        {children}
+        <div className="w-full max-w-7xl mx-auto">{children}</div>
       </main>
 
-      {/* Mobile: Floating Navigation Button */}
+      {/* Mobile: Floating Navigation Button (High contrast white pill) */}
       <button
         type="button"
         onClick={() => setMobileOpen(true)}
-        className="lg:hidden fixed bottom-5 left-5 z-40 p-3 rounded-full bg-neutral-950 text-white shadow-2xl cursor-pointer hover:bg-neutral-800 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
+        className="lg:hidden fixed bottom-5 left-5 z-40 p-3 rounded-full bg-white text-neutral-950 border-2 border-neutral-300 shadow-2xl hover:bg-neutral-50 hover:border-neutral-400 ring-2 ring-black/5 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 cursor-pointer"
         aria-label={t.admin.adminMenu}
       >
         <Menu className="h-5 w-5" />

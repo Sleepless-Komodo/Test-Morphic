@@ -17,5 +17,13 @@ if (!u) {
   console.error(`no user with email ${email} (sign in once first)`);
   process.exit(1);
 }
+// Out-of-band privilege grant: leave the same trail as an in-app admin action (actor = CLI).
+await db.insert(s.adminAuditLog).values({
+  adminId: null,
+  action: 'grant_admin',
+  entity: 'user',
+  entityId: u.id,
+  detail: { actor: 'system_cli', email: u.email, osUser: process.env.USER ?? null },
+});
 console.log(`${u.email} is now admin`);
 process.exit(0);

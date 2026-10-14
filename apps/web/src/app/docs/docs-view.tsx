@@ -32,7 +32,7 @@ const BASE_URL = API_BASE_URL;
 const QUICKSTART_URL = `${BASE_URL.replace(/\/v1\/?$/, '')}/quickstart`;
 const CHAT_URL = CHAT_COMPLETIONS_URL;
 
-type IdeKey = 'opencode' | 'claudecode';
+type IdeKey = 'opencode' | 'claudecode' | 'hermes' | 'vscode' | 'cursor' | 'windsurf' | 'aider';
 type SdkKey = 'ts' | 'python' | 'curl';
 type OsKey = 'windows' | 'macos' | 'linux';
 type WindowsShell = 'powershell' | 'cmd';
@@ -149,7 +149,15 @@ function OsSelector({
   );
 }
 
-function CopyButton({ text, label }: { text: string; label?: string }) {
+function CopyButton({
+  text,
+  label,
+  compactOnMobile = true,
+}: {
+  text: string;
+  label?: string;
+  compactOnMobile?: boolean;
+}) {
   const [copied, setCopied] = useState(false);
   const { locale } = useTranslation();
   const isId = locale === 'id';
@@ -160,19 +168,35 @@ function CopyButton({ text, label }: { text: string; label?: string }) {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const defaultFullLabel = isId ? 'Salin Semua' : 'Copy All';
+  const defaultShortLabel = isId ? 'Salin' : 'Copy';
+  const displayFullLabel = label || defaultFullLabel;
+  const displayShortLabel = label || defaultShortLabel;
+
   return (
     <button
       type="button"
       onClick={handleCopy}
-      aria-label={label || (isId ? 'Salin Semua' : 'Copy All')}
+      aria-label={displayFullLabel}
       className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-700/80 bg-neutral-800 px-2 py-1 text-[11px] font-semibold text-neutral-300 transition-colors hover:bg-neutral-700 hover:text-white cursor-pointer shrink-0"
     >
       {copied ? (
-        <Check className="h-3 w-3 text-emerald-400" />
+        <Check className="h-3 w-3 text-emerald-400 shrink-0" />
       ) : (
-        <Copy className="h-3 w-3" />
+        <Copy className="h-3 w-3 shrink-0" />
       )}
-      <span>{copied ? (isId ? 'Tersalin' : 'Copied') : (label || (isId ? 'Salin Semua' : 'Copy All'))}</span>
+      {compactOnMobile ? (
+        <>
+          <span className="hidden sm:inline">
+            {copied ? (isId ? 'Tersalin' : 'Copied') : displayFullLabel}
+          </span>
+          <span className="sm:hidden">
+            {copied ? (isId ? 'Tersalin' : 'Copied') : displayShortLabel}
+          </span>
+        </>
+      ) : (
+        <span>{copied ? (isId ? 'Tersalin' : 'Copied') : displayFullLabel}</span>
+      )}
     </button>
   );
 }
@@ -188,83 +212,42 @@ function CodeBlock({
 }) {
   const { locale } = useTranslation();
   const isId = locale === 'id';
-  const [copiedLineIndex, setCopiedLineIndex] = useState<number | null>(null);
-
-  const lines = code.split('\n');
-  const isMultiLine = lines.length > 1;
   const isShell = ['bash', 'sh', 'shell', 'zsh', 'powershell', 'cmd'].includes((language ?? '').toLowerCase());
-
-  const handleCopyLine = (index: number, lineText: string) => {
-    // Strip terminal prompt symbols ($ or >) if present at start
-    const cleaned = lineText.replace(/^\s*[$>]\s+/, '').trimEnd();
-    navigator.clipboard.writeText(cleaned);
-    setCopiedLineIndex(index);
-    setTimeout(() => setCopiedLineIndex(null), 1800);
-  };
 
   return (
     <div className="rounded-xl bg-neutral-950 border border-neutral-800/90 overflow-hidden text-neutral-200 shadow-2xs my-3 group/block">
-      <div className="flex items-center justify-between px-3.5 py-2 border-b border-neutral-800/80 bg-neutral-900/60">
-        <div className="flex items-center gap-2">
-          <div className="flex gap-1.5">
+      <div className="flex items-center justify-between gap-2 px-3 sm:px-3.5 py-2 border-b border-neutral-800/80 bg-neutral-900/60 min-w-0">
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          <div className="flex gap-1.5 shrink-0" aria-hidden="true">
             <div className="w-2.5 h-2.5 rounded-full bg-[#ff5f56] border border-[#e0443e]/50" />
             <div className="w-2.5 h-2.5 rounded-full bg-[#ffbd2e] border border-[#dea123]/50" />
             <div className="w-2.5 h-2.5 rounded-full bg-[#27c93f] border border-[#1aab29]/50" />
           </div>
           {filename && (
-            <span className="font-mono text-[11px] text-neutral-500 font-medium ml-2">
+            <span
+              title={filename}
+              className="font-mono text-[11px] text-neutral-400 font-medium ml-1 truncate max-w-[150px] xs:max-w-[200px] sm:max-w-xs md:max-w-md block"
+            >
               {filename}
             </span>
           )}
         </div>
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2 shrink-0">
           {language && (
-            <span className="text-[10px] font-mono uppercase tracking-wider text-neutral-500 font-semibold">
+            <span className="text-[10px] font-mono uppercase tracking-wider text-neutral-500 font-semibold hidden sm:inline">
               {language}
             </span>
           )}
           <CopyButton text={code} label={isId ? 'Salin Semua' : 'Copy All'} />
         </div>
       </div>
-      {isShell && isMultiLine ? (
-        // Shell: copy one command at a time. Lines wrap rather than scroll, and the
-        // button is select-none so it never ends up in copied text.
-        <div className="p-3 sm:p-4 font-mono text-xs leading-relaxed">
-          {lines.map((line, idx) => {
-            const canCopy = line.trim().length > 0 && !/^\s*(#|\/\/|REM\b|::)/i.test(line);
-            return (
-              <div
-                key={idx}
-                className="group/line flex items-start gap-2 -mx-3 sm:-mx-4 px-3 sm:px-4 py-0.5 rounded hover:bg-neutral-900/90 transition-colors"
-              >
-                <code className="flex-1 min-w-0 whitespace-pre-wrap break-words text-neutral-200 selection:bg-neutral-800">
-                  {line || ' '}
-                </code>
-                {canCopy && (
-                  <button
-                    type="button"
-                    onClick={() => handleCopyLine(idx, line)}
-                    aria-label={isId ? `Salin baris ${idx + 1}` : `Copy line ${idx + 1}`}
-                    title={isId ? 'Salin baris ini' : 'Copy this line'}
-                    className={`select-none shrink-0 grid place-items-center w-5 h-5 rounded-md border transition cursor-pointer focus-visible:opacity-100 ${
-                      copiedLineIndex === idx
-                        ? 'opacity-100 bg-emerald-950/80 border-emerald-500/50 text-emerald-400'
-                        : 'opacity-0 group-hover/line:opacity-100 bg-neutral-900 border-neutral-700/80 text-neutral-400 hover:text-white hover:border-neutral-600'
-                    }`}
-                  >
-                    {copiedLineIndex === idx ? <Check className="w-2.5 h-2.5" /> : <Copy className="w-2.5 h-2.5" />}
-                  </button>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      ) : (
-        // Everything else (JSON, code, configs) is one block with a single scroll, if it needs one.
-        <pre className="p-3 sm:p-4 overflow-x-auto font-mono text-xs leading-relaxed text-neutral-200 selection:bg-neutral-800 m-0">
-          <code>{code}</code>
-        </pre>
-      )}
+      <pre
+        className={`p-3.5 sm:p-4 font-mono text-xs leading-relaxed text-neutral-200 selection:bg-white/20 selection:text-white select-text m-0 ${
+          isShell ? 'whitespace-pre-wrap break-words' : 'overflow-x-auto'
+        }`}
+      >
+        <code>{code}</code>
+      </pre>
     </div>
   );
 }
@@ -461,7 +444,7 @@ claude "Analyze this repository architecture"`,
             menuPath: 'Command Prompt (CMD)',
             code: `set MORPHIC_API_KEY=mp-xxxxxxxxxxxxxxxxxxxx
 powershell -NoProfile -ExecutionPolicy Bypass -Command "$env:MORPHIC_API_KEY='%MORPHIC_API_KEY%'; irm ${QUICKSTART_URL}/opencode.ps1 | iex"`,
-            extraFile: 'opencode.json (manual, optional)',
+            extraFile: 'opencode.json (opsional)',
             extraLanguage: 'json',
             extraCode: config,
           }
@@ -471,7 +454,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "$env:MORPHIC_API_KEY='%M
             menuPath: 'Windows PowerShell',
             code: `$env:MORPHIC_API_KEY = "mp-xxxxxxxxxxxxxxxxxxxx"
 irm ${QUICKSTART_URL}/opencode.ps1 | iex`,
-            extraFile: 'opencode.json (manual, optional)',
+            extraFile: 'opencode.json (opsional)',
             extraLanguage: 'json',
             extraCode: config,
           };
@@ -485,14 +468,171 @@ irm ${QUICKSTART_URL}/opencode.ps1 | iex`,
       menuPath: os === 'macos' ? 'macOS Terminal → paste → opencode' : 'Linux Terminal → paste → opencode',
       code: `export MORPHIC_API_KEY=mp-xxxxxxxxxxxxxxxxxxxx
 curl -fsSL ${QUICKSTART_URL}/opencode.sh | bash`,
-      extraFile: 'opencode.json (manual, optional)',
+      extraFile: 'opencode.json (opsional)',
       extraLanguage: 'json',
       extraCode: config,
     };
   };
 
+  const getHermesSnippet = (os: OsKey, winShell: WindowsShell) => {
+    const configJson = `{
+  "provider": "openai",
+  "base_url": "${BASE_URL}",
+  "api_key": "mp-live-xxxxxxxxxxxxxxxxxxxx",
+  "default_model": "deepseek-v4"
+}`;
+
+    if (os === 'macos') {
+      return {
+        file: 'run-hermes-mac.sh',
+        language: 'bash',
+        menuPath: 'macOS Terminal (zsh / bash) → hermes',
+        code: `export OPENAI_BASE_URL="${BASE_URL}"
+export OPENAI_API_KEY="mp-live-xxxxxxxxxxxxxxxxxxxx"
+
+hermes --model deepseek-v4`,
+        extraFile: '~/.hermes/config.json (opsional)',
+        extraLanguage: 'json',
+        extraCode: configJson,
+      };
+    }
+    if (os === 'linux') {
+      return {
+        file: 'run-hermes-linux.sh',
+        language: 'bash',
+        menuPath: 'Linux Terminal (bash) → hermes',
+        code: `export OPENAI_BASE_URL="${BASE_URL}"
+export OPENAI_API_KEY="mp-live-xxxxxxxxxxxxxxxxxxxx"
+
+hermes --model deepseek-v4`,
+        extraFile: '~/.hermes/config.json (opsional)',
+        extraLanguage: 'json',
+        extraCode: configJson,
+      };
+    }
+    if (winShell === 'cmd') {
+      return {
+        file: 'run-hermes.cmd',
+        language: 'cmd',
+        menuPath: 'Command Prompt (CMD) → hermes',
+        code: `set OPENAI_BASE_URL=${BASE_URL}
+set OPENAI_API_KEY=mp-live-xxxxxxxxxxxxxxxxxxxx
+
+hermes --model deepseek-v4`,
+        extraFile: '%USERPROFILE%\\.hermes\\config.json (opsional)',
+        extraLanguage: 'json',
+        extraCode: configJson,
+      };
+    }
+    return {
+      file: 'run-hermes.ps1',
+      language: 'powershell',
+      menuPath: 'Windows PowerShell → hermes',
+      code: `$env:OPENAI_BASE_URL = "${BASE_URL}"
+$env:OPENAI_API_KEY  = "mp-live-xxxxxxxxxxxxxxxxxxxx"
+
+hermes --model deepseek-v4`,
+      extraFile: '$HOME\\.hermes\\config.json (opsional)',
+      extraLanguage: 'json',
+      extraCode: configJson,
+    };
+  };
+
+  const getVsCodeSnippet = () => {
+    const continueConfig = `{
+  "models": [
+    {
+      "title": "Morphic - DeepSeek V4",
+      "provider": "openai",
+      "model": "deepseek-v4",
+      "apiBase": "${BASE_URL}",
+      "apiKey": "mp-live-xxxxxxxxxxxxxxxxxxxx"
+    },
+    {
+      "title": "Morphic - Qwen Max",
+      "provider": "openai",
+      "model": "qwen-max",
+      "apiBase": "${BASE_URL}",
+      "apiKey": "mp-live-xxxxxxxxxxxxxxxxxxxx"
+    }
+  ],
+  "tabAutocompleteModel": {
+    "title": "Morphic Autocomplete",
+    "provider": "openai",
+    "model": "deepseek-v4",
+    "apiBase": "${BASE_URL}",
+    "apiKey": "mp-live-xxxxxxxxxxxxxxxxxxxx"
+  }
+}`;
+
+    const clineConfig = `{
+  "apiProvider": "openai",
+  "openAiBaseUrl": "${BASE_URL}",
+  "openAiApiKey": "mp-live-xxxxxxxxxxxxxxxxxxxx",
+  "openAiModelId": "deepseek-v4"
+}`;
+
+    return {
+      menuPath: 'VS Code > Ekstensi Continue (~/.continue/config.json) atau Cline / Roo Code Settings',
+      file: 'continue.config.json',
+      language: 'json',
+      code: continueConfig,
+      extraFile: 'cline_settings.json (Cline / Roo)',
+      extraLanguage: 'json',
+      extraCode: clineConfig,
+    };
+  };
+
+  const getAiderSnippet = (os: OsKey, winShell: WindowsShell) => {
+    if (os === 'macos') {
+      return {
+        file: 'run-aider-mac.sh',
+        language: 'bash',
+        menuPath: 'macOS Terminal (zsh)',
+        code: `export OPENAI_API_BASE="${BASE_URL}"
+export OPENAI_API_KEY="mp-live-xxxxxxxxxxxxxxxxxxxx"
+
+aider --model openai/deepseek-v4`,
+      };
+    }
+    if (os === 'linux') {
+      return {
+        file: 'run-aider-linux.sh',
+        language: 'bash',
+        menuPath: 'Linux Terminal (bash)',
+        code: `export OPENAI_API_BASE="${BASE_URL}"
+export OPENAI_API_KEY="mp-live-xxxxxxxxxxxxxxxxxxxx"
+
+aider --model openai/deepseek-v4`,
+      };
+    }
+    if (winShell === 'cmd') {
+      return {
+        file: 'run-aider.cmd',
+        language: 'cmd',
+        menuPath: 'Command Prompt (CMD)',
+        code: `set OPENAI_API_BASE=${BASE_URL}
+set OPENAI_API_KEY=mp-live-xxxxxxxxxxxxxxxxxxxx
+
+aider --model openai/deepseek-v4`,
+      };
+    }
+    return {
+      file: 'run-aider.ps1',
+      language: 'powershell',
+      menuPath: 'Windows PowerShell',
+      code: `$env:OPENAI_API_BASE = "${BASE_URL}"
+$env:OPENAI_API_KEY  = "mp-live-xxxxxxxxxxxxxxxxxxxx"
+
+aider --model openai/deepseek-v4`,
+    };
+  };
+
   const claudeSnippet = getClaudeCodeSnippet(selectedOs, selectedWinShell);
   const opencodeSnippet = getOpencodeSnippet(selectedOs, selectedWinShell);
+  const hermesSnippet = getHermesSnippet(selectedOs, selectedWinShell);
+  const vsCodeSnippet = getVsCodeSnippet();
+  const aiderSnippet = getAiderSnippet(selectedOs, selectedWinShell);
 
   const ideConfigs: Record<
     IdeKey,
@@ -505,7 +645,7 @@ curl -fsSL ${QUICKSTART_URL}/opencode.sh | bash`,
       file: string;
       language?: string;
       code: string;
-      // A second block for setups that need a file AND a command (opencode).
+      // A second block for setups that need a file AND a command (opencode / hermes / vscode).
       extraCode?: string;
       extraFile?: string;
       extraLanguage?: string;
@@ -533,6 +673,77 @@ curl -fsSL ${QUICKSTART_URL}/opencode.sh | bash`,
       file: claudeSnippet.file,
       language: claudeSnippet.language,
       code: claudeSnippet.code,
+    },
+    hermes: {
+      name: 'Hermes Agent',
+      title: 'Hermes Agent (Nous Research)',
+      desc: 'Jalankan autonomous AI agent dari Nous Research di terminal dengan menghubungkannya ke Morphic Gateway.',
+      descEn: 'Run the Nous Research autonomous AI agent in your terminal connected to the Morphic Gateway.',
+      menuPath: hermesSnippet.menuPath,
+      file: hermesSnippet.file,
+      language: hermesSnippet.language,
+      code: hermesSnippet.code,
+      extraCode: hermesSnippet.extraCode,
+      extraFile: hermesSnippet.extraFile,
+      extraLanguage: hermesSnippet.extraLanguage,
+    },
+    vscode: {
+      name: 'VS Code',
+      title: 'Visual Studio Code (Continue & Cline)',
+      desc: 'Konfigurasi ekstensi coding agent terpopuler di VS Code: Continue.dev untuk tab autocomplete & chat, atau Cline / Roo Code untuk autonomous task.',
+      descEn: 'Configure popular coding agent extensions in VS Code: Continue.dev for tab autocomplete & chat, or Cline / Roo Code for autonomous coding tasks.',
+      menuPath: vsCodeSnippet.menuPath,
+      file: vsCodeSnippet.file,
+      language: vsCodeSnippet.language,
+      code: vsCodeSnippet.code,
+      extraCode: vsCodeSnippet.extraCode,
+      extraFile: vsCodeSnippet.extraFile,
+      extraLanguage: vsCodeSnippet.extraLanguage,
+    },
+    cursor: {
+      name: 'Cursor',
+      title: 'Cursor IDE (Composer & Inline)',
+      desc: 'Gunakan seluruh model AI langsung di Cursor Composer & Inline Edit melalui protokol resmi OpenAI API.',
+      descEn: 'Use all AI models directly in Cursor Composer & Inline Edit via the official OpenAI API protocol.',
+      menuPath:
+        selectedOs === 'macos'
+          ? 'Settings (Cmd+Shift+J) > Models > OpenAI API'
+          : 'Settings (Ctrl+Shift+J) > Models > OpenAI API',
+      file: 'cursor.settings.json',
+      language: 'json',
+      code: `// Cursor Settings > Models > OpenAI API:
+Base URL: ${BASE_URL}
+API Key:  mp-live-xxxxxxxxxxxxxxxxxxxx
+
+// Rekomendasi Model IDs untuk ditambahkan (+ Add Model):
+- deepseek-v4    (Coding & reasoning, konteks 64K)
+- kimi-coding    (Konteks 256K, refactoring multi-file)
+- qwen-max       (General purpose & reasoning, konteks 32K)`,
+    },
+    windsurf: {
+      name: 'Windsurf',
+      title: 'Windsurf (Codeium Cascade)',
+      desc: 'Jalankan fitur Cascade AI pada Windsurf dengan menghubungkan custom model provider OpenAI.',
+      descEn: 'Run Cascade AI features in Windsurf by connecting a custom OpenAI provider.',
+      menuPath: 'Windsurf Settings > AI Providers > Custom OpenAI-Compatible Provider',
+      file: 'windsurf_config.json',
+      language: 'json',
+      code: `{
+  "provider": "openai-compatible",
+  "endpoint": "${BASE_URL}",
+  "apiKey": "mp-live-xxxxxxxxxxxxxxxxxxxx",
+  "defaultModel": "deepseek-v4"
+}`,
+    },
+    aider: {
+      name: 'Aider',
+      title: 'Aider (Command-line Pair Programming)',
+      desc: 'Pair programming di command line dengan Aider menggunakan satu baris perintah terminal.',
+      descEn: 'Pair program in the command line with Aider using a single terminal command.',
+      menuPath: aiderSnippet.menuPath,
+      file: aiderSnippet.file,
+      language: aiderSnippet.language,
+      code: aiderSnippet.code,
     },
   };
 
@@ -812,7 +1023,7 @@ curl ${CHAT_URL} \\
       ],
     },
     {
-      title: isId ? 'Integrasi Platform & Agent' : 'Platform & Agent CLI',
+      title: isId ? 'Integrasi Editor & Agent' : 'IDE & Coding Agents',
       items: [
         {
           id: 'ide-opencode',
@@ -829,6 +1040,46 @@ curl ${CHAT_URL} \\
           label: 'Claude Code CLI',
           href: '#ide-setup',
           onClick: () => setActiveIde('claudecode'),
+        },
+        {
+          id: 'ide-hermes',
+          sectionId: 'ide-setup',
+          key: 'hermes',
+          label: 'Hermes Agent',
+          href: '#ide-setup',
+          onClick: () => setActiveIde('hermes'),
+        },
+        {
+          id: 'ide-vscode',
+          sectionId: 'ide-setup',
+          key: 'vscode',
+          label: 'VS Code (Continue & Cline)',
+          href: '#ide-setup',
+          onClick: () => setActiveIde('vscode'),
+        },
+        {
+          id: 'ide-cursor',
+          sectionId: 'ide-setup',
+          key: 'cursor',
+          label: 'Cursor IDE',
+          href: '#ide-setup',
+          onClick: () => setActiveIde('cursor'),
+        },
+        {
+          id: 'ide-windsurf',
+          sectionId: 'ide-setup',
+          key: 'windsurf',
+          label: 'Windsurf Cascade',
+          href: '#ide-setup',
+          onClick: () => setActiveIde('windsurf'),
+        },
+        {
+          id: 'ide-aider',
+          sectionId: 'ide-setup',
+          key: 'aider',
+          label: 'Aider CLI',
+          href: '#ide-setup',
+          onClick: () => setActiveIde('aider'),
         },
       ],
     },
@@ -952,18 +1203,18 @@ curl ${CHAT_URL} \\
   );
 
   return (
-    <div className="w-full bg-white text-neutral-900 pt-28 sm:pt-32 pb-24">
-      {/* Main 2-Column Documentation Canvas */}
+    <div className="w-full bg-[#fafafa] text-neutral-900 pt-28 sm:pt-32 pb-24">
+      {/* Main 2-Column Documentation Canvas (Industry Standard max-w-7xl) */}
       <div className="max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 flex items-start">
         <aside className="hidden lg:block w-64 xl:w-72 shrink-0 sticky top-28 sm:top-32 self-start max-h-[calc(100vh-8.5rem)] overflow-y-auto py-2 pr-6 border-r border-neutral-200/80 [scrollbar-width:thin]">
           {sidebarNav}
         </aside>
 
-        {/* Mobile Floating Drawer Button */}
+        {/* Mobile Floating Drawer Button (High contrast white pill that never blends into dark code blocks) */}
         <button
           type="button"
           onClick={() => setMobileSidebarOpen(true)}
-          className="lg:hidden fixed bottom-6 left-6 z-40 px-3.5 py-2.5 rounded-full bg-neutral-950 text-white shadow-2xl cursor-pointer hover:bg-neutral-800 transition flex items-center gap-2 text-xs font-bold"
+          className="lg:hidden fixed bottom-6 left-6 z-40 px-3.5 py-2.5 rounded-full bg-white text-neutral-950 border-2 border-neutral-300 shadow-2xl hover:bg-neutral-50 hover:border-neutral-400 ring-2 ring-black/5 transition flex items-center gap-2 text-xs font-bold cursor-pointer"
           aria-label="Open Documentation Table of Contents"
         >
           <Menu className="h-4 w-4" />
@@ -1248,13 +1499,13 @@ curl ${CHAT_URL} \\
           {/* SECTION 4: IDE SETUP */}
           <section id="ide-setup" className="scroll-mt-32 sm:scroll-mt-36 space-y-4">
             <h2 className="text-xl sm:text-2xl font-heading font-bold text-neutral-950 pb-2 border-b border-neutral-100">
-              {isId ? 'Integrasi Platform & Agent CLI' : 'Platform & Agent CLI Setup'}
+              {isId ? 'Integrasi Editor & Agent Coding' : 'IDE & Coding Agents Setup'}
             </h2>
 
             <p className="text-sm text-neutral-600 leading-relaxed">
               {isId
-                ? 'Pilih platform CLI agent Anda di bawah ini (opencode atau Claude Code) untuk melihat panduan setup instan:'
-                : 'Select your CLI agent platform below (opencode or Claude Code) for instant setup instructions:'}
+                ? 'Pilih editor atau platform CLI agent Anda di bawah ini untuk melihat jalur pengaturan dan snippet konfigurasi instan:'
+                : 'Select your coding editor or CLI agent platform below for instant setup instructions and configuration snippets:'}
             </p>
 
             {/* Apple/shadcn segmented tab bar */}
