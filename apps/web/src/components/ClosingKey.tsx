@@ -160,7 +160,7 @@ export default function ClosingKey() {
   let wordIndex = 0;
   return (
     <section className="relative bg-white" aria-labelledby="closing-title">
-      <div ref={trackRef} className={`relative ${isMobile ? 'h-[190vh]' : 'h-[260vh]'}`}>
+      <div ref={trackRef} className="relative h-[190vh] md:h-[260vh]">
         <div ref={stageRef} className="sticky top-0 h-[100svh] overflow-hidden">
           {LOGOS.map(([label], i) => (
             <Orbiter key={label} i={i} progress={progress} rx={rx} ry={ry} />

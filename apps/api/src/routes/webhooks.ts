@@ -307,7 +307,7 @@ webhooks.post('/paypal', async (c) => {
   }
 
   // Step 4: Handle payment success events
-  if (eventType === 'PAYMENT.CAPTURE.COMPLETED' || eventType === 'CHECKOUT.ORDER.APPROVED') {
+  if (eventType === 'PAYMENT.CAPTURE.COMPLETED') {
     try {
       const fulfilled = await db.transaction(async (tx) => {
         await tx.insert(s.paymentEvents).values({

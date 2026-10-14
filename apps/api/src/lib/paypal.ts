@@ -323,7 +323,11 @@ export async function verifyWebhookSignature(params: {
   headers: Record<string, string | undefined>;
   body: any;
 }): Promise<boolean> {
-  const webhookId = process.env.PAYPAL_WEBHOOK_ID || '4DX54055FF0523246';
+  const webhookId = process.env.PAYPAL_WEBHOOK_ID;
+  if (!webhookId) {
+    console.error('[paypal] PAYPAL_WEBHOOK_ID is not set — rejecting webhook');
+    return false;
+  }
 
   const authAlgo = params.headers['paypal-auth-algo'];
   const certUrl = params.headers['paypal-cert-url'];
@@ -331,9 +335,6 @@ export async function verifyWebhookSignature(params: {
   const transmissionSig = params.headers['paypal-transmission-sig'];
   const transmissionTime = params.headers['paypal-transmission-time'];
 
-  if (transmissionId === 'mock_test_trans_id') {
-    return true;
-  }
 
   if (!authAlgo || !certUrl || !transmissionId || !transmissionSig || !transmissionTime) {
     return false;
