@@ -1,5 +1,6 @@
 import { db, schema as s } from '@morphic/db';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { sendOpsAlert } from './alert';
 
 export type PaymentStatus =
   | 'pending'
@@ -11,6 +12,8 @@ export type PaymentStatus =
   | 'refunded'
   | 'needs_review'
   | 'disputed';
+
+export const OPEN_PAYMENT_STATUSES: PaymentStatus[] = ['pending', 'pending_paypal', 'capturing'];
 
 export type PaymentRow = typeof s.payments.$inferSelect;
 export type PaymentTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -129,3 +132,66 @@ export async function recordUnmatchedEvent(input: {
 }): Promise<boolean> {
   return recordPaymentEvent({ ...input, paymentId: null });
 }
+
+/**
+ * Persist a capture id on a payment, best-effort and only when the column is still empty.
+ * A unique collision (a second capture for the same row) is expected and swallowed.
+ */
+export async function saveCaptureId(paymentId: string, captureId: string): Promise<void> {
+  try {
+    await db
+      .update(s.payments)
+      .set({ captureId })
+      .where(and(eq(s.payments.id, paymentId), isNull(s.payments.captureId)));
+  } catch (err) {
+    console.warn('[payment-state] capture_id store skipped:', err);
+  }
+}
+
+export interface FlagNeedsReviewDetails {
+  type?: string;
+  reason: string;
+  orderId?: string | null;
+  customId?: string | null;
+  amount?: string | number | null;
+  currency?: string | null;
+  expectedAmountCents?: number;
+  expectedCurrency?: string;
+  [key: string]: unknown;
+}
+
+/**
+ * Transition an open payment to `needs_review`, log the anomaly, and send an ops alert.
+ * A conditional UPDATE ensures a row that a concurrent process (e.g. webhook) already settled
+ * as `paid` is never pulled back into `needs_review`.
+ */
+export async function flagPaymentNeedsReview(
+  payment: Pick<PaymentRow, 'id' | 'provider' | 'externalId' | 'amountCents' | 'currency'>,
+  details: FlagNeedsReviewDetails,
+): Promise<boolean> {
+  console.error(`[payment-state] NEEDS REVIEW: ${payment.id} (${details.reason})`);
+
+  const updated = await transitionPayment(payment.id, OPEN_PAYMENT_STATUSES, 'needs_review').catch(() => null);
+
+  try {
+    const alertType = details.type ?? `${payment.provider}_needs_review`;
+    await sendOpsAlert(`${payment.provider.toUpperCase()} payment ${payment.id} needs review: ${details.reason}`, {
+      ...details,
+      type: alertType,
+      paymentId: payment.id,
+      provider: payment.provider,
+      reason: details.reason,
+      orderId: details.orderId ?? payment.externalId,
+      customId: details.customId ?? null,
+      amount: details.amount !== undefined && details.amount !== null ? String(details.amount) : null,
+      currency: details.currency ?? null,
+      expectedAmountCents: details.expectedAmountCents ?? payment.amountCents,
+      expectedCurrency: details.expectedCurrency ?? payment.currency,
+    });
+  } catch (err) {
+    console.error('[payment-state] needs_review alert failed:', err);
+  }
+
+  return Boolean(updated);
+}
+

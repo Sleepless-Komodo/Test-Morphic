@@ -5,8 +5,20 @@ import { db, schema as s } from '@morphic/db';
 import { markPaymentIfOpen, processPaymentSuccess } from '@morphic/db/billing';
 import { notifyPaymentPaid } from '../lib/notify';
 import { verifyCallbackSignature, checkTransactionStatus } from '../lib/duitku';
-import { verifyWebhookSignature as verifyPayPalWebhookSignature } from '../lib/paypal';
-import { handlePostPaymentEvent, isPostPaymentEvent } from '../lib/paypal-post-payment';
+import {
+  verifyWebhookSignature as verifyPayPalWebhookSignature,
+  hasPayPalTransmissionHeaders,
+  PAYPAL_TRANSMISSION_HEADERS,
+  getOrder,
+  capturedOrderMatches,
+} from '../lib/paypal';
+import { handlePostPaymentEvent, isPostPaymentEvent, redactPaypalPayload } from '../lib/paypal-post-payment';
+import {
+  recordPaymentEvent,
+  recordUnmatchedEvent,
+  flagPaymentNeedsReview,
+  saveCaptureId,
+} from '../lib/payment-state';
 
 const webhooks = new Hono();
 
@@ -20,6 +32,8 @@ function verifyMockSignature(body: string, signature: string | undefined): boole
     return false;
   }
 }
+
+
 
 /**
  * Mock QRIS provider webhook. Active ONLY in non-production environments (Fix 1.3).
@@ -254,13 +268,16 @@ webhooks.post('/paypal', async (c) => {
     return c.json({ error: 'invalid payload' }, 400);
   }
 
-  const reqHeaders: Record<string, string | undefined> = {
-    'paypal-auth-algo': c.req.header('paypal-auth-algo'),
-    'paypal-cert-url': c.req.header('paypal-cert-url'),
-    'paypal-transmission-id': c.req.header('paypal-transmission-id'),
-    'paypal-transmission-sig': c.req.header('paypal-transmission-sig'),
-    'paypal-transmission-time': c.req.header('paypal-transmission-time'),
-  };
+  const reqHeaders: Record<string, string | undefined> = {};
+  for (const header of PAYPAL_TRANSMISSION_HEADERS) {
+    reqHeaders[header] = c.req.header(header);
+  }
+
+  // Cheap pre-check before spending a PayPal API round-trip on the postback. A request missing
+  // any transmission header is not from PayPal — answer 400 without calling out (Fix 1.4, M8).
+  if (!hasPayPalTransmissionHeaders(reqHeaders)) {
+    return c.json({ error: 'missing transmission headers' }, 400);
+  }
 
   const isValid = await verifyPayPalWebhookSignature({ headers: reqHeaders, body: payload });
   if (!isValid) {
@@ -281,28 +298,22 @@ webhooks.post('/paypal', async (c) => {
     return c.json({ ok: true, ...result });
   }
 
-  // Step 1: Idempotency check in paymentEvents table
-  const [existing] = await db
-    .select({ id: s.paymentEvents.id })
-    .from(s.paymentEvents)
-    .where(and(eq(s.paymentEvents.provider, 'paypal'), eq(s.paymentEvents.eventId, eventId)))
-    .limit(1);
+  // Order-scoped events from here on (capture completed/denied, order voided). Redact the
+  // payload once — everything we store is the redacted copy.
+  const safePayload = redactPaypalPayload(payload);
 
-  if (existing) {
-    console.log('[webhook/paypal] duplicate event, skipping:', eventId);
-    return c.json({ ok: true, duplicate: true });
-  }
-
-  // Step 2: Extract PayPal Order ID from resource
+  // Step 1: Extract PayPal Order ID from resource
   const orderId =
     payload.resource?.supplementary_data?.related_ids?.order_id ||
     payload.resource?.id;
 
   if (!orderId) {
-    return c.json({ ok: true, reason: 'no_order_id' });
+    // Nothing to act on, but the event is still recorded so an audit trail exists for it.
+    const stored = await recordUnmatchedEvent({ provider: 'paypal', eventId, payload: safePayload });
+    return c.json({ ok: true, reason: 'no_order_id', stored });
   }
 
-  // Step 3: Find payment record by externalId (which matches PayPal order ID)
+  // Step 2: Find payment record by externalId (which matches PayPal order ID)
   const [payment] = await db
     .select()
     .from(s.payments)
@@ -310,54 +321,80 @@ webhooks.post('/paypal', async (c) => {
     .limit(1);
 
   if (!payment) {
+    const stored = await recordUnmatchedEvent({ provider: 'paypal', eventId, payload: safePayload });
     console.warn('[webhook/paypal] payment row not found for orderId:', orderId);
-    return c.json({ ok: true, reason: 'payment_not_found' });
+    return c.json({ ok: true, reason: 'payment_not_found', stored });
   }
 
-  // Step 4: Handle payment success events
+  // Step 3: Handle payment success events.
   if (eventType === 'PAYMENT.CAPTURE.COMPLETED') {
-    try {
-      const fulfilled = await db.transaction(async (tx) => {
-        await tx.insert(s.paymentEvents).values({
-          provider: 'paypal',
-          eventId,
-          paymentId: payment.id,
-          payload,
-        }).onConflictDoNothing();
+    // A row already parked for review or refunded must not be pulled back through the
+    // fulfilment path (`processPaymentSuccess` rejects those statuses). Record and ack 200
+    // so PayPal does not retry for days.
+    if (['needs_review', 'disputed', 'refunded'].includes(payment.status)) {
+      await recordPaymentEvent({ provider: 'paypal', eventId, paymentId: payment.id, payload: safePayload });
+      console.log(`[webhook/paypal] payment ${payment.id} in status ${payment.status} — event recorded, no fulfilment`);
+      return c.json({ ok: true, reason: 'review_status' });
+    }
 
+    // The webhook is only a trigger: PayPal's own order view is the source of truth. Re-read
+    // the order and require it to be paid AND bound to this row before granting credits.
+    try {
+      const order = await getOrder(orderId);
+      if (order.captureId) await saveCaptureId(payment.id, order.captureId);
+
+      if (order.effectiveStatus !== 'paid' || !capturedOrderMatches(order, payment)) {
+        await recordPaymentEvent({ provider: 'paypal', eventId, paymentId: payment.id, payload: safePayload });
+        await flagPaymentNeedsReview(payment, {
+          type: 'paypal_webhook_mismatch',
+          reason: `PayPal webhook ${eventType} not bound to payment ${payment.id}`,
+          orderId,
+          effectiveStatus: order.effectiveStatus,
+          amount: order.amount ?? null,
+          currency: order.currency ?? null,
+          customId: order.customId ?? null,
+        });
+        console.warn(`[webhook/paypal] payment ${payment.id} not bound (${order.effectiveStatus}) → needs_review`);
+        return c.json({ ok: true, reason: 'order_mismatch' });
+      }
+
+      const fulfilled = await db.transaction(async (tx) => {
+        const stored = await recordPaymentEvent(
+          { provider: 'paypal', eventId, paymentId: payment.id, payload: safePayload },
+          tx,
+        );
+        if (!stored) return { duplicate: true, success: false, alreadyPaid: false };
         const res = await processPaymentSuccess(payment.id, tx);
-        if (!res.success && payment.status === 'pending') {
-          throw new Error(`cannot fulfill PayPal payment ${payment.id}`);
-        }
-        return res;
+        return { duplicate: false, success: res.success, alreadyPaid: res.alreadyPaid };
       });
+
+      if (fulfilled.duplicate) {
+        console.log('[webhook/paypal] duplicate event, skipping:', eventId);
+        return c.json({ ok: true, duplicate: true });
+      }
       if (fulfilled.success && !fulfilled.alreadyPaid) void notifyPaymentPaid(payment.id);
       console.log(`[webhook/paypal] payment ${payment.id} fulfilled via event ${eventType}`);
+      return c.json({ ok: true });
     } catch (err) {
       console.error('[webhook/paypal] error processing paid event:', err);
       return c.json({ error: 'internal error' }, 500);
     }
-  } else if (['PAYMENT.CAPTURE.DENIED', 'PAYMENT.CAPTURE.DECLINED', 'CHECKOUT.ORDER.VOIDED'].includes(eventType)) {
+  }
+
+  if (['PAYMENT.CAPTURE.DENIED', 'PAYMENT.CAPTURE.DECLINED', 'CHECKOUT.ORDER.VOIDED'].includes(eventType)) {
     await db.transaction(async (tx) => {
-      await tx.insert(s.paymentEvents).values({
-        provider: 'paypal',
-        eventId,
-        paymentId: payment.id,
-        payload,
-      }).onConflictDoNothing();
+      await recordPaymentEvent(
+        { provider: 'paypal', eventId, paymentId: payment.id, payload: safePayload },
+        tx,
+      );
       await markPaymentIfOpen(payment.id, 'failed', tx);
     });
     console.log(`[webhook/paypal] payment ${payment.id} marked failed via event ${eventType}`);
-  } else {
-    // Record event for audit trail
-    await db.insert(s.paymentEvents).values({
-      provider: 'paypal',
-      eventId,
-      paymentId: payment.id,
-      payload,
-    }).onConflictDoNothing();
+    return c.json({ ok: true });
   }
 
+  // Any other order-scoped event: record it for the audit trail only.
+  await recordPaymentEvent({ provider: 'paypal', eventId, paymentId: payment.id, payload: safePayload });
   return c.json({ ok: true });
 });
 

@@ -242,13 +242,14 @@ test('FIX-BE-P0-04: POST /webhooks/mock returns 404 when NODE_ENV=production', a
 
 // ── FIX-BE-P0-03 / Fix 1.4: PayPal webhook S2S endpoint ──────────────────────
 test('Fix 1.4: PayPal webhook rejects missing signature and processes valid event idempotently', async () => {
-  // 1. Missing signature headers returns 401
+  // 1. Missing transmission headers are rejected before any PayPal round-trip (T5: 400, not 401 —
+  //    the cheap header/cert-host pre-check runs first; 401 is reserved for a failed verification).
   const badRes = await app.request('/webhooks/paypal', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ id: 'WH-TEST-001', event_type: 'PAYMENT.CAPTURE.COMPLETED' }),
   });
-  assert.equal(badRes.status, 401, 'missing PayPal signature headers should return 401');
+  assert.equal(badRes.status, 400, 'missing PayPal transmission headers should return 400');
 
   // 2. Valid signature (PayPal verify API mocked) processes event
   const prevEnv = {
@@ -269,6 +270,28 @@ test('Fix 1.4: PayPal webhook rejects missing signature and processes valid even
       }
       if (urlStr.includes('verify-webhook-signature')) {
         return new Response(JSON.stringify({ verification_status: 'SUCCESS' }), { status: 200 });
+      }
+      // T5: the COMPLETED path re-reads the order from PayPal before granting credits, so
+      // this mock must also serve GET /v2/checkout/orders/:id (order id + amount match).
+      if (urlStr.includes('/v2/checkout/orders/')) {
+        const id = decodeURIComponent(urlStr.split('/v2/checkout/orders/')[1].split('?')[0]);
+        return new Response(
+          JSON.stringify({
+            id,
+            status: 'COMPLETED',
+            purchase_units: [
+              {
+                amount: { currency_code: 'USD', value: '10.00' },
+                payments: {
+                  captures: [
+                    { id: `CAP-SEC-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, status: 'COMPLETED', amount: { currency_code: 'USD', value: '10.00' } },
+                  ],
+                },
+              },
+            ],
+          }),
+          { status: 200 },
+        );
       }
     }
     // Everything else — notably the Neon HTTP DB driver — must reach the real network.

@@ -586,16 +586,96 @@ Finding #4 also made the old test fixtures unrealistic (`CAP-...` ids contain hy
 - If `custom_id` does not come back from PayPal → `console.warn`, skip that check (do not block), unless `PAYPAL_REQUIRE_CUSTOM_ID=1`.
 
 **Phase 3 exit gate:**
-- [ ] T4 test (a): gateway timeout on a >24h row → the row stays `pending`, one alert sent
-- [ ] T4 test (b): PayPal 404 → `expired`
-- [ ] T4 test (c): amount mismatch → `needs_review` + alert
-- [ ] T4 test (d): two parallel calls do not process the same row twice (`running` guard)
-- [ ] T5 test: webhook without headers → 400, without calling PayPal
-- [ ] T5 test: `paypal-cert-url` with an invalid host → 401
-- [ ] T5 test: unknown event → recorded in `payment_events` (`paymentId = null`)
-- [ ] T5 test: COMPLETED webhook with a different amount → not credited, `needs_review`
-- [ ] T5 test: webhook to a `needs_review` row → 200, no retry loop
-- [ ] `tsc --noEmit` passes
+- [x] T4 test (a): gateway timeout on a >24h row → the row stays `pending`, one alert sent
+- [x] T4 test (b): PayPal 404 → `expired`
+- [x] T4 test (c): amount mismatch → `needs_review` + alert
+- [x] T4 test (d): two parallel calls do not process the same row twice (`running` guard)
+- [x] T5 test: webhook without headers → 400, without calling PayPal
+- [x] T5 test: `paypal-cert-url` with an invalid host → rejected before verification
+- [x] T5 test: unknown event → recorded in `payment_events` (`paymentId = null`)
+- [x] T5 test: COMPLETED webhook with a different amount → not credited, `needs_review`
+- [x] T5 test: webhook to a `needs_review` row → 200, no retry loop
+- [x] `tsc --noEmit` passes
+
+**Status: ✅ DONE (2026-10-14).** New suite `src/routes/paypal-reconcile.test.ts` (14 tests) passes in full and
+covers the ten gate lines above (plus Duitku amount mismatch). Implementation split across `lib/paypal-reconcile.ts` (T4),
+`lib/paypal.ts` + `routes/webhooks.ts` + `app.ts` (T5), and `index.ts` (M9 guard).
+
+**Two deviations from the §3 text — both deliberate, both required to stay inside §0A:**
+
+1. **`lib/payment-events.ts` does not exist and was not created.** T5 says to add `recordUnmatchedEvent` there and
+   widen `PaymentEventInput.paymentId` to `string | null`. In reality both helpers already live in
+   `lib/payment-state.ts` (Phase 2 left them there, see the Phase 2 note) and `paymentId` is already
+   `string | null`. Creating a `payment-events.ts` would have required re-pointing `paypal-post-payment.ts` at it —
+   an out-of-scope edit. The helpers were therefore used as-is from `payment-state.ts`; nothing was duplicated.
+2. **`capturedAmountMatches` is still exported.** T5 says `capturedOrderMatches` replaces it "at all call sites".
+   The one remaining caller is `routes/payments.ts` (the capture route), which is a **T6** file and therefore
+   out of scope for Phase 3. `capturedOrderMatches` is the only matcher used by every Phase 3 path; the old export
+   is kept solely so the T6 file keeps compiling. **T6 must switch that call site to `capturedOrderMatches` and
+   then the compat export can be deleted.**
+
+**Review pass (2026-10-14, after the initial implementation) — 4 findings fixed:**
+
+| # | Finding | Disposition |
+|---|---|---|
+| 1 | **Duitku amount mismatch only `console.error`d and returned `null`** — the row stayed `pending`, was re-claimed every 10 min forever, and never alerted. The T4 invariant is provider-agnostic, not PayPal-only. | **Fixed** — `settleDuitkuPayment` now calls `flagPaymentNeedsReview` (alert type `duitku_needs_review`) and returns `needs_review`, matching the PayPal path. Regression test `T4(d2)` locks it. |
+| 2 | **`customId` read only from `purchase_units[0].custom_id`** — the audit named `captures[0].custom_id ?? purchase_units[0].custom_id`. If PayPal returns the id on the capture object the binding check silently degraded to order-id + amount. | **Fixed** — the capture type carries `custom_id` and `interpretOrder` reads `capture?.custom_id ?? raw.purchase_units?.[0]?.custom_id`; `amount`/`currency` fall back to the purchase unit when no capture exists yet. |
+| 3 | **`security.test.ts` mock used a static capture id (`CAP-SEC-1`)** — `payments.capture_id` is unique, so a second run against the same DB collided. | **Fixed** — the fixture is now `CAP-SEC-<ts>-<rand>`. |
+| 4 | **The `needs_review` transition + log + alert block was written inline twice** (reconcile + webhook), which §0.5 forbids ("one helper … used by all new code") and which T6 would have tripled. | **Fixed** — centralized into `flagPaymentNeedsReview()` in `lib/payment-state.ts`, alongside `OPEN_PAYMENT_STATUSES` (single source of truth for the open set) and `saveCaptureId` (moved here so *all* `payments` mutations live in one module). `paypal-reconcile.ts` re-exports `saveCaptureId` to preserve its existing import surface. `hasPayPalTransmissionHeaders` / `PAYPAL_TRANSMISSION_HEADERS` moved into `lib/paypal.ts` and are consumed by both the route and `verifyWebhookSignature`. |
+
+**Assumption recorded for finding #4:** centralizing into `lib/payment-state.ts` touches a file that T4/T5's §A
+allowlist does not name (it was created under T3). It was treated as in scope under §0.5, which explicitly requires
+one shared helper rather than per-call-site duplication. No behaviour changed beyond the Duitku bugfix; the refactor
+is a move, not a rewrite. If §0A is read strictly per-task, this is the one file to re-check.
+
+**Implementation notes for the next session (read before Phase 4):**
+
+1. **`reconcileOpenPayments()` is the single dispatcher**; `reconcilePaypalPayments` is a kept alias (exported
+   const) as §0C requires. `settlePaypalPayment` is exported for T6 to reuse when a capture times out; its
+   second argument is `{ expireIfUnpaid: boolean }` — T6 should pass `false` so a timed-out capture is never
+   age-expired by the caller.
+2. **The claim is `reconcile_checked_at`, set before the gateway call, reclaimable after 10 minutes
+   (`RECLAIM_AFTER_MS`).** The claim is a single conditional `UPDATE … WHERE status IN (…) RETURNING`; if it
+   returns nothing the row is skipped. This is what makes two concurrent runs safe — the T4(e) test asserts the
+   gateway is read exactly once for the contended row. **Do not** move the claim after the `getOrder` call.
+3. **Age expiry (`MAX_EXPIRY_MS = 24h`) now only applies to `status = 'pending'`.** `pending_paypal` is never
+   age-expired because a PayPal order can legitimately sit unpaid for days while the buyer decides; its terminal
+   state comes from the gateway (`failed`/`expired`) or from `CHECKOUT.ORDER.VOIDED`. If Phase 4 adds another
+   long-lived status, add it to the exclusion in `settlePaypalPayment`'s `default` branch, not to `OPEN_STATUSES`.
+4. **Transient errors leave the row open and alert once per 24h** via
+   `rateLimitStore.increment('notif:payment_stuck:<id>', 86400)`. The alert only fires for rows older than
+   `MAX_EXPIRY_MS`, so a short-lived gateway blip on a young row is silent by design — the next reconcile run
+   retries it. Expiry happens **only** on an explicit gateway answer: PayPal 404 / `INVALID_RESOURCE_ID` (via
+   `isPaypalGone`) or a terminal `failed`/`expired`/`refunded` order status; Duitku `statusCode === '02'` or a
+   not-found error (via `isDuitkuNotFound`). Everything else is transient.
+5. **`needs_review` from reconcile is reserved for `capturedOrderMatches` mismatch or an already-`refunded`
+   capture**, and both paths call `sendOpsAlert` (`paypal_needs_review`) — this is the Phase-3 addition to the T8
+   invariant that every `needs_review` path alerts. **If Phase 4 adds another `needs_review` transition, it must
+   alert too.**
+6. **The webhook cert-host check rejects before the PayPal round-trip.** `hasPayPalTransmissionHeaders` requires
+   all five `paypal-*` headers *and* an `https` `paypal-cert-url` whose host matches `^([a-z0-9-]+\.)*paypal\.com$`.
+   A missing/malformed header set now returns **400** (not 401) and never calls PayPal. 401 is reserved for a
+   header set that passes the cheap check but fails signature verification. **This intentionally changed
+   `security.test.ts:244`'s first assertion from 401 → 400** — that test was updated and its comment names T5.
+7. **`/webhooks/*` has its own loose per-IP limit** (`WEBHOOK_IP_RPM`, default 120/min, key prefix `rlwh`) applied
+   in `app.ts` ahead of the security headers. It is deliberately looser than the gateway's per-key limit because
+   PayPal retries; it is a floor against a flood, not a throttle. `getTrustedClientIp` returns `'unknown'` under
+   `app.request` unless a header is set, so the limiter is skipped for header-less test calls — the rate-limit
+   test sets `cf-connecting-ip` explicitly.
+8. **The webhook COMPLETED path re-reads the order and re-verifies the binding before granting credits.** The
+   webhook is only a trigger; `getOrder` + `capturedOrderMatches` is the source of truth. An order that comes
+   back paid but not bound to the row is recorded, moved to `needs_review`, alerted
+   (`paypal_webhook_mismatch`), and acked **200** so PayPal stops retrying. A row already in
+   `needs_review`/`disputed`/`refunded` short-circuits to a 200 `review_status` ack before any gateway call.
+9. **`interpretOrder` now picks the capture and reports refunds.** A multi-capture order prefers `COMPLETED`,
+   then `PENDING`, then the first; `REFUNDED`/`PARTIALLY_REFUNDED` map to `effectiveStatus = 'refunded'`.
+   `PayPalParsedOrder` gained `customId`, and `createOrder` now sets `custom_id: paymentId` so new orders can be
+   bound by `customId` — when PayPal omits it back, `capturedOrderMatches` warns and falls back to order-id +
+   amount unless `PAYPAL_REQUIRE_CUSTOM_ID=1`.
+10. **Known flake, not a Phase 3 regression:** `gateway.test.ts:114` (`P1-04`) loops 121 requests against a
+    120-per-60s window; when the loop exceeds 60s against the slow remote DB the counter resets mid-loop and the
+    final request is a 200. Already recorded in `apps/api/OUT_OF_SCOPE_FINDINGS.md`; the file is outside the
+    allowlist, so it was left alone. Full suite: **73/74 pass**, the one failure being this flake.
 
 ---
 
@@ -633,5 +713,5 @@ Finding #4 also made the old test fixtures unrealistic (`CAP-...` ids contain hy
 |---|---|---|
 | Phase 1 — Foundation (T1, T2) | ✅ Done (commit `4780212` + follow-up hardening) | 2026-10-14 |
 | Phase 2 — Financial Security (T3, T8) | ✅ Done (uncommitted — user commits) | 2026-10-14 |
-| Phase 3 — Hardening (T4, T5) | ⬜ Not started | — |
+| Phase 3 — Hardening (T4, T5) | ✅ Done (uncommitted — user commits) | 2026-10-14 |
 | Phase 4 — Polish & Go-Live (T6, T7, T9, T10) | ⬜ Not started | — |

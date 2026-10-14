@@ -65,10 +65,16 @@ duitkuSweepInterval.unref();
 
 // PayPal reconciliation: scan pending payments >30min, poll getOrder(), grant if COMPLETED
 const PAYPAL_RECONCILE_MS = Number(process.env.PAYPAL_RECONCILE_INTERVAL_MS ?? 15 * 60_000);
+let reconcileRunning = false;
 const reconcileInterval = setInterval(() => {
+  if (reconcileRunning) return;
+  reconcileRunning = true;
   reconcilePaypalPayments()
     .then((n: number) => n > 0 && console.log(`[paypal] reconciled ${n} payments`))
-    .catch((e: unknown) => console.error('[paypal] reconcile error:', e));
+    .catch((e: unknown) => console.error('[paypal] reconcile error:', e))
+    .finally(() => {
+      reconcileRunning = false;
+    });
 }, PAYPAL_RECONCILE_MS);
 reconcileInterval.unref();
 

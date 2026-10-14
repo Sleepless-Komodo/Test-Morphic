@@ -120,11 +120,12 @@ export interface PayPalOrderResult {
 export interface PayPalParsedOrder {
   orderId: string;
   orderStatus: string;      // CREATED, SAVED, APPROVED, VOIDED, COMPLETED, PAYER_ACTION_REQUIRED
-  captureStatus?: string;   // COMPLETED, PENDING, DECLINED, FAILED, REFUNDED
+  captureStatus?: string;   // COMPLETED, PENDING, DECLINED, FAILED, REFUNDED, PARTIALLY_REFUNDED
   captureId?: string;
   amount?: string;
   currency?: string;
-  effectiveStatus: 'paid' | 'pending_paypal' | 'failed' | 'expired' | 'pending';
+  customId?: string;        // purchase_units[0].custom_id — the payment id we set at order creation
+  effectiveStatus: 'paid' | 'pending_paypal' | 'failed' | 'expired' | 'pending' | 'refunded';
 }
 
 export class PayPalApiError extends Error {
@@ -141,44 +142,92 @@ export class PayPalApiError extends Error {
 
 // ── Status Interpreter ───────────────────────────────
 
+export const PAYPAL_CERT_HOST_RE = /^([a-z0-9-]+\.)*paypal\.com$/i;
+
+export const PAYPAL_TRANSMISSION_HEADERS = [
+  'paypal-auth-algo',
+  'paypal-cert-url',
+  'paypal-transmission-id',
+  'paypal-transmission-sig',
+  'paypal-transmission-time',
+] as const;
+
+export type PayPalTransmissionHeader = (typeof PAYPAL_TRANSMISSION_HEADERS)[number];
+
+/**
+ * Cheap pre-check before calling PayPal's verification endpoint.
+ *
+ * Requirements:
+ *  - All five paypal-* headers must be present and non-empty.
+ *  - paypal-cert-url must be an https URL whose host is under paypal.com (M8 / T5).
+ *    Without this check, an attacker could supply their own certificate URL and
+ *    cause the verification endpoint to sign against their key.
+ */
+export function hasPayPalTransmissionHeaders(headers: Record<string, string | undefined>): boolean {
+  for (const key of PAYPAL_TRANSMISSION_HEADERS) {
+    if (!headers[key]) return false;
+  }
+
+  let certUrl: URL;
+  try {
+    certUrl = new URL(headers['paypal-cert-url']!);
+  } catch {
+    return false;
+  }
+  return certUrl.protocol === 'https:' && PAYPAL_CERT_HOST_RE.test(certUrl.hostname);
+}
+
 /**
  * Interpret raw PayPal Order / Capture API responses.
- * Evaluates underlying capture status (COMPLETED, PENDING, DECLINED, FAILED)
- * rather than relying solely on top-level order status.
+ * Evaluates the underlying capture rather than the top-level order status, because a
+ * COMPLETED order with a PENDING capture has not actually paid us yet.
+ *
+ * An order can carry several captures (a retry after a declined first attempt). Reading
+ * only `captures[0]` would report a failed first try as the outcome of a later successful
+ * one, so the captures are ranked: COMPLETED, then PENDING, then the first.
  */
 export function interpretOrder(raw: {
   id?: string;
   status: string;
   purchase_units?: Array<{
+    custom_id?: string;
     amount?: { currency_code?: string; value?: string };
     payments?: {
       captures?: Array<{
         id?: string;
         status?: string;
         amount?: { currency_code?: string; value?: string };
+        custom_id?: string;
       }>;
     };
   }>;
 }): PayPalParsedOrder {
   const orderId = raw.id ?? '';
   const orderStatus = raw.status ?? '';
-  const firstUnit = raw.purchase_units?.[0];
-  const firstCapture = firstUnit?.payments?.captures?.[0];
 
-  const captureStatus = firstCapture?.status;
-  const captureId = firstCapture?.id;
-  const amount = firstCapture?.amount?.value;
-  const currency = firstCapture?.amount?.currency_code;
+  const captures = raw.purchase_units?.flatMap((u) => u.payments?.captures ?? []) ?? [];
+  const capture =
+    captures.find((c) => c.status === 'COMPLETED') ??
+    captures.find((c) => c.status === 'PENDING') ??
+    captures[0];
 
-  let effectiveStatus: 'paid' | 'pending_paypal' | 'failed' | 'expired' | 'pending' = 'pending';
+  const customId = capture?.custom_id ?? raw.purchase_units?.[0]?.custom_id;
+  const captureStatus = capture?.status;
+  const captureId = capture?.id;
+  const amount = capture?.amount?.value ?? raw.purchase_units?.[0]?.amount?.value;
+  const currency = capture?.amount?.currency_code ?? raw.purchase_units?.[0]?.amount?.currency_code;
 
-  // Evaluate capture status first if captures exist
+  let effectiveStatus: PayPalParsedOrder['effectiveStatus'] = 'pending';
+
   if (captureStatus) {
     if (captureStatus === 'COMPLETED') {
       effectiveStatus = 'paid';
     } else if (captureStatus === 'PENDING') {
       effectiveStatus = 'pending_paypal';
-    } else if (['DECLINED', 'FAILED', 'REFUNDED'].includes(captureStatus)) {
+    } else if (captureStatus === 'REFUNDED' || captureStatus === 'PARTIALLY_REFUNDED') {
+      // Money came in and has since gone back out — never credit an open row for it.
+      effectiveStatus = 'refunded';
+    } else if (['DECLINED', 'FAILED'].includes(captureStatus)) {
       effectiveStatus = 'failed';
     }
   } else if (orderStatus === 'COMPLETED') {
@@ -200,12 +249,39 @@ export function interpretOrder(raw: {
     captureId,
     amount,
     currency,
+    customId,
     effectiveStatus,
   };
 }
 
 /**
- * Verify that amount and currency from parsed PayPal order response match expected amountCents and currency.
+ * Verify a gateway order actually belongs to the payment row we hold before crediting it.
+ *
+ * Amount and currency alone are not enough: two users can create orders for the same nominal
+ * value, so a webhook naming someone else's order would otherwise be credited to us. The order
+ * id must be the one we stored, and the `custom_id` we set at creation must be this payment's id.
+ */
+export function capturedOrderMatches(
+  o: PayPalParsedOrder,
+  expected: { id: string; externalId: string | null; amountCents: number; currency: string },
+): boolean {
+  if (!o.orderId || o.orderId !== expected.externalId) return false;
+  if (o.customId) {
+    if (o.customId !== expected.id) return false;
+  } else if (process.env.PAYPAL_REQUIRE_CUSTOM_ID === '1') {
+    return false;
+  } else {
+    // PayPal has been seen to omit custom_id on some orders. Until sandbox confirms it always
+    // comes back, degrade to order-id + amount binding instead of flagging every payment.
+    console.warn(`[paypal] order ${o.orderId} returned no custom_id; binding check is order id + amount`);
+  }
+  return capturedAmountMatches(o, expected);
+}
+
+/**
+ * Amount-and-currency-only check. Weaker than `capturedOrderMatches`: it does not prove the order
+ * belongs to this payment row, so any caller that grants credits must use the binding check instead.
+ * Retained as an export for the capture route, which T6 migrates.
  */
 export function capturedAmountMatches(
   o: PayPalParsedOrder,
@@ -435,15 +511,8 @@ export async function verifyWebhookSignature(params: {
     return false;
   }
 
-  const authAlgo = params.headers['paypal-auth-algo'];
-  const certUrl = params.headers['paypal-cert-url'];
-  const transmissionId = params.headers['paypal-transmission-id'];
-  const transmissionSig = params.headers['paypal-transmission-sig'];
-  const transmissionTime = params.headers['paypal-transmission-time'];
-
-
-  if (!authAlgo || !certUrl || !transmissionId || !transmissionSig || !transmissionTime) {
-    return false;
+  for (const key of PAYPAL_TRANSMISSION_HEADERS) {
+    if (!params.headers[key]) return false;
   }
 
   try {
@@ -455,11 +524,11 @@ export async function verifyWebhookSignature(params: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        auth_algo: authAlgo,
-        cert_url: certUrl,
-        transmission_id: transmissionId,
-        transmission_sig: transmissionSig,
-        transmission_time: transmissionTime,
+        auth_algo: params.headers['paypal-auth-algo'],
+        cert_url: params.headers['paypal-cert-url'],
+        transmission_id: params.headers['paypal-transmission-id'],
+        transmission_sig: params.headers['paypal-transmission-sig'],
+        transmission_time: params.headers['paypal-transmission-time'],
         webhook_id: webhookId,
         webhook_event: params.body,
       }),
