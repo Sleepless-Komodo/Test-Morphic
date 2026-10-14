@@ -12,9 +12,57 @@ function getClientSecret(): string {
   return secret;
 }
 
-function getBaseUrl(): string {
+/**
+ * Resolve the PayPal environment with production guardrails.
+ * Production must run live; non-production must not. Never falls back to sandbox in production.
+ */
+function resolvePaypalEnvironment(): 'live' | 'sandbox' {
   const env = process.env.PAYPAL_ENVIRONMENT ?? 'sandbox';
-  return env === 'live' || env === 'production'
+  const isProduction = process.env.NODE_ENV === 'production';
+  const isLive = env === 'live' || env === 'production';
+
+  if (isProduction && !isLive) {
+    throw new Error(
+      `PAYPAL_ENVIRONMENT must be "live" or "production" when NODE_ENV=production (got "${env}")`,
+    );
+  }
+  if (!isProduction && isLive) {
+    throw new Error(`PAYPAL_ENVIRONMENT="${env}" is not allowed outside production`);
+  }
+  return isLive ? 'live' : 'sandbox';
+}
+
+/**
+ * Validate PayPal config at startup. Unconfigured PayPal (Duitku-only deployment) is disabled,
+ * not fatal. Throws on production misconfiguration so the process crashes instead of silently
+ * running against sandbox.
+ */
+export function assertPaypalConfig(): void {
+  const clientId = process.env.PAYPAL_CLIENT_ID;
+  const clientSecret = process.env.PAYPAL_CLIENT_SECRET;
+
+  if (!clientId && !clientSecret) {
+    console.log('[paypal] disabled (PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET are unset)');
+    return;
+  }
+
+  const isProduction = process.env.NODE_ENV === 'production';
+
+  if (isProduction && process.env.PAYPAL_WEBHOOK_TEST_BYPASS) {
+    throw new Error('PAYPAL_WEBHOOK_TEST_BYPASS must not be set in production');
+  }
+
+  if (isProduction) {
+    if (!clientId) throw new Error('PAYPAL_CLIENT_ID is required in production');
+    if (!clientSecret) throw new Error('PAYPAL_CLIENT_SECRET is required in production');
+    if (!process.env.PAYPAL_WEBHOOK_ID) throw new Error('PAYPAL_WEBHOOK_ID is required in production');
+  }
+
+  resolvePaypalEnvironment();
+}
+
+function getBaseUrl(): string {
+  return resolvePaypalEnvironment() === 'live'
     ? 'https://api-m.paypal.com'
     : 'https://api-m.sandbox.paypal.com';
 }

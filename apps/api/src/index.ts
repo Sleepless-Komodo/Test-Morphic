@@ -7,6 +7,7 @@ import { lt } from 'drizzle-orm';
 import { checkProviderHealth } from './lib/alert';
 import { reconcilePaypalPayments, sweepStaleDuitkuPayments } from './lib/paypal-reconcile';
 import { assertDuitkuConfig } from './lib/duitku';
+import { assertPaypalConfig } from './lib/paypal';
 
 // Validate Duitku environment config at startup
 try {
@@ -14,6 +15,10 @@ try {
 } catch (err: any) {
   console.warn(`[duitku] startup config check warning: ${err?.message}`);
 }
+
+// Validate PayPal environment config at startup. Unlike Duitku this is unguarded:
+// a misconfigured production process must crash, not silently run against sandbox.
+assertPaypalConfig();
 
 const port = Number(process.env.API_PORT ?? 8787);
 serve({ fetch: app.fetch, port }, (info) => {
