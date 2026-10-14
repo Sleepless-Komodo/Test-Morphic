@@ -21,7 +21,9 @@ coverage/
 # Environment & secrets — only .env.example is committed
 .env
 .env.*
+.env.test
 !.env.example
+!.env.test.example
 *.pem
 *.key
 *.p12
