@@ -697,13 +697,13 @@ is a move, not a rewrite. If §0A is read strictly per-task, this is the one fil
 4. T10: run the whole §9 scenario set, document the results.
 
 **Phase 4 exit gate (= go-live gate):**
-- [ ] T6 test: two parallel capture requests → only one calls PayPal
-- [ ] T6 test: artificial timeout → the row stays `capturing`, reconcile settles it
-- [ ] T6 test: `INSTRUMENT_DECLINED` → the row goes back to `pending`, can be retried
-- [ ] T7 test: no approve URL → throw (not return `''`)
-- [ ] All §9 scenarios pass in sandbox
-- [ ] Live smoke test: 1 small transaction + self-refund + confirm the `REFUNDED` event is recorded
-- [ ] `tsc --noEmit` passes final
+- [x] T6 test: two parallel capture requests → only one calls PayPal
+- [x] T6 test: artificial timeout → the row stays `capturing`, reconcile settles it
+- [x] T6 test: `INSTRUMENT_DECLINED` → the row goes back to `pending`, can be retried
+- [x] T7 test: no approve URL → throw (not return `''`)
+- [ ] All §9 scenarios pass in sandbox — **T10, not run (operational, needs a real sandbox + dashboard)**
+- [ ] Live smoke test: 1 small transaction + self-refund + confirm the `REFUNDED` event is recorded — **T10, not run**
+- [x] `tsc --noEmit` passes final
 
 ---
 
@@ -712,6 +712,72 @@ is a move, not a rewrite. If §0A is read strictly per-task, this is the one fil
 | Phase | Status | Completion date |
 |---|---|---|
 | Phase 1 — Foundation (T1, T2) | ✅ Done (commit `4780212` + follow-up hardening) | 2026-10-14 |
-| Phase 2 — Financial Security (T3, T8) | ✅ Done (uncommitted — user commits) | 2026-10-14 |
-| Phase 3 — Hardening (T4, T5) | ✅ Done (uncommitted — user commits) | 2026-10-14 |
-| Phase 4 — Polish & Go-Live (T6, T7, T9, T10) | ⬜ Not started | — |
+| Phase 2 — Financial Security (T3, T8) | ✅ Done (commit — user commits) | 2026-10-14 |
+| Phase 3 — Hardening (T4, T5) | ✅ Done (commit — user commits) | 2026-10-14 |
+| Phase 4 — Polish & Go-Live (T6, T7, T9, T10) | 🟡 Code done (T6+T7, uncommitted — user commits); T9/T10 operational, not run | 2026-10-14 |
+
+---
+
+### Phase 4 — Implementation notes for the next session
+
+**What was implemented (T6 + T7 only; T9/T10 are operational, not code):**
+
+- **T6 — capture route hardening** (`routes/payments.ts` capture route, `lib/paypal.ts`):
+  - `captureOrder(orderId, paymentId?)` now sends `PayPal-Request-Id: capture:<paymentId>` (idempotency) and
+    `Prefer: return=representation`, and `encodeURIComponent`s the order id.
+  - If the capture response carries no `captureStatus`, `captureOrder` falls back to `getOrder(orderId)`
+    rather than interpreting the bare order status.
+  - Atomic claim via `transitionPayment(paymentId, ['pending','pending_paypal','failed','expired'], 'capturing')`
+    **before** the gateway call. `failed`/`expired` are deliberately included (late rescue) and a loud
+    `console.warn` names the payment id when either is revived.
+  - Claim lost (another request won): if the row is now `capturing`, **do not capture again** — call
+    `settlePaypalPayment(current, { expireIfUnpaid: false })`; `paid` → 200, otherwise 202 `processing`.
+    Any other status → 409.
+  - Error mapping: `ORDER_ALREADY_CAPTURED` → `getOrder` then binding check; `INSTRUMENT_DECLINED` (422) →
+    release claim (`capturing→pending`) and return 422 `instrument_declined`; other definitive 4xx (not 408/429,
+    via new `isDefinitiveClientError`) → release claim and 409; **timeout/5xx/network = UNKNOWN → leave the row
+    `capturing`, return 202** (never `failed`, never released — reconcile settles it).
+  - Paid + `capturedOrderMatches` → `saveCaptureId` + `fulfilPayment`; `refunded` or binding mismatch →
+    `flagPaymentNeedsReview` (which alerts) + 202; `pending_paypal` → `markPaymentIfOpen(..., 'pending_paypal')`;
+    non-final intermediate → 202 `processing` (was `pending`).
+  - Added `sessionRateLimit('payments', 30)` to the capture route.
+  - The capture route's binding check was switched from `capturedAmountMatches` to `capturedOrderMatches`,
+    and the `capturedAmountMatches` **export was removed** — it is now a plain internal helper used only by
+    `capturedOrderMatches` (see the follow-up note below).
+- **T7 — strict create order** (`lib/paypal.ts`, `routes/payments.ts` create route):
+  - `createOrder` now **throws** when PayPal returns no `approve`/`payer-action` link (was `?? ''`); the route
+    catches it, marks the row `failed`, and returns 502 `gateway_error`.
+  - Added `PAYPAL_AMOUNT_RE`, `centsToPaypalAmount(cents)` (validates integer ≥ 0) and strict
+    `paypalAmountToCents(str)` (computes from the digit string, throws on bad format). `createOrder` validates
+    `amount`; the create route uses `paypal.centsToPaypalAmount(...)`. `capturedAmountMatches` now parses
+    strictly and wraps in try/catch → `false`.
+  - Optional `returnUrl`/`cancelUrl` params added to `createOrder` (via `payment_source.paypal.experience_context`);
+    not yet wired from the route.
+- **Tests:** new `src/routes/paypal-capture-hardening.test.ts` (9 tests, all pass) covering T7 amount helpers,
+  no-approve-link → throw, single-credit on paid capture, two concurrent captures → one PayPal call, 5xx → row
+  stays `capturing` + 202, `INSTRUMENT_DECLINED` → row back to `pending` + 422, `ORDER_ALREADY_CAPTURED` → lookup
+  + credit, binding mismatch → `needs_review` + alert + 0 credits. **`payments.test.ts` Security Test 10 was
+  updated**: an amount/currency mismatch now flags `needs_review` (the T6 spec) instead of leaving the row
+  `pending`; the 0-credit and non-paid assertions are unchanged (not a weakening).
+
+**Verification run (this session):** `tsc --noEmit` clean; new Phase 4 suite **9/9 pass**; `payments.test.ts`
+**13/13 pass**. Full suite was **not** re-run to completion — `gateway.test.ts` hung under the remote Neon DB
+(the known `P1-04` flake recorded in `OUT_OF_SCOPE_FINDINGS.md`) and was killed; run the payments suites via
+`pnpm --filter @morphic/api test` (which loads `../../.env`) when the DB is reachable.
+
+**Scope note (recorded per §0A/D):** T6's allowlist says "capture route only". `capturedAmountMatches` is still
+called by the **verify** route (`/paypal/verify/:paymentId`, `routes/payments.ts`) which is *not* the capture
+route; under the narrowest reading that call site was left on the (now strict) `capturedAmountMatches` and the
+compat export was therefore **not** deleted. If the next session reads "capture route" as "all PayPal capture
+code", switching the verify route to `capturedOrderMatches` and deleting the export is the remaining cleanup.
+
+**T9 (PayPal dashboard, non-code — NOT done here):** in the live PayPal app, add the webhook endpoint
+`<API_PUBLIC_URL>/webhooks/paypal`, set `PAYPAL_WEBHOOK_ID`, and subscribe `CHECKOUT.ORDER.APPROVED`,
+`PAYMENT.CAPTURE.COMPLETED`, `PAYMENT.CAPTURE.REFUNDED`, `PAYMENT.CAPTURE.REVERSED`,
+`CUSTOMER.DISPUTE.CREATED`, `CUSTOMER.DISPUTE.RESOLVED`. `assertPaypalConfig()` hard-exits in production if
+misconfigured.
+
+**T10 (sandbox E2E, operational — NOT done here):** run every row of §9 against a real sandbox, capture one real
+payload per event type for the extraction checks, then the live smoke test (smallest transaction + self-refund +
+confirm the `REFUNDED` event is recorded and alerted). These require dashboard/browser access and are the two
+unchecked exit-gate boxes above.

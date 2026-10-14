@@ -278,17 +278,43 @@ export function capturedOrderMatches(
   return capturedAmountMatches(o, expected);
 }
 
+export const PAYPAL_AMOUNT_RE = /^\d+(\.\d{1,2})?$/;
+
 /**
- * Amount-and-currency-only check. Weaker than `capturedOrderMatches`: it does not prove the order
- * belongs to this payment row, so any caller that grants credits must use the binding check instead.
- * Retained as an export for the capture route, which T6 migrates.
+ * Parse a PayPal amount string into integer cents, computing from the digits rather than
+ * `Math.round(Number(x) * 100)` — a float multiply can land a cent low (8.7 * 100 = 869.999…),
+ * which would silently under-credit. Throws on any format PayPal should never send, so a
+ * surprise value is surfaced instead of guessed at.
  */
-export function capturedAmountMatches(
+export function paypalAmountToCents(amount: string): number {
+  if (!PAYPAL_AMOUNT_RE.test(amount)) {
+    throw new Error(`Unexpected PayPal amount format: ${JSON.stringify(amount)}`);
+  }
+  const [whole, frac = ''] = amount.split('.');
+  const fracPadded = (frac + '00').slice(0, 2);
+  return Number(whole) * 100 + Number(fracPadded);
+}
+
+/** Format integer cents as a PayPal amount string. PayPal accepts only whole cents. */
+export function centsToPaypalAmount(cents: number): string {
+  if (!Number.isInteger(cents) || cents < 0) {
+    throw new Error(`Invalid PayPal amount in cents: ${cents}`);
+  }
+  return (cents / 100).toFixed(2);
+}
+
+function capturedAmountMatches(
   o: PayPalParsedOrder,
   expected: { amountCents: number; currency: string },
 ): boolean {
   if (!o.amount || !o.currency) return false;
-  return Math.round(Number(o.amount) * 100) === expected.amountCents && o.currency === expected.currency;
+  let cents: number;
+  try {
+    cents = paypalAmountToCents(o.amount);
+  } catch {
+    return false;
+  }
+  return cents === expected.amountCents && o.currency === expected.currency;
 }
 
 // ── API Functions ─────────────────────────────────────
@@ -302,7 +328,13 @@ export async function createOrder(params: {
   currency: string;
   paymentId: string;
   idempotencyKey: string;
+  returnUrl?: string;
+  cancelUrl?: string;
 }): Promise<PayPalOrderResult> {
+  if (!PAYPAL_AMOUNT_RE.test(params.amount)) {
+    throw new Error(`Unexpected PayPal amount format: ${JSON.stringify(params.amount)}`);
+  }
+
   const token = await getAccessToken();
 
   const res = await fetch(`${getBaseUrl()}/v2/checkout/orders`, {
@@ -323,6 +355,18 @@ export async function createOrder(params: {
           },
         },
       ],
+      ...(params.returnUrl || params.cancelUrl
+        ? {
+            payment_source: {
+              paypal: {
+                experience_context: {
+                  ...(params.returnUrl ? { return_url: params.returnUrl } : {}),
+                  ...(params.cancelUrl ? { cancel_url: params.cancelUrl } : {}),
+                },
+              },
+            },
+          }
+        : {}),
     }),
     signal: AbortSignal.timeout(15_000),
   });
@@ -345,8 +389,12 @@ export async function createOrder(params: {
     links?: Array<{ href: string; rel: string }>;
   };
 
-  const approveLink =
-    data.links?.find((l) => l.rel === 'payer-action' || l.rel === 'approve')?.href ?? '';
+  const approveLink = data.links?.find((l) => l.rel === 'payer-action' || l.rel === 'approve')?.href;
+  if (!approveLink) {
+    // Without an approval URL the buyer has nowhere to go; returning '' would surface as a
+    // broken checkout instead of a gateway error. Fail loudly so the row is marked failed.
+    throw new Error(`PayPal order ${data.id} returned no approve/payer-action link`);
+  }
 
   return {
     orderId: data.id,
@@ -357,15 +405,21 @@ export async function createOrder(params: {
 /**
  * Capture payment for an approved order.
  * Returns parsed order status details including underlying capture status.
+ *
+ * `paymentId` is sent as the `PayPal-Request-Id` idempotency key so a retried request (e.g. after
+ * a client timeout) is not charged twice. `Prefer: return=representation` asks PayPal to include
+ * the capture in the response; if it still comes back without one, the order is re-read.
  */
-export async function captureOrder(orderId: string): Promise<PayPalParsedOrder> {
+export async function captureOrder(orderId: string, paymentId?: string): Promise<PayPalParsedOrder> {
   const token = await getAccessToken();
 
-  const res = await fetch(`${getBaseUrl()}/v2/checkout/orders/${orderId}/capture`, {
+  const res = await fetch(`${getBaseUrl()}/v2/checkout/orders/${encodeURIComponent(orderId)}/capture`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json',
+      'Prefer': 'return=representation',
+      ...(paymentId ? { 'PayPal-Request-Id': `capture:${paymentId}` } : {}),
     },
     signal: AbortSignal.timeout(15_000),
   });
@@ -384,7 +438,15 @@ export async function captureOrder(orderId: string): Promise<PayPalParsedOrder> 
   }
 
   const data = await res.json();
-  return interpretOrder({ id: orderId, ...data });
+  const parsed = interpretOrder({ id: orderId, ...data });
+
+  // No capture details in the response: read the order to learn the real outcome rather than
+  // guessing from the top-level order status alone.
+  if (!parsed.captureStatus) {
+    return getOrder(orderId);
+  }
+
+  return parsed;
 }
 
 /**
@@ -394,7 +456,7 @@ export async function captureOrder(orderId: string): Promise<PayPalParsedOrder> 
 export async function getOrder(orderId: string): Promise<PayPalParsedOrder> {
   const token = await getAccessToken();
 
-  const res = await fetch(`${getBaseUrl()}/v2/checkout/orders/${orderId}`, {
+  const res = await fetch(`${getBaseUrl()}/v2/checkout/orders/${encodeURIComponent(orderId)}`, {
     method: 'GET',
     headers: {
       'Authorization': `Bearer ${token}`,
@@ -496,6 +558,26 @@ export function isAlreadyCapturedError(err: unknown): boolean {
     }
   }
   return false;
+}
+
+/**
+ * Detect a definitive client error: PayPal rejected the request itself (4xx) and retrying the
+ * same call will not help. 408 (timeout) and 429 (rate limit) are excluded — those are
+ * transient and the outcome of the capture is still unknown.
+ */
+export function isDefinitiveClientError(err: unknown): boolean {
+  return err instanceof PayPalApiError && err.status >= 400 && err.status < 500 && err.status !== 408 && err.status !== 429;
+}
+
+/**
+ * Detect `INSTRUMENT_DECLINED` (422): the buyer's funding source was rejected. The buyer can
+ * retry with another method, so the caller releases its claim instead of failing the payment.
+ */
+export function isInstrumentDeclinedError(err: unknown): boolean {
+  if (!(err instanceof PayPalApiError)) return false;
+  if (err.status !== 422) return false;
+  if (err.details?.some((d) => d.issue === 'INSTRUMENT_DECLINED')) return true;
+  return err.message.includes('INSTRUMENT_DECLINED');
 }
 
 /**

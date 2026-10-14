@@ -10,7 +10,9 @@ import { eq, and, inArray, sql, gt } from 'drizzle-orm';
 import { sessionAuth, denyKeyDerivedSession } from '../middleware/session-auth';
 import { createTransaction } from '../lib/duitku';
 import * as paypal from '../lib/paypal';
-import { DUITKU_PAYMENT_TTL_MINUTES, DUITKU_EXPIRE_AFTER_MS, settleDuitkuPayment } from '../lib/paypal-reconcile';
+import { DUITKU_PAYMENT_TTL_MINUTES, DUITKU_EXPIRE_AFTER_MS, settleDuitkuPayment, settlePaypalPayment } from '../lib/paypal-reconcile';
+import { transitionPayment, saveCaptureId, flagPaymentNeedsReview } from '../lib/payment-state';
+import { sessionRateLimit } from '../middleware/session-ratelimit';
 
 /**
  * Payments API Router
@@ -408,7 +410,7 @@ payments.post('/paypal/create-order', async (c) => {
     .returning();
 
   // Step 5: Call PayPal createOrder API
-  const amountStr = (usdAmountCents / 100).toFixed(2);
+  const amountStr = paypal.centsToPaypalAmount(usdAmountCents);
 
   let paypalResult;
   try {
@@ -444,7 +446,7 @@ payments.post('/paypal/create-order', async (c) => {
 
 // ── POST /v1/payments/paypal/capture ──────────────────
 // Captures an approved PayPal order and grants credits atomically upon success.
-payments.post('/paypal/capture', async (c) => {
+payments.post('/paypal/capture', sessionRateLimit('payments', 30), async (c) => {
   const { userId } = c.get('userSession');
 
   // Step 1: Parse JSON request body & validate required parameters
@@ -499,37 +501,109 @@ payments.post('/paypal/capture', async (c) => {
     return c.json({ success: true, alreadyPaid: true, credits: payment.credits });
   }
 
-  // Step 4: Execute PayPal captureOrder with fallback to getOrder if ORDER_ALREADY_CAPTURED collision happens
+  // Step 4: Atomically claim the row as `capturing` before touching PayPal, so two concurrent
+  // requests (or a retry after a client timeout) cannot both capture the same order. failed and
+  // expired are deliberately included: if PayPal already took the money, the credit must still
+  // land (late rescue). Doing so means the local state was wrong, so say so loudly.
+  if (payment.status === 'failed' || payment.status === 'expired') {
+    console.warn(`[payments/paypal/capture] reviving ${payment.status} payment ${paymentId} — local state disagreed with PayPal, attempting rescue`);
+  }
+  const claimed = await transitionPayment(
+    paymentId,
+    ['pending', 'pending_paypal', 'failed', 'expired'],
+    'capturing',
+  );
+
+  if (!claimed) {
+    const [current] = await db
+      .select()
+      .from(s.payments)
+      .where(eq(s.payments.id, paymentId))
+      .limit(1);
+
+    if (current?.status === 'capturing') {
+      // A capture is already in flight — a parallel request or this request's own retry. Never
+      // call PayPal a second time: ask the gateway what actually happened and report it.
+      let outcome: Awaited<ReturnType<typeof settlePaypalPayment>> = null;
+      try {
+        outcome = await settlePaypalPayment(current, { expireIfUnpaid: false });
+      } catch (err: any) {
+        console.error(`[payments/paypal/capture] settle after claim collision failed for ${paymentId}:`, err?.message ?? err);
+      }
+      if (outcome === 'paid') {
+        return c.json({ success: true, credits: payment.credits, alreadyPaid: false });
+      }
+      return c.json({ status: 'processing', message: 'A capture for this order is already in progress.' }, 202);
+    }
+
+    if (current?.status === 'paid') {
+      // Another request captured and credited between our status read and the claim attempt.
+      // `paid` is not a claimable source state, so the transition failed — but the money is in.
+      return c.json({ success: true, credits: current.credits, alreadyPaid: true });
+    }
+
+    return c.json(
+      { error: { message: `payment cannot be captured from status ${current?.status ?? 'unknown'}`, type: 'invalid_request_error', code: 'invalid_status' } },
+      409,
+    );
+  }
+
+  // Step 5: Execute PayPal captureOrder with fallback to getOrder if ORDER_ALREADY_CAPTURED collision happens
   let paypalOrder: paypal.PayPalParsedOrder;
   try {
-    paypalOrder = await paypal.captureOrder(orderId);
+    paypalOrder = await paypal.captureOrder(orderId, paymentId);
   } catch (err: any) {
     if (paypal.isAlreadyCapturedError(err)) {
       console.log(`[payments/paypal/capture] order ${orderId} already captured on PayPal side, fetching order details`);
       try {
         paypalOrder = await paypal.getOrder(orderId);
       } catch {
-        return c.json(
-          { error: { message: 'failed to fetch order details after capture collision', type: 'server_error' } },
-          502,
-        );
+        // Cannot learn the outcome: leave the row `capturing` for reconcile to settle.
+        return c.json({ status: 'processing', message: 'Payment is being verified.' }, 202);
       }
-    } else {
-      console.error('[payments/paypal/capture] capture error:', err?.message ?? err);
+    } else if (paypal.isInstrumentDeclinedError(err)) {
+      // The buyer's funding source was rejected. Release the claim so they can retry.
+      await transitionPayment(paymentId, ['capturing'], 'pending');
       return c.json(
-        { error: { message: 'failed to capture paypal order', type: 'server_error', code: 'capture_failed' } },
-        502,
+        { error: { message: 'payment instrument declined — try another payment method', type: 'invalid_request_error', code: 'instrument_declined' } },
+        422,
       );
+    } else if (paypal.isDefinitiveClientError(err)) {
+      // A 4xx PayPal will answer the same way every time: release the claim, report the conflict.
+      await transitionPayment(paymentId, ['capturing'], 'pending');
+      return c.json(
+        { error: { message: 'paypal rejected the capture', type: 'invalid_request_error', code: 'capture_rejected' } },
+        409,
+      );
+    } else {
+      // Timeout / 5xx / network: the outcome is UNKNOWN. Do not mark failed and do not release
+      // the claim — leave the row `capturing` and let reconcile settle it once PayPal answers.
+      console.error('[payments/paypal/capture] indeterminate capture error:', err?.message ?? err);
+      return c.json({ status: 'processing', message: 'Payment is being verified.' }, 202);
     }
   }
 
-  // Step 5: Handle result capture status using effectiveStatus (evaluates underlying capture status)
+  // Two outcomes below mean "the money moved but we must not credit": a binding mismatch and an
+  // already-refunded capture. Both flag the row for ops and tell the client to keep waiting.
+  const flagReview = async (reason: string) => {
+    await flagPaymentNeedsReview(payment, {
+      reason,
+      orderId: paypalOrder.orderId,
+      customId: paypalOrder.customId,
+      amount: paypalOrder.amount,
+      currency: paypalOrder.currency,
+    });
+    return c.json({ status: 'pending', message: 'Payment is being verified.' }, 202);
+  };
+
+  // Step 6: Handle result capture status using effectiveStatus (evaluates underlying capture status)
   if (paypalOrder.effectiveStatus === 'paid') {
-    // Verify captured amount and currency match expected payment row using helper
-    if (!paypal.capturedAmountMatches(paypalOrder, payment)) {
-      console.error(`[payments/paypal/capture] NEEDS REVIEW: amount/currency mismatch payment=${paymentId} got=${paypalOrder.amount} ${paypalOrder.currency} expected=${payment.amountCents} ${payment.currency}`);
-      return c.json({ status: 'pending', message: 'Payment is being verified.' }, 202);
+    // Full binding check: the order id and custom_id must be ours, not just the amount.
+    if (!paypal.capturedOrderMatches(paypalOrder, payment)) {
+      return flagReview('amount/currency/order-binding mismatch on capture');
     }
+
+    if (paypalOrder.captureId) await saveCaptureId(paymentId, paypalOrder.captureId);
 
     // Grant credits atomically using processPaymentSuccess helper
     const res = await fulfilPayment(paymentId);
@@ -545,6 +619,9 @@ payments.post('/paypal/capture', async (c) => {
       { error: { message: 'credit grant error', type: 'server_error' } },
       500,
     );
+  } else if (paypalOrder.effectiveStatus === 'refunded') {
+    // The money came in and has already gone back out — never credit an open row for it.
+    return flagReview('capture refunded before credits were granted');
   } else if (paypalOrder.effectiveStatus === 'pending_paypal') {
     await markPaymentIfOpen(paymentId, 'pending_paypal');
 
@@ -560,12 +637,13 @@ payments.post('/paypal/capture', async (c) => {
       400,
     );
   } else {
-    // Non-final intermediate status (CREATED, SAVED, APPROVED, etc.): do not mark failed aggressively
+    // Non-final intermediate status (CREATED, SAVED, APPROVED, etc.): PayPal has not given up,
+    // so keep the claim and let reconcile settle it rather than marking the row failed.
     return c.json({
-      status: 'pending',
+      status: 'processing',
       paypalStatus: paypalOrder.orderStatus,
       message: 'Payment is processing on PayPal.',
-    });
+    }, 202);
   }
 });
 
@@ -600,8 +678,16 @@ payments.get('/paypal/verify/:paymentId', async (c) => {
       const order = await paypal.getOrder(payment.externalId);
 
       if (order.effectiveStatus === 'paid') {
-        if (!paypal.capturedAmountMatches(order, payment)) {
-          console.error(`[payments/paypal/verify/${paymentId}] NEEDS REVIEW: amount/currency mismatch got=${order.amount} ${order.currency} expected=${payment.amountCents} ${payment.currency}`);
+        // Same full binding check the capture route and reconcile use: the order id and custom_id
+        // must be ours, not just the amount.
+        if (!paypal.capturedOrderMatches(order, payment)) {
+          await flagPaymentNeedsReview(payment, {
+            reason: 'amount/currency/order-binding mismatch on verify',
+            orderId: order.orderId,
+            customId: order.customId,
+            amount: order.amount,
+            currency: order.currency,
+          });
           return c.json({ status: 'pending', message: 'Payment is being verified.' });
         }
 

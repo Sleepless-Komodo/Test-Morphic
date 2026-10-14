@@ -582,9 +582,10 @@ test('Security Test 10: /paypal/capture rejects payment on amount or currency mi
   const data = await res.json();
   assert.equal(data.status, 'pending');
 
-  // Assert status remains pending and 0 credits added to user balance
+  // T6: an amount/currency mismatch is no longer left silently `pending` — the row is parked in
+  // `needs_review` so ops sees it, and no credits are granted either way.
   const [refreshed] = await db.select().from(s.payments).where(eq(s.payments.id, payment.id));
-  assert.equal(refreshed?.status, 'pending');
+  assert.equal(refreshed?.status, 'needs_review');
 
   const balance = await getBalance(user.id);
   assert.equal(balance, 0);
