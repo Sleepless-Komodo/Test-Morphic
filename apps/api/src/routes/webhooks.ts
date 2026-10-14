@@ -6,6 +6,7 @@ import { markPaymentIfOpen, processPaymentSuccess } from '@morphic/db/billing';
 import { notifyPaymentPaid } from '../lib/notify';
 import { verifyCallbackSignature, checkTransactionStatus } from '../lib/duitku';
 import { verifyWebhookSignature as verifyPayPalWebhookSignature } from '../lib/paypal';
+import { handlePostPaymentEvent, isPostPaymentEvent } from '../lib/paypal-post-payment';
 
 const webhooks = new Hono();
 
@@ -271,6 +272,13 @@ webhooks.post('/paypal', async (c) => {
   const eventType = payload.event_type;
   if (!eventId || !eventType) {
     return c.json({ error: 'missing event details' }, 400);
+  }
+
+  // Refund / reversal / dispute events move an already-paid row and carry a capture (or
+  // refund) id instead of the order id, so they resolve the payment themselves.
+  if (isPostPaymentEvent(eventType)) {
+    const result = await handlePostPaymentEvent({ eventId, eventType, payload });
+    return c.json({ ok: true, ...result });
   }
 
   // Step 1: Idempotency check in paymentEvents table

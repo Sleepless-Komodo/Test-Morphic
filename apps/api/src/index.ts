@@ -9,11 +9,16 @@ import { reconcilePaypalPayments, sweepStaleDuitkuPayments } from './lib/paypal-
 import { assertDuitkuConfig } from './lib/duitku';
 import { assertPaypalConfig } from './lib/paypal';
 
-// Validate Duitku environment config at startup
-try {
+// Validate Duitku environment config at startup. Production must hard-exit on
+// misconfiguration; dev keeps warn-and-boot so a missing .env doesn't block local work.
+if (process.env.NODE_ENV === 'production') {
   assertDuitkuConfig();
-} catch (err: any) {
-  console.warn(`[duitku] startup config check warning: ${err?.message}`);
+} else {
+  try {
+    assertDuitkuConfig();
+  } catch (err: any) {
+    console.warn(`[duitku] startup config check warning: ${err?.message}`);
+  }
 }
 
 // Validate PayPal environment config at startup. Unlike Duitku this is unguarded:

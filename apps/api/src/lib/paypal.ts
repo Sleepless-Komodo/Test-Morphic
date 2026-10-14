@@ -38,18 +38,20 @@ function resolvePaypalEnvironment(): 'live' | 'sandbox' {
  * running against sandbox.
  */
 export function assertPaypalConfig(): void {
+  const isProduction = process.env.NODE_ENV === 'production';
+
+  // Checked before the disabled carve-out: a leaked test flag is a config error whether or not
+  // PayPal is otherwise configured, so it must not be reachable past an early return.
+  if (isProduction && process.env.PAYPAL_WEBHOOK_TEST_BYPASS) {
+    throw new Error('PAYPAL_WEBHOOK_TEST_BYPASS must not be set in production');
+  }
+
   const clientId = process.env.PAYPAL_CLIENT_ID;
   const clientSecret = process.env.PAYPAL_CLIENT_SECRET;
 
   if (!clientId && !clientSecret) {
     console.log('[paypal] disabled (PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET are unset)');
     return;
-  }
-
-  const isProduction = process.env.NODE_ENV === 'production';
-
-  if (isProduction && process.env.PAYPAL_WEBHOOK_TEST_BYPASS) {
-    throw new Error('PAYPAL_WEBHOOK_TEST_BYPASS must not be set in production');
   }
 
   if (isProduction) {
@@ -340,6 +342,62 @@ export async function getOrder(orderId: string): Promise<PayPalParsedOrder> {
 
   const data = await res.json();
   return interpretOrder({ id: orderId, ...data });
+}
+
+export interface PayPalCaptureInfo {
+  captureId: string;
+  orderId?: string;
+  customId?: string;
+  status?: string;
+}
+
+/**
+ * Retrieve a capture by ID. Used to resolve the order behind a refund / reversal / dispute
+ * webhook when the payload itself does not carry the order ID.
+ * The capture ID is validated before it is interpolated into the URL path.
+ */
+export async function getCapture(captureId: string): Promise<PayPalCaptureInfo> {
+  if (!/^[A-Za-z0-9]+$/.test(captureId)) {
+    throw new Error(`Invalid PayPal capture id: ${captureId}`);
+  }
+
+  const token = await getAccessToken();
+
+  const res = await fetch(`${getBaseUrl()}/v2/payments/captures/${captureId}`, {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    signal: AbortSignal.timeout(15_000),
+  });
+
+  if (!res.ok) {
+    const errorData = (await res.json().catch(() => ({}))) as {
+      name?: string;
+      message?: string;
+      details?: Array<{ issue: string; description: string }>;
+    };
+    throw new PayPalApiError(
+      errorData.message ?? `PayPal getCapture HTTP ${res.status}`,
+      res.status,
+      errorData.details,
+    );
+  }
+
+  const data = (await res.json()) as {
+    id?: string;
+    status?: string;
+    custom_id?: string;
+    supplementary_data?: { related_ids?: { order_id?: string } };
+  };
+
+  return {
+    captureId: data.id ?? captureId,
+    orderId: data.supplementary_data?.related_ids?.order_id,
+    customId: data.custom_id,
+    status: data.status,
+  };
 }
 
 /**

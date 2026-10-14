@@ -3,580 +3,635 @@
 Audit scope: payment/credit integrity of `apps/api` against commit `6fc248c` + working tree.
 Threat model: self-hosted VPS, no CDN/Cloudflare assumed, single API instance.
 
-**Revision 3.** Rev 2 + koreksi dari review lanjutan. Dokumen ini ditulis sebagai **spesifikasi
-implementasi untuk AI coding agent**. Perubahan dari rev 2 ditandai **[REV3]**.
+**Revision 3.** Rev 2 + corrections from follow-up review. This document is written as an
+**implementation spec for an AI coding agent**. Changes from rev 2 are marked **[REV3]**.
 
 ---
 
-## 0. Instruksi untuk agent yang mengimplementasikan
+## 0. Instructions for the implementing agent
 
-1. **Verifikasi setiap klaim terhadap source sebelum mengubah apa pun.** Nomor baris di bawah berasal dari
-   audit sebelumnya dan bisa bergeser. Bila sebuah klaim tidak cocok dengan kode, hentikan dan laporkan, jangan
-   memaksakan perubahan.
-2. Kerjakan **satu task (T1…T10 di §3) per commit**, urut. Setelah tiap task jalankan `tsc --noEmit` dan test
-   yang ada (`security.test.ts` dst.).
-3. **Jangan mengerjakan** item di §7 ("Sudah termitigasi / jangan diimplementasikan").
-4. Bentuk payload webhook PayPal untuk `PAYMENT.CAPTURE.REFUNDED`, `PAYMENT.CAPTURE.REVERSED`,
-   `CUSTOMER.DISPUTE.CREATED/RESOLVED` **belum diverifikasi** terhadap akun ini. Ekstraksi ID harus defensif dan
-   diverifikasi dengan payload sandbox nyata (§9). Jangan mengarang field.
-5. `sendOpsAlert()` (`lib/alert.ts`) sudah ada. Baca signature aslinya; buat satu helper `opsAlert()` yang
-   membungkusnya, tidak pernah melempar error, dan dipakai semua kode baru.
-6. Semua perubahan status payment harus **UPDATE kondisional** (`WHERE status IN (...) RETURNING`), tidak boleh
+1. **Verify every claim against source before changing anything.** Line numbers below come from the
+   previous audit and may have shifted. If a claim does not match the code, stop and report, do not
+   force the change.
+2. Work **one task (T1…T10 in §3) per commit**, in order. After each task run `tsc --noEmit` and the
+   existing tests (`security.test.ts` etc.).
+3. **Do not work on** items in §7 ("Already mitigated / do not implement").
+4. The PayPal webhook payload shape for `PAYMENT.CAPTURE.REFUNDED`, `PAYMENT.CAPTURE.REVERSED`,
+   `CUSTOMER.DISPUTE.CREATED/RESOLVED` is **not yet verified** against this account. ID extraction must be
+   defensive and verified with real sandbox payloads (§9). Do not invent fields.
+5. `sendOpsAlert()` (`lib/alert.ts`) already exists. Read its original signature; build one `opsAlert()`
+   helper that wraps it, never throws, and is used by all new code.
+6. Every payment status change must be a **conditional UPDATE** (`WHERE status IN (...) RETURNING`), never
    read-then-write.
-7. Jangan ubah perilaku `processPaymentSuccess` sama sekali (audit ini tidak memintanya).
-8. **Baca §0A sebelum menulis satu baris pun. §0A mengikat: diff yang keluar dari scope ditolak.**
+7. Do not change the behaviour of `processPaymentSuccess` at all (this audit does not ask for it).
+8. **Read §0A before writing a single line. §0A is binding: a diff that leaves scope is rejected.**
 
 ---
 
-## 0A. BATAS SCOPE (mengikat, tanpa pengecualian)
+## 0A. SCOPE LIMITS (binding, no exceptions)
 
-Tugasmu **hanya** mengimplementasikan T1–T10 di §3 persis seperti yang tertulis. Segala hal lain di repo
-**di luar scope**, termasuk bila menurutmu jelek, tidak efisien, atau salah.
+Your job is **only** to implement T1–T10 in §3 exactly as written. Everything else in the repo is
+**out of scope**, including anything you consider ugly, inefficient, or wrong.
 
-### A. Allowlist file per task (hanya file ini yang boleh diubah/dibuat)
+### A. Per-task file allowlist (only these files may be changed/created)
 
-| Task | File yang boleh diubah/dibuat |
+| Task | Files that may be changed/created |
 |---|---|
-| T1 | `apps/api/src/lib/paypal.ts`, `apps/api/src/index.ts` (hanya `assertProductionConfig`) |
-| T2 | `packages/db/src/schema.ts` (hanya tabel `payments` + 1 index di `creditLedger`), 1 file migrasi baru |
-| T3 | `lib/paypal-post-payment.ts` (baru), `lib/payment-state.ts` (baru), `routes/webhooks.ts` (hanya route PayPal) |
-| T4 | `lib/paypal-reconcile.ts`, `index.ts` (hanya blok interval reconcile) |
-| T5 | `routes/webhooks.ts` (hanya route PayPal), `lib/paypal.ts`, `lib/payment-events.ts` (hanya tambah `recordUnmatchedEvent` + koreksi komentar), `app.ts` (hanya rate limit `/webhooks/*`) |
-| T6 | `lib/paypal.ts` (`captureOrder` + classifier error), `routes/payments.ts` (hanya route capture), `lib/payment-state.ts` |
-| T7 | `lib/paypal.ts` (`createOrder`, helper uang), `routes/payments.ts` (hanya route create) |
-| T8 | file yang sudah disentuh T3/T4/T5 saja |
-| T9 | tidak ada kode |
-| T10 | tidak ada kode (hanya menjalankan skenario) |
+| T1 | `apps/api/src/lib/paypal.ts`, `apps/api/src/index.ts` (`assertProductionConfig` only) |
+| T2 | `packages/db/src/schema.ts` (`payments` table + 1 index on `creditLedger` only), 1 new migration file |
+| T3 | `lib/paypal-post-payment.ts` (new), `lib/payment-state.ts` (new), `routes/webhooks.ts` (PayPal route only) |
+| T4 | `lib/paypal-reconcile.ts`, `index.ts` (reconcile interval block only) |
+| T5 | `routes/webhooks.ts` (PayPal route only), `lib/paypal.ts`, `lib/payment-events.ts` (add `recordUnmatchedEvent` + comment fix only), `app.ts` (rate limit for `/webhooks/*` only) |
+| T6 | `lib/paypal.ts` (`captureOrder` + error classifier), `routes/payments.ts` (capture route only), `lib/payment-state.ts` |
+| T7 | `lib/paypal.ts` (`createOrder`, money helpers), `routes/payments.ts` (create route only) |
+| T8 | files already touched by T3/T4/T5 only |
+| T9 | no code |
+| T10 | no code (running scenarios only) |
 
-Berkas test **baru** (`*.test.ts` di samping kode yang diubah) selalu boleh dibuat.
+**New** test files (`*.test.ts` next to the code being changed) are always allowed.
 
-### B. Read-only (boleh dibaca, DILARANG diubah)
+### B. Read-only (may be read, FORBIDDEN to change)
 
 `packages/db/src/billing.ts` (`processPaymentSuccess`, `markPaymentIfOpen`, `grantCredits`, `reserve`/`pickSource`),
-`lib/notify.ts`, `lib/duitku.ts` (dalam gate rilis), `lib/alert.ts`, `lib/account-deletion.ts`,
-`middleware/*` (termasuk `session-auth.ts`, `auth.ts`), `ratelimit*`, seluruh kode auth/Better Auth, seluruh `web/*`,
-semua tabel/skema selain yang disebut di T2, semua file konfigurasi build/lint/CI.
+`lib/notify.ts`, `lib/duitku.ts` (inside the release gate), `lib/alert.ts`, `lib/account-deletion.ts`,
+`middleware/*` (including `session-auth.ts`, `auth.ts`), `ratelimit*`, all auth/Better Auth code, all `web/*`,
+all tables/schemas other than those named in T2, all build/lint/CI config files.
 
-Bila kamu merasa **perlu** mengubah file read-only agar task jalan → **BERHENTI** dan laporkan (lihat §D). Jangan improvisasi.
+If you feel you **need** to change a read-only file for a task to work → **STOP** and report (see §D). Do not improvise.
 
-### C. Larangan eksplisit
+### C. Explicit prohibitions
 
-- Dilarang refactor, rename, memindahkan, memformat ulang, atau "merapikan" kode yang tidak disebut audit.
-  Jangan jalankan formatter/linter-fix pada file; ikuti gaya yang sudah ada pada baris yang kamu sentuh.
-- Dilarang menambah/menghapus/meng-upgrade dependency (`package.json`, lockfile) dan mengubah nama atau arti env var yang sudah ada.
-- Dilarang mengubah signature/export yang dipakai file lain, **kecuali** menambah parameter opsional yang disebut di audit.
-  `reconcilePaypalPayments` wajib tetap terekspor sebagai alias.
-- Dilarang menghapus, menonaktifkan (`skip`/`only`), atau melemahkan test yang ada. Test lama hanya boleh diubah bila perilakunya
-  sengaja berubah menurut audit, dan **sebutkan test mana + alasannya** di pesan commit.
-- Dilarang menambah fitur di luar gate: **tidak ada** clawback ledger otomatis, revoke entitlement, auto-unfreeze, refactor Duitku,
-  verifikasi webhook offline, outbox/queue, dsb. (semuanya di §4 = nanti, bukan sekarang).
-- Dilarang menyentuh item di §7 ("jangan diimplementasikan") dan bagian "Terkonfirmasi benar" di §1.
-- Dilarang menjalankan perintah destruktif: `DROP`/`TRUNCATE`/`DELETE` tanpa `WHERE` pada DB, `git push`, `git reset --hard`,
-  `git push --force`, menghapus branch, mengubah `.env*`, atau memasukkan secret ke repo/log.
-- Dilarang mengubah perilaku di luar yang disebut task, walau "sekalian". Contoh: jangan ikut memperbaiki Duitku, rate limit
-  route lain, atau error handling di route yang tidak disebut.
+- No refactor, rename, move, reformat, or "tidying" of code the audit does not name.
+  Do not run formatter/lint-fix on files; follow the existing style on the lines you touch.
+- No adding/removing/upgrading dependencies (`package.json`, lockfile) and no changing the name or meaning of existing env vars.
+- No changing signatures/exports used by other files, **except** adding optional parameters named by the audit.
+  `reconcilePaypalPayments` must stay exported as an alias.
+- No deleting, disabling (`skip`/`only`), or weakening existing tests. Old tests may only be changed if their behaviour
+  intentionally changes per the audit, and you must **name which test + why** in the commit message.
+- No adding features outside the gate: **no** automatic ledger clawback, entitlement revoke, auto-unfreeze, Duitku refactor,
+  offline webhook verification, outbox/queue, etc. (all of these are §4 = later, not now).
+- No touching items in §7 ("do not implement") and the "Confirmed correct" part of §1.
+- No destructive commands: `DROP`/`TRUNCATE`/`DELETE` without `WHERE` on the DB, `git push`, `git reset --hard`,
+  `git push --force`, deleting branches, editing `.env*`, or putting secrets into the repo/log.
+- No changing behaviour beyond what the task names, not even "while we're at it". Example: do not also fix Duitku, rate limit
+  other routes, or error handling in routes that are not named.
 
-### D. Aturan berhenti-dan-lapor
+### D. Stop-and-report rule
 
-1. Bila klaim audit tidak cocok dengan source, atau sebuah task butuh file di luar allowlist, atau ada dua tafsir yang masuk akal:
-   **hentikan task itu**, tulis temuanmu, dan lanjut ke task berikutnya yang tidak terblokir. Jangan menebak. Jika harus memilih
-   untuk tetap maju, ambil tafsir **paling sempit dan paling konservatif** dan catat asumsinya.
-2. Bug/masalah lain yang kamu temukan di luar scope **jangan diperbaiki**. Catat di `OUT_OF_SCOPE_FINDINGS.md`
-   (file, baris, deskripsi singkat) dan biarkan.
+1. If an audit claim does not match source, or a task needs a file outside the allowlist, or there are two plausible readings:
+   **stop that task**, write up your finding, and move on to the next unblocked task. Do not guess. If you must choose
+   to keep moving, take the **narrowest, most conservative** reading and record the assumption.
+2. Any other bug/problem you find out of scope must **not be fixed**. Record it in `OUT_OF_SCOPE_FINDINGS.md`
+   (file, line, short description) and leave it.
 
-### E. Checklist wajib di akhir SETIAP task (tempel hasilnya di pesan commit)
+### E. Checklist required at the end of EVERY task (paste the result into the commit message)
 
-1. `git diff --stat` → setiap file yang muncul harus ada di allowlist §A untuk task itu. Ada file asing → batalkan perubahan di file itu.
-2. `git diff` tidak berisi perubahan whitespace/format/rename murni di luar baris yang memang harus berubah.
-3. `tsc --noEmit` lulus dan seluruh test yang ada tetap lulus (tidak ada test yang di-skip/dihapus).
-4. Tidak ada perubahan di `package.json`/lockfile/`.env*`.
-5. Satu commit = satu task; pesan commit diawali `T<n>:` dan memuat daftar file serta asumsi (bila ada).
+1. `git diff --stat` → every file that appears must be in the §A allowlist for that task. Any foreign file → revert changes to it.
+2. `git diff` contains no whitespace/format/rename-only changes outside the lines that genuinely must change.
+3. `tsc --noEmit` passes and all existing tests still pass (no test skipped/deleted).
+4. No changes to `package.json`/lockfile/`.env*`.
+5. One commit = one task; the commit message starts with `T<n>:` and contains the file list plus assumptions (if any).
 
-Pelanggaran terhadap §0A (diff keluar scope, file read-only berubah, test dilemahkan) membuat hasil task dianggap **gagal**
-dan harus di-revert, walaupun fungsinya benar.
+Violating §0A (diff out of scope, read-only file changed, test weakened) makes the task result **failed**
+and it must be reverted, even if the functionality is correct.
 
 ---
 
 ## 1. Verdict
 
-Arsitektur dan niat keamanan solid. **Belum siap production** sampai release gate §3 terpenuhi dan sandbox
-end-to-end §9 lulus. Risiko terbesar: refund/dispute tidak ditangani (H5) dan tidak ada guard environment PayPal (H1).
+Architecture and security intent are solid. **Not production-ready** until the §3 release gate is met and the
+§9 sandbox end-to-end passes. Biggest risks: refund/dispute is unhandled (H5) and there is no PayPal environment guard (H1).
 
-### Terkonfirmasi benar (jangan disentuh)
+### Confirmed correct (do not touch)
 
-- `interpretOrder` menurunkan status dari status **capture**, bukan order. Order `COMPLETED` tanpa data capture
-  **tidak** dianggap paid (`lib/paypal.ts:135-137`).
-- `verifyWebhookSignature` fail-closed (`lib/paypal.ts:338-341, 357-359, 381-387`).
-- `PayPal-Request-Id` dikirim di `createOrder` (`lib/paypal.ts:199`).
-- Unique index parsial `ledger_purchase_reference_unique` (`schema.ts:246`) = pengaman terakhir kredit ganda.
-- `payment_events` punya unique `(provider, event_id)` (`schema.ts:381`).
-- Relasi finansial memakai `onDelete: 'restrict'` (`schema.ts:355`).
-- `processPaymentSuccess` atomik (`billing.ts:438-447`); `markPaymentIfOpen` kondisional (`billing.ts:406-424`).
-- Callback Duitku memverifikasi ulang nominal terhadap DB **dan** API status Duitku sebelum kredit.
-- Saldo ≤ 0 sudah ditolak (`pickSource` butuh `bal.credits >= estimatedCredits`) → clawback punya efek.
-- Body-size cap 1 MB sudah aktif di semua route termasuk `/webhooks/*` (`app.ts:59-71`).
-
----
-
-## 2. Koreksi rev 3 terhadap rev 2 (baca dulu)
-
-Empat hal di rev 2 §6 salah/belum konsisten. Implementasi harus mengikuti versi rev 3.
-
-1. **[REV3] `markPaymentIfOpen` tidak bisa dipakai untuk refund/dispute.** Fungsi itu hanya mengubah status
-   open dan tidak pernah menimpa `paid`, padahal refund/dispute terjadi pada payment yang sudah `paid`. Handler
-   H5 harus memakai fungsi baru dengan transisi eksplisit (lihat T3).
-2. **[REV3] `captureId` masuk release gate, bukan "week one".** Event dispute mengidentifikasi transaksi lewat
-   capture ID; tanpa kolom ini payment tidak bisa dipetakan (T2).
-3. **[REV3] Jangan freeze akun pada `PAYMENT.CAPTURE.REFUNDED`.** Event itu juga terkirim saat operator sendiri
-   me-refund; auto-suspend akan mengunci customer yang baru di-refund. Freeze hanya untuk `REVERSED` dan
-   `DISPUTE.CREATED`. Dispute menang tidak di-unfreeze otomatis (akun bisa disuspend admin karena alasan lain).
-4. **[REV3] "H3 minimum" tidak boleh mengubah error sementara menjadi `needs_review`.** Gateway timeout sesaat
-   akan membanjiri alert dan membuat row tak bisa di-rescue, karena `processPaymentSuccess` tidak menerima
-   `needs_review`. Aturan yang benar ada di T4.
-
-Koreksi lain: **[REV3]** `transmission_time` window sempit (mis. 5 menit) **tidak boleh** dipakai: PayPal retry
-sampai 3 hari dan header mungkin tidak ditandatangani ulang. Perlindungan replay cukup dari idempotensi
-(`payment_events` unique) + re-fetch order via API.
+- `interpretOrder` derives status from the **capture** status, not the order. An order that is `COMPLETED` with no capture data
+  is **not** treated as paid (`lib/paypal.ts:135-137`).
+- `verifyWebhookSignature` is fail-closed (`lib/paypal.ts:338-341, 357-359, 381-387`).
+- `PayPal-Request-Id` is sent in `createOrder` (`lib/paypal.ts:199`).
+- The partial unique index `ledger_purchase_reference_unique` (`schema.ts:246`) is the last line of defence against double credit.
+- `payment_events` has a unique `(provider, event_id)` (`schema.ts:381`).
+- Financial relations use `onDelete: 'restrict'` (`schema.ts:355`).
+- `processPaymentSuccess` is atomic (`billing.ts:438-447`); `markPaymentIfOpen` is conditional (`billing.ts:406-424`).
+- The Duitku callback re-verifies the amount against the DB **and** the Duitku status API before crediting.
+- Balance ≤ 0 is already rejected (`pickSource` requires `bal.credits >= estimatedCredits`) → clawback has effect.
+- The 1 MB body-size cap is already active on all routes including `/webhooks/*` (`app.ts:59-71`).
 
 ---
 
-## 3. Release gate (urutan kerja)
+## 2. Rev 3 corrections to rev 2 (read first)
 
-Format: **Task → file → acceptance criteria**. Semua T1–T10 wajib sebelum live.
+Four things in rev 2 §6 were wrong/inconsistent. The implementation must follow the rev 3 version.
 
-### T1 — Guard environment PayPal (H1) ⟵ kerjakan pertama
-- **File:** `lib/paypal.ts`, `index.ts` (`assertProductionConfig`, sekitar `:15-42`).
-- Tambah `assertPaypalConfig()`:
-  - Bila `PAYPAL_CLIENT_ID` dan `PAYPAL_CLIENT_SECRET` sama-sama tidak diset → PayPal dianggap nonaktif, log, return
-    (deployment Duitku-only tidak boleh crash).
-  - Selain itu: production (`NODE_ENV=production`) wajib `PAYPAL_ENVIRONMENT ∈ {live, production}`; non-production
-    **dilarang** `live`; production dengan `PAYPAL_WEBHOOK_TEST_BYPASS` diset → throw; production wajib punya
+1. **[REV3] `markPaymentIfOpen` cannot be used for refund/dispute.** That function only changes open statuses
+   and never overwrites `paid`, while refund/dispute happens on a payment that is already `paid`. The H5 handler
+   must use a new function with explicit transitions (see T3).
+2. **[REV3] `captureId` belongs in the release gate, not "week one".** Dispute events identify the transaction via
+   capture ID; without this column the payment cannot be mapped (T2).
+3. **[REV3] Do not freeze the account on `PAYMENT.CAPTURE.REFUNDED`.** That event is also sent when the operator
+   refunds it themselves; auto-suspend would lock out a customer who was just refunded. Freeze only for `REVERSED` and
+   `DISPUTE.CREATED`. A won dispute is not auto-unfrozen (the account may have been suspended by an admin for another reason).
+4. **[REV3] "H3 minimum" must not turn transient errors into `needs_review`.** A momentary gateway timeout
+   would flood alerts and make the row unrescuable, because `processPaymentSuccess` does not accept
+   `needs_review`. The correct rule is in T4.
+
+Other correction: **[REV3]** a narrow `transmission_time` window (e.g. 5 minutes) **must not** be used: PayPal retries
+for up to 3 days and the header may not be re-signed. Replay protection from idempotency alone
+(`payment_events` unique) + re-fetching the order via API is enough.
+
+---
+
+## 3. Release gate (work order)
+
+Format: **Task → files → acceptance criteria**. All of T1–T10 are required before live.
+
+### T1 — PayPal environment guard (H1) ⟵ do this first
+- **Files:** `lib/paypal.ts`, `index.ts` (`assertProductionConfig`, around `:15-42`).
+- Add `assertPaypalConfig()`:
+  - If `PAYPAL_CLIENT_ID` and `PAYPAL_CLIENT_SECRET` are both unset → PayPal is considered disabled, log, return
+    (a Duitku-only deployment must not crash).
+  - Otherwise: production (`NODE_ENV=production`) requires `PAYPAL_ENVIRONMENT ∈ {live, production}`; non-production
+    is **forbidden** from `live`; production with `PAYPAL_WEBHOOK_TEST_BYPASS` set → throw; production requires
     `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_WEBHOOK_ID`.
-- `getBaseUrl()` memakai aturan yang sama dan **melempar**, tidak pernah fallback ke sandbox di production.
-- **Acceptance:** boot dengan `NODE_ENV=production` + env kosong/sandbox → proses crash dengan pesan jelas;
-  dev tanpa `NODE_ENV` + sandbox tetap jalan; test yang ada tetap lulus.
-- Catatan: bila ada staging dengan `NODE_ENV=production` tapi kredensial sandbox, pisahkan dengan `APP_ENV`.
+- `getBaseUrl()` uses the same rules and **throws**, never falls back to sandbox in production.
+- **Acceptance:** boot with `NODE_ENV=production` + empty/sandbox env → process crashes with a clear message;
+  dev without `NODE_ENV` + sandbox still runs; existing tests still pass.
+- Note: if there is a staging environment with `NODE_ENV=production` but sandbox credentials, separate it with `APP_ENV`.
 
-### T2 — Migrasi skema (M5, dikurangi)
-- **File:** `packages/db/src/schema.ts` + migrasi drizzle.
-- Pada `payments` tambah: `captureId text`, `reconcileCheckedAt timestamptz`,
-  `refundedAmountMinorUnits integer NOT NULL DEFAULT 0`; tambah `'needs_review'` dan `'disputed'` ke enum status.
-- Index: `payments_open_idx (status, created_at) WHERE status IN ('pending','pending_paypal','capturing')`;
+### T2 — Schema migration (M5, reduced)
+- **Files:** `packages/db/src/schema.ts` + drizzle migration.
+- On `payments` add: `captureId text`, `reconcileCheckedAt timestamptz`,
+  `refundedAmountMinorUnits integer NOT NULL DEFAULT 0`; add `'needs_review'` and `'disputed'` to the status enum.
+- Indexes: `payments_open_idx (status, created_at) WHERE status IN ('pending','pending_paypal','capturing')`;
   `payments_capture_unique (capture_id) WHERE capture_id IS NOT NULL`.
-- Pada `credit_ledger` tambah `ledger_refund_reference_unique (reference) WHERE entry_type = 'refund'`.
-- Tambah `CHECK (status IN (...semua 9 status...))` pada `payments` (`NOT VALID` lalu `VALIDATE`). Drizzle
-  `{ enum }` hanya validasi TypeScript; Postgres menerima string apa pun (terkonfirmasi, `schema.ts:362`).
-- **TIDAK** mengubah `external_id` dari unique global ke composite `(provider, external_id)`: unique global
-  lebih ketat dan tetap benar; perubahan itu migrasi berisiko tanpa manfaat.
-- Pre-check sebelum migrasi: tidak ada status di luar 9 nilai; tidak ada `credit_ledger.reference` ganda untuk
+- On `credit_ledger` add `ledger_refund_reference_unique (reference) WHERE entry_type = 'refund'`.
+- Add `CHECK (status IN (...all 9 statuses...))` on `payments` (`NOT VALID` then `VALIDATE`). Drizzle
+  `{ enum }` only validates in TypeScript; Postgres accepts any string (confirmed, `schema.ts:362`).
+- Do **NOT** change `external_id` from global unique to composite `(provider, external_id)`: global unique
+  is stricter and still correct; that change is a risky migration with no benefit.
+- Pre-check before migrating: no status outside the 9 values; no duplicate `credit_ledger.reference` for
   `entry_type='refund'`.
-- **Acceptance:** `drizzle-kit generate` bersih; `tsc` lulus (semua tempat yang meng-switch `payment.status`
-  dicek terhadap 2 status baru); migrasi sukses di salinan data.
+- **Acceptance:** `drizzle-kit generate` is clean; `tsc` passes (every place that switches on `payment.status`
+  is checked against the 2 new statuses); the migration succeeds on a data copy.
 
-### T3 — Handler refund / reversal / dispute (H5 minimal)
-- **File:** `routes/webhooks.ts` (cabang `:328-334`), modul baru (mis. `lib/paypal-post-payment.ts`),
-  `lib/payment-state.ts` baru bila perlu.
-- Helper baru `transitionPayment(id, fromStatuses, to, tx?)` = `UPDATE ... WHERE id AND status IN (from) RETURNING`.
+### T3 — Refund / reversal / dispute handler (H5 minimum)
+- **Files:** `routes/webhooks.ts` (the `:328-334` branch), a new module (e.g. `lib/paypal-post-payment.ts`),
+  a new `lib/payment-state.ts` if needed.
+- New helper `transitionPayment(id, fromStatuses, to, tx?)` = `UPDATE ... WHERE id AND status IN (from) RETURNING`.
   `markPaidPayment(id, to)` = `transitionPayment(id, ['paid'], to)`.
-- Mapping event → aksi:
+- Event → action mapping:
 
-| Event | Aksi |
+| Event | Action |
 |---|---|
-| `PAYMENT.CAPTURE.REFUNDED` | tambah `refundedAmountMinorUnits` (cek currency sama, parse strict); bila total ≥ `amountMinorUnits` → `paid → refunded`, selain itu tetap `paid`. **Tanpa freeze.** Alert: clawback manual (`admin_adjustment`). |
+| `PAYMENT.CAPTURE.REFUNDED` | add `refundedAmountMinorUnits` (check same currency, strict parse); if total ≥ `amountMinorUnits` → `paid → refunded`, otherwise stays `paid`. **No freeze.** Alert: manual clawback (`admin_adjustment`). |
 | `PAYMENT.CAPTURE.REVERSED` | `paid → disputed` + `users.suspended = true` + alert |
 | `CUSTOMER.DISPUTE.CREATED` | `paid → disputed` + `users.suspended = true` + alert |
-| `CUSTOMER.DISPUTE.RESOLVED` | outcome mengandung `SELLER` → `disputed → paid`; `BUYER` → `disputed/paid → refunded`; lainnya → hanya alert. **Tidak** auto-unfreeze; alert meminta unsuspend manual. |
+| `CUSTOMER.DISPUTE.RESOLVED` | outcome contains `SELLER` → `disputed → paid`; `BUYER` → `disputed/paid → refunded`; anything else → alert only. **No** auto-unfreeze; the alert asks for a manual unsuspend. |
 
-- **Satu transaksi:** insert `payment_events` (`onConflictDoNothing().returning`) + mutasi status + freeze. Bila insert
-  tidak mengembalikan baris → event duplikat → no-op (tanpa alert ulang). Alert dikirim **setelah** commit.
-- Pencarian payment (urut): `custom_id` (jika UUID valid) → `captureId` → order ID (`externalId`) → fallback API
-  `GET /v2/payments/captures/{id}` untuk mengambil `supplementary_data.related_ids.order_id`. Hanya `provider='paypal'`.
-  Validasi capture ID `^[A-Za-z0-9]+$` sebelum dipakai di URL.
-- Ekstraksi ID (**verifikasi dengan payload sandbox**): `REVERSED` → `resource.id` (capture); `REFUNDED` →
-  link `rel="up"` pada resource (capture asal); `DISPUTE.*` → `resource.disputed_transactions[].seller_transaction_id`;
-  order ID dari `resource.supplementary_data.related_ids.order_id`.
-- Event yang tak bisa dipetakan: insert ke `payment_events` dengan `paymentId = null` (kolom nullable) + alert,
-  balas **200** (retry tidak menolong). Error DB → lempar → **5xx** (PayPal retry).
-- Backfill `captureId` (best-effort, di luar transaksi, boleh gagal karena unique).
-- Redaksi PII (L1): hapus `payer`, `shipping`, `buyer`, `payment_source`, `payer_email`, `email_address`,
-  `given_name`, `surname`, `phone*` dari payload sebelum disimpan.
-- **Acceptance:** test untuk tiap event (refund penuh, refund parsial, replay event sama, reversal, dispute
-  created/won/lost, event tak terpetakan); replay tidak menggandakan `refundedAmountMinorUnits` maupun alert.
-- Kebijakan: clawback ledger otomatis **tidak** dibuat di gate ini (alert → `admin_adjustment` manual).
+- **One transaction:** insert `payment_events` (`onConflictDoNothing().returning`) + status mutation + freeze. If the insert
+  returns no row → duplicate event → no-op (no repeated alert). Alerts are sent **after** commit.
+- Payment lookup (in order): `custom_id` (if a valid UUID) → `captureId` → order ID (`externalId`) → API fallback
+  `GET /v2/payments/captures/{id}` to fetch `supplementary_data.related_ids.order_id`. `provider='paypal'` only.
+  Validate the capture ID with `^[A-Za-z0-9]+$` before using it in a URL.
+- ID extraction (**verify with sandbox payloads**): `REVERSED` → `resource.id` (capture); `REFUNDED` →
+  the `rel="up"` link on the resource (originating capture); `DISPUTE.*` → `resource.disputed_transactions[].seller_transaction_id`;
+  order ID from `resource.supplementary_data.related_ids.order_id`.
+- Events that cannot be mapped: insert into `payment_events` with `paymentId = null` (nullable column) + alert,
+  respond **200** (a retry will not help). DB error → throw → **5xx** (PayPal retries).
+- Backfill `captureId` (best-effort, outside the transaction, may fail on unique).
+- PII redaction (L1): remove `payer`, `shipping`, `buyer`, `payment_source`, `payer_email`, `email_address`,
+  `given_name`, `surname`, `phone*` from the payload before storing.
+- **Acceptance:** a test per event (full refund, partial refund, replay of the same event, reversal, dispute
+  created/won/lost, unmapped event); a replay neither doubles `refundedAmountMinorUnits` nor re-alerts.
+- Policy: automatic ledger clawback is **not** built in this gate (alert → manual `admin_adjustment`).
 
 ### T4 — Reconcile (H3 + #5 + M7 + M9)
-- **File:** `lib/paypal-reconcile.ts`, `index.ts:85-90`.
-- Satu dispatcher `reconcileOpenPayments()` (alias `reconcilePaypalPayments` dipertahankan agar import lama tak rusak),
-  dengan `settleDuitkuPayment` / `settlePaypalPayment` bersama. `settlePaypalPayment` diekspor karena dipakai route capture (T6).
-- **Klaim baris:** query `ORDER BY reconcile_checked_at ASC NULLS FIRST, created_at ASC LIMIT 50`, filter
-  `reconcile_checked_at IS NULL OR < now-10m`; sebelum memanggil gateway, `UPDATE payments SET reconcile_checked_at = now()
-  WHERE id AND status IN (open) AND (reconcile_checked_at IS NULL OR < now-10m) RETURNING id`; kosong → skip.
-- **Aturan expire (inti H3):** hapus `|| tooOld` dari **semua** `catch` (termasuk catch terluar `:186-188`).
-  Row hanya di-expire oleh jawaban **eksplisit** gateway: PayPal `PayPalApiError.status === 404` /
-  `INVALID_RESOURCE_ID`, atau status terminal `failed`/`expired`; Duitku `statusCode '02'`, atau not-found.
-  Gateway menjawab "belum dibayar" (PayPal `pending`, Duitku bukan '00') dan row >24 jam → boleh expire.
-- **[REV3] Error sementara (timeout/5xx/jaringan):** row **tetap open** (jangan `needs_review`, jangan expire).
-  Bila row >24 jam, kirim alert **maksimal sekali per 24 jam per payment** (pakai `rateLimitStore.increment(
-  'notif:payment_stuck:<id>', 86400) === 1`, seperti pola `notifyLowBalance`). Alasan: uang mungkin sudah masuk,
-  dan webhook susulan masih bisa menyelamatkan row open/expired.
-- **`needs_review` hanya untuk kondisi yang memang tidak boleh dikreditkan:** mismatch nominal/currency/ikatan order,
-  atau capture ternyata sudah `refunded` saat row masih open. Selalu disertai `opsAlert`. Ini mengisi `console.error`
-  `NEEDS REVIEW` yang sekarang hanya ke log (`:33, :112, :151`) dan menghentikan row mismatch menyumbat antrean.
-- `pending_paypal` tetap dikecualikan dari expire berdasarkan umur (sesuai komentar di kode). Perhatikan: cabang expire
-  memeriksa `order.effectiveStatus === 'pending'`, bukan `payment.status`; pastikan capture `PENDING` memang menjadi
-  `pending_paypal` di `interpretOrder` (sudah, via status capture).
-- **M9:** guard `running` pada `setInterval` reconcile agar run lambat tak menumpuk.
-- **Acceptance:** test: (a) >50 row open, semua akhirnya terproses; (b) gateway melempar error pada row >24 jam →
-  row tetap `pending`, alert sekali; (c) PayPal 404 → expired; (d) mismatch → `needs_review` + alert; (e) dua panggilan
-  paralel tidak memproses row yang sama dua kali.
+- **Files:** `lib/paypal-reconcile.ts`, `index.ts:85-90`.
+- One dispatcher `reconcileOpenPayments()` (the alias `reconcilePaypalPayments` is kept so old imports do not break),
+  with a shared `settleDuitkuPayment` / `settlePaypalPayment`. `settlePaypalPayment` is exported because the capture route uses it (T6).
+- **Row claim:** query `ORDER BY reconcile_checked_at ASC NULLS FIRST, created_at ASC LIMIT 50`, filter
+  `reconcile_checked_at IS NULL OR < now-10m`; before calling the gateway, `UPDATE payments SET reconcile_checked_at = now()
+  WHERE id AND status IN (open) AND (reconcile_checked_at IS NULL OR < now-10m) RETURNING id`; empty → skip.
+- **Expire rules (the core of H3):** remove `|| tooOld` from **all** `catch` blocks (including the outermost catch `:186-188`).
+  A row is expired only by an **explicit** gateway answer: PayPal `PayPalApiError.status === 404` /
+  `INVALID_RESOURCE_ID`, or a terminal `failed`/`expired` status; Duitku `statusCode '02'`, or not-found.
+  The gateway answering "not paid yet" (PayPal `pending`, Duitku not '00') and the row being >24h old → may expire.
+- **[REV3] Transient errors (timeout/5xx/network):** the row **stays open** (no `needs_review`, no expire).
+  If the row is >24h old, send an alert **at most once per 24h per payment** (using `rateLimitStore.increment(
+  'notif:payment_stuck:<id>', 86400) === 1`, like the `notifyLowBalance` pattern). Reason: the money may already have arrived,
+  and a follow-up webhook can still rescue an open/expired row.
+- **`needs_review` only for conditions that genuinely must not be credited:** amount/currency/order-binding mismatch,
+  or a capture that turns out to be already `refunded` while the row is still open. Always accompanied by `opsAlert`. This fills in the `console.error`
+  `NEEDS REVIEW` that currently only goes to the log (`:33, :112, :151`) and stops mismatch rows from clogging the queue.
+- `pending_paypal` stays excluded from age-based expiry (as the code comment says). Note: the expire
+  branch checks `order.effectiveStatus === 'pending'`, not `payment.status`; make sure a `PENDING` capture really becomes
+  `pending_paypal` in `interpretOrder` (it does, via capture status).
+- **M9:** a `running` guard on the reconcile `setInterval` so slow runs do not pile up.
+- **Acceptance:** tests: (a) >50 open rows, all eventually processed; (b) the gateway throws on a >24h row →
+  the row stays `pending`, one alert; (c) PayPal 404 → expired; (d) mismatch → `needs_review` + alert; (e) two parallel
+  calls do not process the same row twice.
 
-### T5 — Webhook PayPal: pencatatan, binding, rate limit (H2, M3, M8)
-- **File:** `routes/webhooks.ts:222-337`, `lib/paypal.ts`, `lib/payment-events.ts`, `app.ts:108-115`.
-- **M8:** pre-check murah **sebelum** postback ke PayPal: kelima header `paypal-*` ada, `paypal-cert-url` berskema
-  `https` dan host `^([a-z0-9-]+\.)*paypal\.com$`. Tambah per-IP rate limit longgar (mis. 120/menit) memakai
-  `ipRateLimit` yang ada — PayPal bisa mengirim burst retry; jangan menahan webhook sah.
-- **Catat semua event:** `no_order_id` (`:269`) dan `payment_not_found` (`:281`) kini mengembalikan 200 tanpa jejak.
-  Tambah `recordUnmatchedEvent({provider, eventId, payload})` (insert `paymentId = null`, `onConflictDoNothing`,
-  return boolean "baru disimpan") dan panggil di kedua cabang. Payload diredaksi (T3).
-  **Catatan tipe:** kolom DB `payment_events.payment_id` sudah nullable (`schema.ts:378`), tetapi interface
-  `PaymentEventInput.paymentId` masih `string` (non-nullable, `payment-events.ts:15`) — ubah menjadi `string | null`
-  agar insert null bisa. Ini bagian dari task T5, bukan file read-only.
-- **Dispatch:** event refund/reversal/dispute → handler T3 sebelum logika COMPLETED/DENIED.
-- **Row sudah di status review:** bila `payment.status ∈ {needs_review, disputed, refunded}` saat webhook
-  `COMPLETED` tiba → catat event, balas **200** (jangan lempar → loop retry 5xx berhari-hari karena
-  `processPaymentSuccess` tidak menerima status itu).
-- **H2 + M3 (cabang `PAYMENT.CAPTURE.COMPLETED`, `:287-327`):** sebelum `recordAndFulfilPayment`, panggil
-  `getOrder(payment.externalId)`; lanjut hanya jika `effectiveStatus === 'paid'` **dan** `capturedOrderMatches` benar.
-  Selain itu: catat event + `needs_review` + alert, balas 200. Webhook = pemicu, API = sumber kebenaran.
-- **`capturedOrderMatches(o, p)`** (menggantikan `capturedAmountMatches` di semua pemanggil: reconcile `:150`,
-  capture route `:526`, webhook `:307`): `o.orderId === p.externalId` **dan** custom_id cocok `p.id` **dan** nominal +
-  currency cocok. Tambah `customId` ke `PayPalParsedOrder` (dibaca dari `captures[0].custom_id ?? purchase_units[0].custom_id`).
-  **Bila PayPal tidak mengembalikan `custom_id`**, lewati cek itu dengan `console.warn` kecuali env
-  `PAYPAL_REQUIRE_CUSTOM_ID=1`; setelah sandbox mengonfirmasi `custom_id` selalu kembali, aktifkan flag itu. (Tanpa
-  kelonggaran ini, jika PayPal tak mengembalikan field, semua payment akan masuk `needs_review`.)
-- `interpretOrder` (M1): bila ada beberapa capture, pilih `COMPLETED` dulu, lalu `PENDING`, lalu yang pertama;
-  `REFUNDED`/`PARTIALLY_REFUNDED` → `effectiveStatus = 'refunded'` (bukan `failed`); semua pemanggil `effectiveStatus`
-  harus menangani nilai baru ini (reconcile: row open + refunded → `needs_review`).
-- Setiap jalur yang menemukan capture ID menyimpannya (`saveCaptureId`, best-effort, hanya bila `captureId IS NULL`).
-- **Acceptance:** test: webhook tanpa header → 400 tanpa memanggil PayPal; cert_url `paypal.com.evil.com` ditolak;
-  event tak dikenal tercatat (`payment_id` null); webhook COMPLETED dengan nominal beda → tidak dikreditkan;
-  webhook ke row `needs_review` → 200.
+### T5 — PayPal webhook: recording, binding, rate limit (H2, M3, M8)
+- **Files:** `routes/webhooks.ts:222-337`, `lib/paypal.ts`, `lib/payment-events.ts`, `app.ts:108-115`.
+- **M8:** a cheap pre-check **before** the postback to PayPal: all five `paypal-*` headers present, `paypal-cert-url` with scheme
+  `https` and host `^([a-z0-9-]+\.)*paypal\.com$`. Add a loose per-IP rate limit (e.g. 120/min) using the existing
+  `ipRateLimit` — PayPal can send retry bursts; do not throttle legitimate webhooks.
+- **Record every event:** `no_order_id` (`:269`) and `payment_not_found` (`:281`) currently return 200 with no trace.
+  Add `recordUnmatchedEvent({provider, eventId, payload})` (insert with `paymentId = null`, `onConflictDoNothing`,
+  return a boolean "newly stored") and call it in both branches. Payload is redacted (T3).
+  **Type note:** the DB column `payment_events.payment_id` is already nullable (`schema.ts:378`), but the interface
+  `PaymentEventInput.paymentId` is still `string` (non-nullable, `payment-events.ts:15`) — change it to `string | null`
+  so a null insert is possible. This is part of task T5, not a read-only file.
+- **Dispatch:** refund/reversal/dispute events → the T3 handler before the COMPLETED/DENIED logic.
+- **Row already in a review status:** if `payment.status ∈ {needs_review, disputed, refunded}` when a `COMPLETED` webhook
+  arrives → record the event, respond **200** (do not throw → multi-day 5xx retry loop because
+  `processPaymentSuccess` does not accept that status).
+- **H2 + M3 (`PAYMENT.CAPTURE.COMPLETED` branch, `:287-327`):** before `recordAndFulfilPayment`, call
+  `getOrder(payment.externalId)`; continue only if `effectiveStatus === 'paid'` **and** `capturedOrderMatches` is true.
+  Otherwise: record the event + `needs_review` + alert, respond 200. Webhook = trigger, API = source of truth.
+- **`capturedOrderMatches(o, p)`** (replacing `capturedAmountMatches` at all call sites: reconcile `:150`,
+  capture route `:526`, webhook `:307`): `o.orderId === p.externalId` **and** custom_id matches `p.id` **and** amount +
+  currency match. Add `customId` to `PayPalParsedOrder` (read from `captures[0].custom_id ?? purchase_units[0].custom_id`).
+  **If PayPal does not return `custom_id`**, skip that check with a `console.warn` unless the env
+  `PAYPAL_REQUIRE_CUSTOM_ID=1`; once sandbox confirms `custom_id` always comes back, enable that flag. (Without
+  this leniency, if PayPal omits the field every payment would land in `needs_review`.)
+- `interpretOrder` (M1): if there are multiple captures, pick `COMPLETED` first, then `PENDING`, then the first;
+  `REFUNDED`/`PARTIALLY_REFUNDED` → `effectiveStatus = 'refunded'` (not `failed`); every caller of `effectiveStatus`
+  must handle this new value (reconcile: open row + refunded → `needs_review`).
+- Every path that finds a capture ID stores it (`saveCaptureId`, best-effort, only when `captureId IS NULL`).
+- **Acceptance:** tests: webhook without headers → 400 without calling PayPal; cert_url `paypal.com.evil.com` rejected;
+  unknown event recorded (`payment_id` null); COMPLETED webhook with a different amount → not credited;
+  webhook to a `needs_review` row → 200.
 
-### T6 — Route capture (H4 + #4)
-- **File:** `lib/paypal.ts` (`captureOrder`), `routes/payments.ts:447-570`.
-- `captureOrder(orderId, paymentId)`: header `PayPal-Request-Id: capture:<paymentId>` dan `Prefer: return=representation`;
-  bila hasil tanpa `captureStatus`, kembalikan `getOrder(orderId)`. `orderId` di-`encodeURIComponent` pada URL.
-- **Klaim atomik** sebelum memanggil PayPal: `UPDATE ... SET status='capturing' WHERE id AND status IN
-  ('pending','pending_paypal','failed','expired') RETURNING`. **[REV3]** `failed`/`expired` **sengaja ikut** (late-rescue:
-  bila PayPal sudah mengambil uang, kredit harus masuk); saat itu terjadi, `console.warn` keras dengan payment ID
-  (artinya state lokal salah). **Jangan** menolak `expired`/`failed` (lihat §7).
-- Klaim gagal: bila status sekarang `capturing` (retry setelah timeout/proses lain) → **jangan capture ulang**; panggil
-  `settlePaypalPayment(payment, {tooOld:false})` — `paid` → 200, selain itu 202 `processing`. Status lain → 409.
-- Penanganan error setelah klaim:
-  - `ORDER_ALREADY_CAPTURED` → `getOrder` lalu cek `capturedOrderMatches` (bukan langsung sukses; sudah ada `:512-526`).
-  - `INSTRUMENT_DECLINED` (422) → lepas klaim (`capturing → pending`), balas 422 dengan pesan "coba metode lain".
-  - 4xx definitif lain (bukan 408/429) → lepas klaim, balas 409.
-  - **Timeout / 5xx / jaringan = status TIDAK DIKETAHUI**: **jangan** set `failed`, **jangan** lepas klaim; biarkan
-    `capturing`, balas 202; reconcile yang menyelesaikan.
-- Hasil: `paid` + `capturedOrderMatches` → `saveCaptureId` + `fulfilPayment`; `pending_paypal` →
+### T6 — Capture route (H4 + #4)
+- **Files:** `lib/paypal.ts` (`captureOrder`), `routes/payments.ts:447-570`.
+- `captureOrder(orderId, paymentId)`: headers `PayPal-Request-Id: capture:<paymentId>` and `Prefer: return=representation`;
+  if the result has no `captureStatus`, return `getOrder(orderId)`. `orderId` is `encodeURIComponent`'d in the URL.
+- **Atomic claim** before calling PayPal: `UPDATE ... SET status='capturing' WHERE id AND status IN
+  ('pending','pending_paypal','failed','expired') RETURNING`. **[REV3]** `failed`/`expired` **deliberately included** (late-rescue:
+  if PayPal already took the money, the credit must land); when that happens, a loud `console.warn` with the payment ID
+  (meaning the local state was wrong). Do **not** reject `expired`/`failed` (see §7).
+- Claim failed: if the status is now `capturing` (retry after a timeout / another process) → **do not capture again**; call
+  `settlePaypalPayment(payment, {tooOld:false})` — `paid` → 200, otherwise 202 `processing`. Any other status → 409.
+- Error handling after the claim:
+  - `ORDER_ALREADY_CAPTURED` → `getOrder` then check `capturedOrderMatches` (not an automatic success; `:512-526` already does this).
+  - `INSTRUMENT_DECLINED` (422) → release the claim (`capturing → pending`), respond 422 with a "try another method" message.
+  - Any other definitive 4xx (not 408/429) → release the claim, respond 409.
+  - **Timeout / 5xx / network = status UNKNOWN**: **do not** set `failed`, **do not** release the claim; leave it
+    `capturing`, respond 202; reconcile settles it.
+- Outcomes: `paid` + `capturedOrderMatches` → `saveCaptureId` + `fulfilPayment`; `pending_paypal` →
   `markPaymentIfOpen(..., 'pending_paypal')`; `failed` → `markPaymentIfOpen(..., 'failed')`; `refunded`/mismatch → `needs_review` + alert.
-- Tambah `sessionRateLimit('payments', N)` pada route capture (pola `routes/keys.ts:13`, `routes/redeem.ts:29`);
-  route create saat ini hanya dibatasi cek DB 5/jam.
-- **Acceptance:** dua request capture paralel → hanya satu memanggil PayPal; timeout buatan → baris tetap `capturing`
-  lalu reconcile menyelesaikan; INSTRUMENT_DECLINED → baris kembali `pending` dan bisa dicoba lagi.
+- Add `sessionRateLimit('payments', N)` to the capture route (pattern `routes/keys.ts:13`, `routes/redeem.ts:29`);
+  the create route is currently only limited by a 5/hour DB check.
+- **Acceptance:** two parallel capture requests → only one calls PayPal; an artificial timeout → the row stays `capturing`
+  then reconcile settles it; INSTRUMENT_DECLINED → the row goes back to `pending` and can be retried.
 
 ### T7 — Create order (M2)
-- **File:** `lib/paypal.ts` (`createOrder`), `routes/payments.ts:324-443` (route `POST /paypal/create-order`). Catatan: `:32-208` adalah route Duitku `/create`, bukan PayPal — jangan tertukar.
-- Throw bila link `approve`/`payer-action` tidak ditemukan (kini mengembalikan `''`, `:234-240`).
-- Amount string dari integer cents: helper `centsToPaypalAmount(cents)` = `(cents/100).toFixed(2)`, validasi integer ≥ 0;
-  `createOrder` memvalidasi `^\d+(\.\d{1,2})?$`.
-- Opsional `return_url`/`cancel_url` via `payment_source.paypal.experience_context`.
-- `paypalAmountToCents` strict (L6): regex `^\d+(\.\d{1,2})?$`, hitung dari string (bukan `Math.round(Number*100)`),
-  throw pada format tak terduga; `capturedAmountMatches` membungkusnya dalam try/catch → `false`.
-- Catatan bisnis (verifikasi sebelum live): setahuku PayPal tidak mendukung IDR sebagai currency transaksi; pastikan
-  alur harga memakai currency yang didukung (mis. USD) dan kurs dikunci server-side di row payment (sudah, `payments.ts:159`).
+- **Files:** `lib/paypal.ts` (`createOrder`), `routes/payments.ts:324-443` (the `POST /paypal/create-order` route). Note: `:32-208` is the Duitku `/create` route, not PayPal — do not mix them up.
+- Throw if the `approve`/`payer-action` link is not found (currently returns `''`, `:234-240`).
+- Amount string from integer cents: helper `centsToPaypalAmount(cents)` = `(cents/100).toFixed(2)`, validate integer ≥ 0;
+  `createOrder` validates `^\d+(\.\d{1,2})?$`.
+- Optional `return_url`/`cancel_url` via `payment_source.paypal.experience_context`.
+- Strict `paypalAmountToCents` (L6): regex `^\d+(\.\d{1,2})?$`, compute from the string (not `Math.round(Number*100)`),
+  throw on an unexpected format; `capturedAmountMatches` wraps it in try/catch → `false`.
+- Business note (verify before live): as far as I know PayPal does not support IDR as a transaction currency; make sure
+  the pricing flow uses a supported currency (e.g. USD) and the rate is locked server-side in the payment row (it is, `payments.ts:159`).
 
 ### T8 — Alerting `needs_review` (#8)
-- Semua jalur yang menulis `needs_review` memanggil `opsAlert()` (T3/T4/T5). Tidak ada `console.error` saja.
-- **Acceptance:** memicu mismatch di sandbox → pesan Telegram/webhook terkirim.
+- Every path that writes `needs_review` calls `opsAlert()` (T3/T4/T5). No `console.error`-only.
+- **Acceptance:** trigger a mismatch in sandbox → the Telegram/webhook message is sent.
 
-### T9 — Konfigurasi dashboard PayPal (non-kode)
-Webhook **live** harus subscribe: `PAYMENT.CAPTURE.COMPLETED`, `.DENIED`, `.PENDING`, `.REFUNDED`, `.REVERSED`,
-`CHECKOUT.ORDER.VOIDED`, `CUSTOMER.DISPUTE.CREATED`, `CUSTOMER.DISPUTE.RESOLVED`. Webhook ID sandbox ≠ live; `PAYPAL_WEBHOOK_ID`
-production harus ID live.
+### T9 — PayPal dashboard configuration (non-code)
+The **live** webhook must subscribe to: `PAYMENT.CAPTURE.COMPLETED`, `.DENIED`, `.PENDING`, `.REFUNDED`, `.REVERSED`,
+`CHECKOUT.ORDER.VOIDED`, `CUSTOMER.DISPUTE.CREATED`, `CUSTOMER.DISPUTE.RESOLVED`. The sandbox webhook ID ≠ live; `PAYPAL_WEBHOOK_ID`
+in production must be the live ID.
 
-### T10 — Sandbox end-to-end + smoke test live
-Lihat §9. Wajib lulus sebelum go-live.
-
----
-
-## 4. Temuan Medium/Low yang bisa menyusul (minggu pertama)
-
-- **Clawback otomatis:** ledger `entryType:'refund'` bernilai negatif, `reference = refund:<paypal_refund_id>`
-  (bukan capture ID), memakai `grantCredits` (`billing.ts:349`) + unique index T2. Saldo negatif sudah diblokir di
-  jalur API.
-- **Paket entitlement** (`pkg.modelId`, `billing.ts:476-487`) menulis ke `entitlements`, bukan `credit_ledger`. Refund/dispute
-  atas pembelian jenis ini harus mengubah entitlement menjadi `revoked`, bukan menulis ledger negatif. Belum tercakup di T3.
-- **M4:** `PAYPAL_WEBHOOK_TEST_BYPASS` (`paypal.ts:353-355`) **double-gated** (`NODE_ENV === 'test' && flag === '1'`), jadi
-  **tidak reachable di production** selama `NODE_ENV` benar — bukan bug, hanya wording rev sebelumnya yang longgar. T1 menambah
-  larangan eksplisit flag ini di production; lebih bersih injeksi verifier di test (`vi.mock`).
-- **M6:** token OAuth stampede (`paypal.ts:28-62`) → simpan promise in-flight (`inflight ??= fetchToken().finally(() => inflight = null)`).
-- **M10:** webhook memverifikasi body hasil parse (`webhooks.ts:223→226→239`). Biasanya berfungsi; bila ada
-  `invalid signature` sporadis pada event sah, pindah ke verifikasi offline atas raw body (`node:crypto` + sertifikat dari `paypal-cert-url`,
-  host divalidasi).
-- **L1:** retensi `payment_events.payload` + redaksi PII (redaksi dasar sudah di T3).
-- **L3:** `expiryPeriod` Duitku selalu = `DUITKU_PAYMENT_TTL_MINUTES` (jadikan default di `createTransaction`). Bila tidak,
-  row lokal expired di menit ke-5 sementara QR bisa dibayar sampai menit ke-60.
-- **L4:** `assertDuitkuConfig` di production `throw` (bukan `warn`) bila merchant code/API key kosong; verifikasi
-  `assertProductionConfig` (`index.ts:26-39`) tetap menjamin itu.
-- **L5:** `void notifyPaymentPaid` bisa hilang di serverless; outbox/queue bila pernah pindah.
-- **L7:** koreksi komentar `PaymentEventInput` (`payment-events.ts:8-11`): yang idempoten adalah `processPaymentSuccess`/
-  `markPaymentIfOpen`, `payment_events` hanya mencegah duplikasi baris audit. Tambah `recordUnmatchedEvent` (T5).
-- **Duitku:** deteksi not-found lewat substring pesan error rapuh; lebih baik error bertipe dari `lib/duitku.ts`.
-- **Duitku/QRIS** tidak punya webhook refund → prosedur manual (`admin_adjustment`); dokumentasikan untuk operator.
+### T10 — Sandbox end-to-end + live smoke test
+See §9. Must pass before go-live.
 
 ---
 
-## 5. Spesifikasi skema (ringkas)
+## 4. Medium/Low findings that can follow (week one)
+
+- **Automatic clawback:** a `entryType:'refund'` ledger entry with a negative value, `reference = refund:<paypal_refund_id>`
+  (not the capture ID), using `grantCredits` (`billing.ts:349`) + the T2 unique index. Negative balances are already blocked on the
+  API path.
+- **Entitlement packages** (`pkg.modelId`, `billing.ts:476-487`) write to `entitlements`, not `credit_ledger`. Refund/dispute
+  on this kind of purchase must change the entitlement to `revoked`, not write a negative ledger. Not covered by T3.
+- **M4:** `PAYPAL_WEBHOOK_TEST_BYPASS` (`paypal.ts:353-355`) is **double-gated** (`NODE_ENV === 'test' && flag === '1'`), so it is
+  **not reachable in production** as long as `NODE_ENV` is correct — not a bug, only loose wording in the previous rev. T1 adds an
+  explicit ban on this flag in production; cleaner still is injecting a verifier in tests (`vi.mock`).
+- **M6:** OAuth token stampede (`paypal.ts:28-62`) → store the in-flight promise (`inflight ??= fetchToken().finally(() => inflight = null)`).
+- **M10:** the webhook verifies the parsed body (`webhooks.ts:223→226→239`). This usually works; if there are sporadic
+  `invalid signature` errors on legitimate events, move to offline verification over the raw body (`node:crypto` + a certificate from
+  `paypal-cert-url`, host validated).
+- **L1:** `payment_events.payload` retention + PII redaction (basic redaction is already in T3).
+- **L3:** Duitku `expiryPeriod` always = `DUITKU_PAYMENT_TTL_MINUTES` (make it the default in `createTransaction`). Otherwise the
+  local row expires at minute 5 while the QR can be paid until minute 60.
+- **L4:** `assertDuitkuConfig` in production should `throw` (not `warn`) when the merchant code/API key is empty. ~~verify
+  `assertProductionConfig` (`index.ts:26-39`) guarantees that~~ — **note:** `assertProductionConfig` never existed in the repo;
+  the safety net is now an explicit production branch in `index.ts` (done in Phase 1).
+- **L5:** `void notifyPaymentPaid` can be lost on serverless; outbox/queue if we ever move.
+- **L7:** fix the `PaymentEventInput` comment (`payment-events.ts:8-11`): what is idempotent is `processPaymentSuccess`/
+  `markPaymentIfOpen`, `payment_events` only prevents duplicate audit rows. Add `recordUnmatchedEvent` (T5).
+- **Duitku:** not-found detection via error-message substring is fragile; better to have a typed error from `lib/duitku.ts`.
+- **Duitku/QRIS** has no refund webhook → manual procedure (`admin_adjustment`); document it for the operator.
+
+---
+
+## 5. Schema spec (summary)
 
 ```ts
-// payments — tambahan
+// payments — additions
 captureId: text('capture_id'),
 reconcileCheckedAt: timestamp('reconcile_checked_at', { withTimezone: true }),
 refundedAmountMinorUnits: integer('refunded_amount_minor_units').notNull().default(0),
 // status enum: + 'needs_review', 'disputed'
 // index: payments_open_idx (partial), payments_capture_unique (partial unique)
 // credit_ledger: ledger_refund_reference_unique (partial unique WHERE entry_type='refund')
-// + CHECK constraint status IN (9 nilai)
+// + CHECK constraint status IN (9 values)
 ```
 
 ---
 
-## 6. Jawaban checklist verifikasi (terhadap source)
+## 6. Verification checklist answers (against source)
 
-1. **`processPaymentSuccess`** — atomik **ya** (`billing.ts:438-447`). Status diterima: `pending, pending_paypal, capturing,
-   failed, expired`; `refunded` dikecualikan (benar). Referensi ledger `payment:<id>` (`:494, :506`). Satu transaksi dengan perubahan saldo (`:518`).
-   Entitlement menulis ke `entitlements`, bukan ledger (`:476-487`).
-2. **`markPaymentIfOpen`** — kondisional **ya** (`billing.ts:406-424`); open = `pending, pending_paypal, capturing`; tak pernah menimpa `paid`
-   (**sebab itu tak cocok untuk H5**, lihat §2.1).
-3. **Route create** — harga/kredit server-side **ya** (`payments.ts:114, :161`); kurs terkunci di row (`:159`); batas 5/jam (`:69-89`).
-   Tidak ada `sessionRateLimit` (`:23-24`).
-4. **Route capture** — auth middleware **ya** (`:23-24`), kepemilikan di handler **ya** (`:470-474`); klaim atomik `capturing` **tidak ada** (status mati); penolakan
-   `expired/failed` **sengaja tidak ada** (benar); `isAlreadyCapturedError` → `getOrder` **ya** (`:507-516`);
-   `INSTRUMENT_DECLINED` **tidak dipetakan** (`:515-520`); user suspended diblokir **ya** (`session-auth.ts:100`).
-5. **Webhook PayPal** — raw body dibaca **ya tapi dibuang** (`:223→226`); verifikasi paling awal **ya** (`:239`); lookup via `custom_id` **tidak**
-   (hanya `externalId`, `:276`); event tak dikenal dibalas 200 **tanpa** `recordPaymentEvent` (`:269, :281`); error DB → 5xx **ya** (`:326`).
-6. **Callback Duitku** — `merchantCode` implisit (bagian string yang ditandatangani, `duitku.ts:210`); hanya `resultCode '00'` di-fulfil;
-   nominal dicocokkan DB + re-verify API; `eventId` diberi akhiran `:resultCode` sehingga tidak bentrok.
-7. **Handler refund/dispute** — tidak ada (T3).
-8. **Scheduler reconcile** — satu pemanggil `setInterval` (`index.ts:85-90`), 15 menit; tanpa alert (`sendOpsAlert` ada tapi tidak dipanggil).
+1. **`processPaymentSuccess`** — atomic **yes** (`billing.ts:438-447`). Accepted statuses: `pending, pending_paypal, capturing,
+   failed, expired`; `refunded` excluded (correct). Ledger reference `payment:<id>` (`:494, :506`). One transaction with the balance change (`:518`).
+   Entitlements write to `entitlements`, not the ledger (`:476-487`).
+2. **`markPaymentIfOpen`** — conditional **yes** (`billing.ts:406-424`); open = `pending, pending_paypal, capturing`; never overwrites `paid`
+   (**which is why it is unsuitable for H5**, see §2.1).
+3. **Create route** — price/credits server-side **yes** (`payments.ts:114, :161`); rate locked in the row (`:159`); 5/hour limit (`:69-89`).
+   No `sessionRateLimit` (`:23-24`).
+4. **Capture route** — auth middleware **yes** (`:23-24`), ownership in the handler **yes** (`:470-474`); atomic `capturing` claim
+   **missing** (dead status); rejecting `expired/failed` **deliberately absent** (correct); `isAlreadyCapturedError` → `getOrder` **yes** (`:507-516`);
+   `INSTRUMENT_DECLINED` **not mapped** (`:515-520`); suspended users blocked **yes** (`session-auth.ts:100`).
+5. **PayPal webhook** — raw body is read **yes but discarded** (`:223→226`); verification is the earliest step **yes** (`:239`); lookup via `custom_id` **no**
+   (only `externalId`, `:276`); unknown events answered 200 **without** `recordPaymentEvent` (`:269, :281`); DB error → 5xx **yes** (`:326`).
+6. **Duitku callback** — `merchantCode` implicit (part of the signed string, `duitku.ts:210`); only `resultCode '00'` is fulfilled;
+   amount matched against the DB + API re-verified; `eventId` gets a `:resultCode` suffix so it does not collide.
+7. **Refund/dispute handler** — does not exist (T3).
+8. **Reconcile scheduler** — one `setInterval` caller (`index.ts:85-90`), 15 minutes; no alert (`sendOpsAlert` exists but is not called).
 
 ---
 
-## 7. Sudah termitigasi / JANGAN diimplementasikan
+## 7. Already mitigated / DO NOT implement
 
-| Klaim | Kenyataan |
+| Claim | Reality |
 |---|---|
-| `deletedAt` tak dicek di `sessionAuth` → user terhapus bisa bayar | **Salah.** `softDeleteUser` (`lib/account-deletion.ts:10-34`) set `suspended=true` dan menghapus semua sesi dalam satu transaksi; `sessionAuth` menolak `suspended`. |
-| Tidak ada infrastruktur alert | **Salah.** `sendOpsAlert()` sudah ada; yang kurang hanya pemanggilan dari reconcile/webhook. |
-| Webhook tanpa batas ukuran body | **Salah.** 1 MB `bodyLimit` aktif (`app.ts:59-71`). Hanya rate limit yang kurang. |
-| Saldo negatif membuat clawback sia-sia | **Salah.** `pickSource` menolak saldo ≤ 0. |
-| `/receipt/:paymentId` rawan IDOR | **Aman.** Route di `payments.ts:212`, filter `userId` di `payments.ts:236`. |
-| **Tolak `expired`/`failed` di route capture** | **JANGAN.** `processPaymentSuccess` sengaja menerima keduanya (late-rescue). Menolak = uang masuk, kredit tidak. |
-| Window `transmission_time` sempit | **JANGAN** (lihat §2). |
-| Ubah `externalId` jadi composite unique | **Tidak perlu** (T2). |
-| Auto-freeze pada `REFUNDED` / auto-unfreeze setelah dispute menang | **JANGAN** (lihat §2.3). |
+| `deletedAt` unchecked in `sessionAuth` → a deleted user can still pay | **Wrong.** `softDeleteUser` (`lib/account-deletion.ts:10-34`) sets `suspended=true` and deletes all sessions in one transaction; `sessionAuth` rejects `suspended`. |
+| No alerting infrastructure | **Wrong.** `sendOpsAlert()` already exists; what is missing is only the call from reconcile/webhook. |
+| Webhook has no body-size limit | **Wrong.** A 1 MB `bodyLimit` is active (`app.ts:59-71`). Only the rate limit is missing. |
+| A negative balance makes clawback pointless | **Wrong.** `pickSource` rejects balance ≤ 0. |
+| `/receipt/:paymentId` is IDOR-prone | **Safe.** The route is at `payments.ts:212`, the `userId` filter at `payments.ts:236`. |
+| **Reject `expired`/`failed` in the capture route** | **DO NOT.** `processPaymentSuccess` deliberately accepts both (late-rescue). Rejecting = money in, credits not. |
+| Narrow `transmission_time` window | **DO NOT** (see §2). |
+| Change `externalId` to a composite unique | **Not needed** (T2). |
+| Auto-freeze on `REFUNDED` / auto-unfreeze after a won dispute | **DO NOT** (see §2.3). |
 
 ---
 
-## 8. Catatan deploy VPS
+## 8. VPS deploy notes
 
-- Bind API ke `127.0.0.1`, TLS di nginx. Bila port API terbuka ke internet, `getTrustedClientIp` tak bermakna dan rate limit per IP bisa dipalsukan.
-- Jalankan **satu** instance API. Dengan klaim T4 multi-instance aman, tetapi tetap disarankan satu sampai T4 terbukti.
-- `REDIS_URL` wajib diset; tanpa itu rate limiter jatuh ke in-memory (reset saat restart, tak terkoordinasi).
-- Production: `NODE_ENV=production`, `PAYPAL_ENVIRONMENT=live`, `DUITKU_ENV=production`, `PAYPAL_WEBHOOK_TEST_BYPASS` tidak diset.
-  `assertPaypalConfig()` dan `assertDuitkuConfig()` harus hard-exit di production.
+- Bind the API to `127.0.0.1`, TLS at nginx. If the API port is exposed to the internet, `getTrustedClientIp` is meaningless and per-IP rate limiting can be spoofed.
+- Run **one** API instance. With T4 the multi-instance claim is safe, but one is still recommended until T4 is proven.
+- `REDIS_URL` is required; without it the rate limiter falls back to in-memory (resets on restart, uncoordinated).
+- Production: `NODE_ENV=production`, `PAYPAL_ENVIRONMENT=live`, `DUITKU_ENV=production`, `PAYPAL_WEBHOOK_TEST_BYPASS` unset.
+  `assertPaypalConfig()` and `assertDuitkuConfig()` must hard-exit in production.
 
 ---
 
-## 9. Sandbox end-to-end (wajib sebelum live)
+## 9. Sandbox end-to-end (required before live)
 
-Simulator webhook tidak cukup (postback verification tidak mendukung mock event). Pakai transaksi sandbox sungguhan.
+The webhook simulator is not enough (postback verification does not support mock events). Use real sandbox transactions.
 
-| Skenario | Hasil yang diharapkan |
+| Scenario | Expected result |
 |---|---|
-| Bayar normal | `paid`, kredit sekali, `capture_id` terisi |
-| Capture dikirim dua kali / klik ganda | kredit tetap sekali |
-| Timeout buatan saat capture | baris `capturing`, reconcile menyelesaikan, **bukan** `failed` |
-| Webhook COMPLETED tiba sebelum respons capture | kredit sekali |
-| Webhook sama dikirim 2× | no-op |
-| Kartu ditolak (`INSTRUMENT_DECLINED`) | baris kembali `pending`, bisa coba lagi |
-| Capture `PENDING` | `pending_paypal`, tidak di-expire karena umur |
-| Mismatch nominal | `needs_review` + alert terkirim |
-| Refund penuh dari dashboard | `refunded`, alert, akun **tidak** dibekukan |
-| Refund parsial | tetap `paid`, `refundedAmountMinorUnits` naik, alert |
-| Dispute dibuka | `disputed`, akun `suspended`, alert |
-| Dispute dimenangkan | kembali `paid`, alert meminta unsuspend manual |
-| Webhook COMPLETED ke row `needs_review` | 200, tidak ada retry 5xx |
-| >50 row open | semua akhirnya terproses (tidak ada starvation) |
+| Normal payment | `paid`, credited once, `capture_id` populated |
+| Capture sent twice / double click | still credited once |
+| Artificial timeout during capture | row `capturing`, reconcile settles it, **not** `failed` |
+| COMPLETED webhook arrives before the capture response | credited once |
+| Same webhook sent 2× | no-op |
+| Card declined (`INSTRUMENT_DECLINED`) | row back to `pending`, can retry |
+| Capture `PENDING` | `pending_paypal`, not expired by age |
+| Amount mismatch | `needs_review` + alert sent |
+| Full refund from the dashboard | `refunded`, alert, account **not** frozen |
+| Partial refund | stays `paid`, `refundedAmountMinorUnits` increases, alert |
+| Dispute opened | `disputed`, account `suspended`, alert |
+| Dispute won | back to `paid`, alert asking for a manual unsuspend |
+| COMPLETED webhook to a `needs_review` row | 200, no 5xx retry |
+| >50 open rows | all eventually processed (no starvation) |
 
-**Verifikasi payload nyata** untuk `REFUNDED`, `REVERSED`, `DISPUTE.CREATED/RESOLVED`: ambil satu payload tiap event dari
-`payment_events`, cocokkan capture ID, order ID, `custom_id`, `dispute_outcome.outcome_code` dengan ekstraksi di T3.
-Cek juga apakah `custom_id` kembali di order/capture; bila ya, set `PAYPAL_REQUIRE_CUSTOM_ID=1`.
+**Real payload verification** for `REFUNDED`, `REVERSED`, `DISPUTE.CREATED/RESOLVED`: take one payload per event from
+`payment_events`, match the capture ID, order ID, `custom_id`, `dispute_outcome.outcome_code` against the extraction in T3.
+Also check whether `custom_id` comes back on the order/capture; if yes, set `PAYPAL_REQUIRE_CUSTOM_ID=1`.
 
-**Smoke test live:** satu transaksi terkecil sungguhan, refund sendiri, pastikan event `REFUNDED` tiba, tercatat, dan alert terkirim.
+**Live smoke test:** one real smallest-possible transaction, refund it yourself, confirm the `REFUNDED` event arrives, is recorded, and the alert is sent.
 
 ---
 
-## 10. Prioritas
+## 10. Priorities
 
-| Prio | Task | Alasan |
+| Prio | Task | Reason |
 |---|---|---|
-| **P0** | T1 guard environment | 10 menit; kegagalannya diam-diam dan fatal |
-| **P0** | T2 skema + T3 handler refund/dispute | refund = kredit gratis yang tak pernah ditarik |
-| **P1** | T4 reconcile | row bisa salah di-expire; antrean bisa macet |
-| **P1** | T5 webhook (catat semua event, binding, rate limit) | audit trail + manipulasi payload |
-| **P1** | T8 alerting | uang bisa nyangkut tanpa ada yang tahu |
-| **P2** | T6 capture route, T7 create order | korektness/UX, bukan kebocoran uang |
-| **P2** | T9/T10 dashboard + sandbox | gate rilis |
+| **P0** | T1 environment guard | 10 minutes; its failure is silent and fatal |
+| **P0** | T2 schema + T3 refund/dispute handler | refund = free credits that are never clawed back |
+| **P1** | T4 reconcile | rows can be wrongly expired; the queue can stall |
+| **P1** | T5 webhook (record all events, binding, rate limit) | audit trail + payload manipulation |
+| **P1** | T8 alerting | money can get stuck with nobody knowing |
+| **P2** | T6 capture route, T7 create order | correctness/UX, not money leakage |
+| **P2** | T9/T10 dashboard + sandbox | release gate |
 | **P3** | §4 | cleanup |
 
 ---
 
-## 11. Rencana Pengerjaan Bertahap (4 Fase)
+## 11. Phased Work Plan (4 Phases)
 
-Dipecah agar bisa dicicil antar sesi, tiap fase dapat berdiri sendiri dan diuji sebelum lanjut.
-Batas scope §0A tetap berlaku penuh di setiap fase.
+Split so it can be done across sessions; each phase stands alone and is tested before moving on.
+The §0A scope limits remain fully in effect in every phase.
 
 ```
-FASE 1 ──► FASE 2 ──► FASE 3 ──► FASE 4
-T1, T2     T3, T8     T4, T5     T6, T7, T9, T10
+PHASE 1 ──► PHASE 2 ──► PHASE 3 ──► PHASE 4
+T1, T2      T3, T8      T4, T5      T6, T7, T9, T10
 ```
 
-### Fase 1 — Fondasi (T1 + T2)
+### Phase 1 — Foundation (T1 + T2)
 
-**Target: kode bisa boot aman di production, skema siap untuk semua fase berikutnya.**
+**Target: the code can boot safely in production, the schema is ready for all following phases.**
 
-| Task | Ringkasan | File yang disentuh |
+| Task | Summary | Files touched |
 |---|---|---|
-| T1 | `assertPaypalConfig()`: guard env PayPal saat boot | `lib/paypal.ts`, `index.ts` |
-| T2 | Tambah kolom + enum + index ke skema & migrasi | `packages/db/src/schema.ts`, 1 file migrasi baru |
+| T1 | `assertPaypalConfig()`: guard PayPal env at boot | `lib/paypal.ts`, `index.ts` |
+| T2 | Add columns + enum + index to schema & migration | `packages/db/src/schema.ts`, 1 new migration file |
 
-**Urutan dalam fase:**
-1. Kerjakan T1 dulu (paling cepat, ~10 menit, tidak bergantung skema).
-2. Kerjakan T2: generate migrasi, jalankan di salinan DB, verifikasi `tsc --noEmit`.
+**Order within the phase:**
+1. Do T1 first (fastest, ~10 minutes, no schema dependency).
+2. Do T2: generate the migration, run it on a DB copy, verify `tsc --noEmit`.
 
-**Gate keluar fase 1:**
-- [ ] `NODE_ENV=production` + env kosong → proses crash dengan pesan jelas
-- [ ] `tsc --noEmit` lulus; tidak ada import baru yang rusak
-- [ ] Kolom `captureId`, `reconcileCheckedAt`, `refundedAmountMinorUnits`, status `needs_review` & `disputed` ada di schema + DB
-- [ ] Migrasi sukses di salinan data
+**Phase 1 exit gate:**
+- [x] `NODE_ENV=production` + empty env → the process crashes with a clear message
+  - **Correction to this gate:** the original wording was loose. A provider that is **completely unconfigured** (both credentials empty) is deliberately treated as inactive and does not crash, per §3 T1 — a Duitku-only or PayPal-only deployment must still boot. What crashes is a **partial** configuration: production with only one of `PAYPAL_CLIENT_ID`/`PAYPAL_CLIENT_SECRET`, or without `PAYPAL_WEBHOOK_ID`, or with `PAYPAL_ENVIRONMENT` not `live`/`production`, or with `PAYPAL_WEBHOOK_TEST_BYPASS` set. Duitku follows the same rules.
+- [x] `tsc --noEmit` passes; no new broken imports
+- [x] The columns `captureId`, `reconcileCheckedAt`, `refundedAmountMinorUnits` and the statuses `needs_review` & `disputed` exist in the schema + DB
+- [x] Migration succeeds on a data copy
 
-**Dependensi ke fase berikutnya:** T3, T4, T5 semuanya butuh kolom T2 dan enum baru. Jangan mulai fase 2 sebelum fase 1 lulus.
+**Issues left from Phase 1:** remaining findings after commit `4780212` + follow-up hardening.
+
+| Item | Severity | Disposition |
+|---|---|---|
+| The `PAYPAL_WEBHOOK_TEST_BYPASS` guard sits below the "disabled" early-return | Low — the flag is not referenced anywhere else | **Fixed** — the guard moved to the top of `assertPaypalConfig()` |
+| The `throw` from `assertDuitkuConfig()` is swallowed by a `try/catch` in `index.ts`; §8 asks for a hard-exit | **Medium** — production could boot with `DUITKU_ENV=sandbox` | **Fixed** — explicit production branch in `index.ts` |
+| §L4 names `assertProductionConfig` (`index.ts:26-39`) as the safety net — **that function does not exist in the repo** | Medium — there never was a backstop; the audit's own reference was stale | **Fixed** — the reference is struck through; the new production branch in `index.ts` is the backstop |
+| `security.test.ts` (`Fix 1.4`) fails — expects 200, gets 401 | Medium — pre-existing from `6fc248c`, not Phase 1 | **Fixed** — a `fetch` mock replaces the removed `mock_test_trans_id` backdoor |
+| `gateway.test.ts:114` (rate-limit 121 requests) fails against remote Neon | Low — timing flake, 60s window vs serial RTT >120s | **Deferred** — environmental, diagnosed separately |
+| `0011_fuzzy_betty_ross.sql:7` uses a plain `ADD CONSTRAINT`, not `NOT VALID` + `VALIDATE` | Low — the end result is identical; the lock profile only matters on a large table | **Deferred** — already applied to the DB; editing the file would desync from the journal |
+
+Note: `external_id` is deliberately left **globally** unique (not composite `(provider, external_id)`) per §7 "Not needed" — the constraint is followed on purpose, not overlooked.
+
+**Dependency for the following phases:** T3, T4, T5 all need the T2 columns and the new enum. Do not start Phase 2 before Phase 1 passes.
 
 ---
 
-### Fase 2 — Keamanan Finansial (T3 + T8)
+### Phase 2 — Financial Security (T3 + T8)
 
-**Target: refund/reversal/dispute ditangani; semua jalur `needs_review` kirim alert.**
+**Target: refund/reversal/dispute handled; every `needs_review` path sends an alert.**
 
-| Task | Ringkasan | File yang disentuh |
+| Task | Summary | Files touched |
 |---|---|---|
-| T3 | Handler `REFUNDED`, `REVERSED`, `DISPUTE.*`; `transitionPayment`; redaksi PII | `lib/paypal-post-payment.ts` (baru), `lib/payment-state.ts` (baru), `routes/webhooks.ts` |
-| T8 | Pastikan semua jalur `needs_review` panggil `opsAlert()` | file yang sudah disentuh T3 saja |
+| T3 | Handlers for `REFUNDED`, `REVERSED`, `DISPUTE.*`; `transitionPayment`; PII redaction | `lib/paypal-post-payment.ts` (new), `lib/payment-state.ts` (new), `routes/webhooks.ts` |
+| T8 | Make sure every `needs_review` path calls `opsAlert()` | files already touched by T3 only |
 
-**Urutan dalam fase:**
-1. Buat `lib/payment-state.ts` dengan `transitionPayment` + `markPaidPayment`.
-2. Buat `lib/paypal-post-payment.ts` dengan handler tiap event (mapping di §3 T3).
-3. Tambah dispatch di `routes/webhooks.ts` sebelum cabang COMPLETED/DENIED.
-4. T8: cek semua jalur `needs_review` di file yang baru dibuat sudah panggil `opsAlert()`.
+**Order within the phase:**
+1. Create `lib/payment-state.ts` with `transitionPayment` + `markPaidPayment`.
+2. Create `lib/paypal-post-payment.ts` with a handler per event (mapping in §3 T3).
+3. Add dispatch in `routes/webhooks.ts` before the COMPLETED/DENIED branches.
+4. T8: check every `needs_review` path in the new files already calls `opsAlert()`.
 
-**Gate keluar fase 2:**
-- [ ] Test: refund penuh → `refunded`, alert terkirim, akun **tidak** dibekukan
-- [ ] Test: refund parsial → tetap `paid`, `refundedAmountMinorUnits` naik, alert terkirim
-- [ ] Test: reversal → `disputed`, `users.suspended = true`, alert
-- [ ] Test: dispute created → `disputed`, suspended, alert
-- [ ] Test: dispute menang seller → `paid`, alert minta unsuspend manual
-- [ ] Test: dispute menang buyer → `refunded`, alert
-- [ ] Test: replay event sama → no-op (tidak gandakan `refundedAmountMinorUnits`)
-- [ ] Test: event tak terpetakan → insert `paymentId = null`, balas 200
-- [ ] `tsc --noEmit` lulus
+**Phase 2 exit gate:**
+- [x] Test: full refund → `refunded`, alert sent, account **not** frozen
+- [x] Test: partial refund → stays `paid`, `refundedAmountMinorUnits` increases, alert sent
+- [x] Test: reversal → `disputed`, `users.suspended = true`, alert
+- [x] Test: dispute created → `disputed`, suspended, alert
+- [x] Test: dispute won by seller → `paid`, alert asks for a manual unsuspend
+- [x] Test: dispute won by buyer → `refunded`, alert
+- [x] Test: replay of the same event → no-op (does not double `refundedAmountMinorUnits`)
+- [x] Test: unmapped event → insert with `paymentId = null`, respond 200
+- [x] `tsc --noEmit` passes
 
-**Dependensi ke fase berikutnya:** T5 akan mendispatch ke handler T3; pastikan T3 sudah di-export dan stabil sebelum lanjut.
+**Status: ✅ DONE (2026-10-14).** The new suite `src/routes/paypal-post-payment.test.ts` (16 tests) passes in full
+and covers all eight gate lines above plus unit tests for `parseMinorUnits`,
+`redactPaypalPayload`, `extractPaymentRefs`, and `isPostPaymentEvent`.
+
+**Review pass (2026-10-14, after the initial implementation) — 3 findings fixed:**
+
+| # | Finding | Disposition |
+|---|---|---|
+| 1 | The `outcome_code` `CANCELED_BY_BUYER` (buyer withdraws the claim) contains the substring `BUYER`, so it read as a **buyer win** → full refund + false clawback alert | **Fixed** — the seller-win branch is now `code.includes('SELLER') \|\| code === 'CANCELED_BY_BUYER'`, carved before the buyer branch |
+| 2 | The alert & return value claimed a transition that did not happen when `transitionPayment` returned `null` (`applyDisputeOpened` / `applyDisputeResolved`) | **Fixed** — a `dispute_unexpected_state` branch + the `unexpectedDisputeState()` helper; the alert honestly says the status did not change and the account was not frozen |
+| 4 | `captureId` from a HATEOAS link (`split('/').pop()`) and the DB backfill were not regex-validated, even though `getCapture()` requires it | **Fixed** — `asCaptureId()` (`^[A-Za-z0-9]+$`) + `captureIdFromLink()` (strips query/hash/trailing slash) used on every extraction path |
+| 3 | `FOR UPDATE` for stale state on simultaneous webhooks | **Deferred** — the audit deliberately chose `WHERE status IN (...)` + SQL-side increment as the concurrency mechanism (§3 T3); `FOR UPDATE` is an enhancement §0C forbids. Not a bug. |
+| 5 | `PII_KEYS` does not yet cover standalone `email`/`first_name`/`last_name` | **Deferred** — speculative, outside the explicit §3 T3 redaction list. Not part of the gate. |
+
+Finding #4 also made the old test fixtures unrealistic (`CAP-...` ids contain hyphens, rejected by the correct guard) — the fixtures were fixed to alphanumeric ids; a duplicate test block was cleaned up along the way. Three regression tests were added for #1, #2, and the #4 sanitization.
+
+**Implementation notes for the next session (read before Phase 3):**
+
+1. **`payment-state.ts` also holds `recordPaymentEvent` / `recordUnmatchedEvent`.** T5 in §3 assumes
+   those helpers live in `lib/payment-events.ts`, but that file **does not exist** and is not in the Phase 2
+   allowlist, so the helpers were placed temporarily in `lib/payment-state.ts`. When doing T5, **do not
+   duplicate** — move/re-export them from `payment-state.ts`, or create `lib/payment-events.ts` that
+   re-exports both and point `paypal-post-payment.ts` at it. Right now the import in
+   `paypal-post-payment.ts` points at `./payment-state`.
+2. **The `captureId` backfill runs outside the transaction**, best-effort, with a `captureId IS NULL` guard and a
+   swallowed unique collision (treated as normal). This matches §3 T3; do not move it inside the tx.
+3. **The new `getCapture()` in `lib/paypal.ts`** validates the id with `^[A-Za-z0-9]+$` and throws when it does not
+   match. The fallback lookup in `resolvePostPaymentRow` catches that error and only `console.warn`s — so an odd
+   capture id never fails the webhook, it just makes the row unmapped (recorded,
+   `paymentId = NULL`). The unmapped test deliberately uses an invalid id to verify this path.
+4. **Alerts are sent after commit.** `handlePostPaymentEvent` collects `outcome.alerts` inside the tx and
+   only calls `sendOpsAlert` after `db.transaction` finishes; a replay (duplicate) returns
+   `alerts: []`, so the same event never doubles an alert.
+5. **Refund mismatch → `needs_review` + alert** (`paypal_refund_needs_review`) is the only `needs_review` path
+   in the Phase 2 files — that is what satisfies T8. If Phase 3 adds a new `needs_review` path
+   (T4 touches reconcile), make sure the new path also calls `sendOpsAlert`.
+6. **Out-of-scope findings are recorded in `apps/api/OUT_OF_SCOPE_FINDINGS.md`** — the rate-limit test
+   `gateway.test.ts:114` is flaky because of the fixed 60-second window vs a slow remote DB. Not a Phase 2 regression and
+   not fixed (the file is outside the allowlist).
+
+**Dependency for the following phases:** T5 will dispatch to the T3 handler; make sure T3 is exported and stable before moving on. `handlePostPaymentEvent` + `isPostPaymentEvent` are already exported from `lib/paypal-post-payment.ts`.
 
 ---
 
-### Fase 3 — Hardening (T4 + T5)
+### Phase 3 — Hardening (T4 + T5)
 
-**Target: reconcile tidak salah expire row; semua webhook dicatat; rate limit terpasang.**
+**Target: reconcile does not wrongly expire rows; every webhook is recorded; rate limit in place.**
 
-| Task | Ringkasan | File yang disentuh |
+| Task | Summary | Files touched |
 |---|---|---|
-| T4 | Fix expire-on-error, tambah `needs_review` + alert stuck, guard `running` | `lib/paypal-reconcile.ts`, `index.ts` (hanya blok interval) |
-| T5 | Pre-check header, cert-url, rate limit, `recordUnmatchedEvent`, re-fetch `getOrder`, `capturedOrderMatches`, `PaymentEventInput` nullable | `routes/webhooks.ts`, `lib/paypal.ts`, `lib/payment-events.ts`, `app.ts` |
+| T4 | Fix expire-on-error, add `needs_review` + stuck alert, `running` guard | `lib/paypal-reconcile.ts`, `index.ts` (interval block only) |
+| T5 | Header pre-check, cert-url, rate limit, `recordUnmatchedEvent`, re-fetch `getOrder`, `capturedOrderMatches`, nullable `PaymentEventInput` | `routes/webhooks.ts`, `lib/paypal.ts`, `lib/payment-events.ts`, `app.ts` |
 
-**Urutan dalam fase:**
-1. T4 dulu (berdiri sendiri, tidak bergantung T5).
-2. T5: ubah `PaymentEventInput.paymentId` ke `string | null`, tambah `recordUnmatchedEvent`, lalu perbaiki webhook route.
+**Order within the phase:**
+1. T4 first (stands alone, no T5 dependency).
+2. T5: change `PaymentEventInput.paymentId` to `string | null`, add `recordUnmatchedEvent`, then fix the webhook route.
 
-**Perhatian T4 — perubahan perilaku kritis:**
-- Hapus `|| tooOld` dari semua `catch` (termasuk catch terluar `:186-188`).
-- Error transient → row **tetap open**, alert rate-limited sekali per 24 jam.
-- `needs_review` hanya untuk mismatch nominal/currency, bukan error transient.
-- Guard `running` pada `setInterval` (flag boolean, reset di `finally`).
+**T4 cautions — critical behaviour changes:**
+- Remove `|| tooOld` from all `catch` blocks (including the outermost catch `:186-188`).
+- Transient error → the row **stays open**, alert rate-limited to once per 24 hours.
+- `needs_review` only for amount/currency mismatch, not for transient errors.
+- A `running` guard on the `setInterval` (boolean flag, reset in `finally`).
 
-**Perhatian T5 — urutan perubahan:**
-- Pre-check header sebelum memanggil `verifyWebhookSignature` (fail early, hemat 1 PayPal API call).
-- `capturedOrderMatches` menggantikan `capturedAmountMatches` di webhook (tambah cek `orderId` + `customId`).
-- Bila `custom_id` tidak kembali dari PayPal → `console.warn`, skip cek itu (jangan blokir), kecuali `PAYPAL_REQUIRE_CUSTOM_ID=1`.
+**T5 cautions — change order:**
+- Pre-check headers before calling `verifyWebhookSignature` (fail early, saves 1 PayPal API call).
+- `capturedOrderMatches` replaces `capturedAmountMatches` in the webhook (adds `orderId` + `customId` checks).
+- If `custom_id` does not come back from PayPal → `console.warn`, skip that check (do not block), unless `PAYPAL_REQUIRE_CUSTOM_ID=1`.
 
-**Gate keluar fase 3:**
-- [ ] Test T4(a): gateway timeout pada row >24 jam → row tetap `pending`, alert terkirim sekali
-- [ ] Test T4(b): PayPal 404 → `expired`
-- [ ] Test T4(c): mismatch nominal → `needs_review` + alert
-- [ ] Test T4(d): dua panggilan paralel tidak proses row yang sama dua kali (guard `running`)
-- [ ] Test T5: webhook tanpa header → 400, tanpa memanggil PayPal
-- [ ] Test T5: `paypal-cert-url` dengan host tidak valid → 401
-- [ ] Test T5: event tak dikenal → tercatat di `payment_events` (`paymentId = null`)
-- [ ] Test T5: webhook COMPLETED nominal beda → tidak dikreditkan, `needs_review`
-- [ ] Test T5: webhook ke row `needs_review` → 200, tidak loop retry
-- [ ] `tsc --noEmit` lulus
+**Phase 3 exit gate:**
+- [ ] T4 test (a): gateway timeout on a >24h row → the row stays `pending`, one alert sent
+- [ ] T4 test (b): PayPal 404 → `expired`
+- [ ] T4 test (c): amount mismatch → `needs_review` + alert
+- [ ] T4 test (d): two parallel calls do not process the same row twice (`running` guard)
+- [ ] T5 test: webhook without headers → 400, without calling PayPal
+- [ ] T5 test: `paypal-cert-url` with an invalid host → 401
+- [ ] T5 test: unknown event → recorded in `payment_events` (`paymentId = null`)
+- [ ] T5 test: COMPLETED webhook with a different amount → not credited, `needs_review`
+- [ ] T5 test: webhook to a `needs_review` row → 200, no retry loop
+- [ ] `tsc --noEmit` passes
 
 ---
 
-### Fase 4 — Polish & Go-Live (T6 + T7 + T9 + T10)
+### Phase 4 — Polish & Go-Live (T6 + T7 + T9 + T10)
 
-**Target: UX capture lebih robust, create order ketat, konfigurasi live, sandbox lulus.**
+**Target: more robust capture UX, strict create order, live configuration, sandbox passes.**
 
-| Task | Ringkasan | File yang disentuh |
+| Task | Summary | Files touched |
 |---|---|---|
-| T6 | Klaim atomik `capturing`, handling `INSTRUMENT_DECLINED`, timeout → 202, `sessionRateLimit` | `lib/paypal.ts`, `routes/payments.ts` |
-| T7 | Throw bila no approve URL; `centsToPaypalAmount`; `paypalAmountToCents` strict | `lib/paypal.ts`, `routes/payments.ts` |
-| T9 | Konfigurasi webhook live di dashboard PayPal (non-kode) | — |
-| T10 | Skenario sandbox end-to-end (lihat §9) | — |
+| T6 | Atomic `capturing` claim, `INSTRUMENT_DECLINED` handling, timeout → 202, `sessionRateLimit` | `lib/paypal.ts`, `routes/payments.ts` |
+| T7 | Throw when there is no approve URL; `centsToPaypalAmount`; strict `paypalAmountToCents` | `lib/paypal.ts`, `routes/payments.ts` |
+| T9 | Configure the live webhook in the PayPal dashboard (non-code) | — |
+| T10 | Sandbox end-to-end scenarios (see §9) | — |
 
-**Urutan dalam fase:**
-1. T7 dulu (perubahan di `paypal.ts` lebih awal, dipakai T6 juga).
-2. T6: tambah klaim `capturing`, error classifier, rate limit.
-3. T9: konfigurasi dashboard PayPal (subscribe semua event yang diperlukan).
-4. T10: jalankan seluruh skenario §9, dokumentasikan hasilnya.
+**Order within the phase:**
+1. T7 first (the `paypal.ts` change comes earlier, and T6 uses it too).
+2. T6: add the `capturing` claim, error classifier, rate limit.
+3. T9: configure the PayPal dashboard (subscribe all required events).
+4. T10: run the whole §9 scenario set, document the results.
 
-**Gate keluar fase 4 (= gate go-live):**
-- [ ] Test T6: dua request capture paralel → hanya satu memanggil PayPal
-- [ ] Test T6: timeout buatan → baris tetap `capturing`, reconcile menyelesaikan
-- [ ] Test T6: `INSTRUMENT_DECLINED` → baris kembali `pending`, bisa coba lagi
-- [ ] Test T7: tidak ada approve URL → throw (bukan kembalikan `''`)
-- [ ] Seluruh skenario §9 lulus di sandbox
-- [ ] Smoke test live: 1 transaksi kecil + self-refund + konfirmasi event `REFUNDED` tercatat
-- [ ] `tsc --noEmit` lulus final
+**Phase 4 exit gate (= go-live gate):**
+- [ ] T6 test: two parallel capture requests → only one calls PayPal
+- [ ] T6 test: artificial timeout → the row stays `capturing`, reconcile settles it
+- [ ] T6 test: `INSTRUMENT_DECLINED` → the row goes back to `pending`, can be retried
+- [ ] T7 test: no approve URL → throw (not return `''`)
+- [ ] All §9 scenarios pass in sandbox
+- [ ] Live smoke test: 1 small transaction + self-refund + confirm the `REFUNDED` event is recorded
+- [ ] `tsc --noEmit` passes final
 
 ---
 
-### Checklist Status Fase (update tiap selesai)
+### Phase Status Checklist (update after each phase)
 
-| Fase | Status | Tanggal selesai |
+| Phase | Status | Completion date |
 |---|---|---|
-| Fase 1 — Fondasi (T1, T2) | ⬜ Belum dimulai | — |
-| Fase 2 — Keamanan Finansial (T3, T8) | ⬜ Belum dimulai | — |
-| Fase 3 — Hardening (T4, T5) | ⬜ Belum dimulai | — |
-| Fase 4 — Polish & Go-Live (T6, T7, T9, T10) | ⬜ Belum dimulai | — |
+| Phase 1 — Foundation (T1, T2) | ✅ Done (commit `4780212` + follow-up hardening) | 2026-10-14 |
+| Phase 2 — Financial Security (T3, T8) | ✅ Done (uncommitted — user commits) | 2026-10-14 |
+| Phase 3 — Hardening (T4, T5) | ⬜ Not started | — |
+| Phase 4 — Polish & Go-Live (T6, T7, T9, T10) | ⬜ Not started | — |

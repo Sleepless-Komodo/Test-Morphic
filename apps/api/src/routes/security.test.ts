@@ -2,7 +2,7 @@
  * Security regression tests (audit findings H3, H4, H7, M2, plus IDOR / mass-assignment).
  * Runs against the real DB via app.request, following the payments.test.ts pattern.
  */
-import { test } from 'node:test';
+import { test, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import { app } from '../app';
 import { db, schema as s } from '@morphic/db';
@@ -250,7 +250,42 @@ test('Fix 1.4: PayPal webhook rejects missing signature and processes valid even
   });
   assert.equal(badRes.status, 401, 'missing PayPal signature headers should return 401');
 
-  // 2. Valid test signature header processes event
+  // 2. Valid signature (PayPal verify API mocked) processes event
+  const prevEnv = {
+    webhookId: process.env.PAYPAL_WEBHOOK_ID,
+    clientId: process.env.PAYPAL_CLIENT_ID,
+    clientSecret: process.env.PAYPAL_CLIENT_SECRET,
+  };
+  process.env.PAYPAL_WEBHOOK_ID = 'WH-TEST-ID';
+  process.env.PAYPAL_CLIENT_ID = 'test-client-id';
+  process.env.PAYPAL_CLIENT_SECRET = 'test-client-secret';
+
+  const originalFetch = globalThis.fetch;
+  const fetchMock = mock.method(globalThis, 'fetch', async (url: any, init: any) => {
+    const urlStr = typeof url === 'string' ? url : url.toString();
+    if (urlStr.includes('paypal.com')) {
+      if (urlStr.includes('/v1/oauth2/token')) {
+        return new Response(JSON.stringify({ access_token: 'test-token', expires_in: 3600 }), { status: 200 });
+      }
+      if (urlStr.includes('verify-webhook-signature')) {
+        return new Response(JSON.stringify({ verification_status: 'SUCCESS' }), { status: 200 });
+      }
+    }
+    // Everything else — notably the Neon HTTP DB driver — must reach the real network.
+    return originalFetch(url, init);
+  });
+
+  try {
+    await runPaypalWebhookCase();
+  } finally {
+    fetchMock.mock.restore();
+    process.env.PAYPAL_WEBHOOK_ID = prevEnv.webhookId;
+    process.env.PAYPAL_CLIENT_ID = prevEnv.clientId;
+    process.env.PAYPAL_CLIENT_SECRET = prevEnv.clientSecret;
+  }
+});
+
+async function runPaypalWebhookCase() {
   const user = await mkUser('paypalwebhook');
   const orderId = `PAYPAL-ORD-${Date.now()}`;
   const [payment] = await db
@@ -306,7 +341,7 @@ test('Fix 1.4: PayPal webhook rejects missing signature and processes valid even
   assert.equal(dupRes.status, 200);
   const dupBody = await dupRes.json();
   assert.equal(dupBody.duplicate, true);
-});
+}
 
 // ── Key rotation ─────────────────────────────────────────────────────────────
 test('key rotation mints a replacement and puts the old key on a grace period', async () => {
