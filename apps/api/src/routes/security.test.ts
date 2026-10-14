@@ -405,3 +405,49 @@ test('key rotation mints a replacement and puts the old key on a grace period', 
   const again = await app.request(`/v1/keys/${created.id}/rotate`, { method: 'POST', headers: auth, body: '{}' });
   assert.equal(again.status, 409);
 });
+
+// ── P5-4: Suspended accounts cannot use API keys ──────────────────────────────
+test('P5-4: suspended accounts cannot authenticate via API key (403 account_suspended)', async () => {
+  const { user, token } = await mkUser('suspkey');
+  const auth = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+
+  // Mint a valid API key before suspension
+  const keyRes = await app.request('/v1/keys', { method: 'POST', headers: auth, body: '{"name":"test-key"}' });
+  assert.equal(keyRes.status, 201);
+  const created = await keyRes.json();
+  const apiKey = created.key;
+  const keyAuth = { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' };
+
+  // Sanity check: key works before suspension
+  const preCheck = await app.request('/v1/models', { headers: keyAuth });
+  assert.equal(preCheck.status, 200);
+
+  // Case A & B: Set users.suspended = true
+  await db.update(s.users).set({ suspended: true }).where(eq(s.users.id, user.id));
+
+  // Assert the key row itself is still 'active' (suspension alone must block)
+  const [keyRow] = await db.select({ status: s.apiKeys.status }).from(s.apiKeys).where(eq(s.apiKeys.id, created.id));
+  assert.equal(keyRow?.status, 'active', 'API key row status must still be active');
+
+  // Verify /v1/models is rejected with 403 account_suspended
+  const modelsRes = await app.request('/v1/models', { headers: keyAuth });
+  assert.equal(modelsRes.status, 403);
+  const modelsBody = await modelsRes.json();
+  assert.equal(modelsBody?.error?.code, 'account_suspended');
+
+  // Verify /v1/chat/completions is rejected with 403 account_suspended
+  const chatRes = await app.request('/v1/chat/completions', {
+    method: 'POST',
+    headers: keyAuth,
+    body: JSON.stringify({ model: 'gpt-4o', messages: [{ role: 'user', content: 'hi' }] }),
+  });
+  assert.equal(chatRes.status, 403);
+  const chatBody = await chatRes.json();
+  assert.equal(chatBody?.error?.code, 'account_suspended');
+
+  // Case C: Un-suspend -> the same key works again
+  await db.update(s.users).set({ suspended: false }).where(eq(s.users.id, user.id));
+  const postUnsuspend = await app.request('/v1/models', { headers: keyAuth });
+  assert.equal(postUnsuspend.status, 200);
+});
+
