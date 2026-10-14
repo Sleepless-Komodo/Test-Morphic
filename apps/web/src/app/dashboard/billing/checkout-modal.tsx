@@ -32,7 +32,7 @@ const API_URL = '/api/backend';
 const POLL_INTERVAL_MS = 3000;
 const MAX_POLL_ATTEMPTS = 60; // ~6 min with backoff, past the 5-minute invoice lifetime
 
-type PaymentStatus = 'idle' | 'creating' | 'waiting' | 'pending_paypal' | 'paid' | 'failed' | 'error';
+type PaymentStatus = 'idle' | 'creating' | 'waiting' | 'pending_paypal' | 'needs_review' | 'paid' | 'failed' | 'error';
 type IdeTab = 'cursor' | 'cline' | 'claudecode' | 'curl';
 type PaymentCategory = 'all' | 'qris' | 'va' | 'ewallet';
 
@@ -228,7 +228,7 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
     }
   };
 
-  // Polling loop for Duitku with adaptive backoff & tab visibility check
+  // Polling loop for payments with adaptive backoff & tab visibility check
   const startPolling = useCallback((pid: string) => {
     const poll = async () => {
       if (!mountedRef.current) return;
@@ -242,28 +242,40 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
       pollAttemptsRef.current++;
       if (pollAttemptsRef.current > MAX_POLL_ATTEMPTS) {
         setStatus('error');
-        setErrorMsg('Batas waktu polling habis. Cek history pembayaran jika sudah bayar.');
+        setErrorMsg(
+          locale === 'en'
+            ? `Verification timed out. If you have completed payment, please contact support and quote payment ID: ${pid}`
+            : `Batas waktu verifikasi habis. Jika Anda sudah menyelesaikan pembayaran, silakan hubungi tim bantuan dan sebutkan ID pembayaran: ${pid}`
+        );
         return;
       }
 
       try {
-        const res = await fetch(`${API_URL}/v1/payments/${pid}`, {
+        const url = paymentProvider === 'paypal'
+          ? `${API_URL}/v1/payments/paypal/verify/${pid}`
+          : `${API_URL}/v1/payments/${pid}`;
+        const res = await fetch(url, {
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
         });
         if (!res.ok) throw new Error('poll failed');
-        const data = await res.json() as { status: string };
+        const data = await res.json() as { status: string; credits?: number };
 
         if (!mountedRef.current) return;
 
         if (data.status === 'paid') {
           setStatus('paid');
-          onSuccess(pkg.creditAllowance);
+          onSuccess(data.credits ?? pkg.creditAllowance);
           fetchPostPaymentToken();
           return; // stop polling
+        } else if (data.status === 'needs_review') {
+          setStatus('needs_review');
+          return; // stop polling and display review & support contact state
         } else if (data.status === 'failed' || data.status === 'expired') {
           setStatus('failed');
           return;
+        } else if (data.status === 'pending_paypal') {
+          setStatus('pending_paypal');
         }
       } catch {
         // Non-fatal, keep polling
@@ -286,7 +298,7 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
       void poll();
     };
     pollRef.current = setTimeout(poll, POLL_INTERVAL_MS);
-  }, [pkg.creditAllowance, onSuccess, fetchPostPaymentToken]);
+  }, [paymentProvider, pkg.creditAllowance, onSuccess, fetchPostPaymentToken, locale]);
 
   // Resume existing pending payment
   useEffect(() => {
@@ -296,16 +308,24 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
           credentials: 'include',
         })
           .then((res) => res.json())
-          .then((data) => {
+          .then((data: { status?: string; credits?: number }) => {
             if (!mountedRef.current) return;
             if (data.status === 'paid') {
               setStatus('paid');
-              onSuccess(pkg.creditAllowance);
+              onSuccess(data.credits ?? pkg.creditAllowance);
               fetchPostPaymentToken();
+            } else if (data.status === 'needs_review') {
+              setStatus('needs_review');
             } else if (data.status === 'pending_paypal') {
               setStatus('pending_paypal');
+              pollAttemptsRef.current = 0;
+              startPolling(existingPayment.id);
             } else if (data.status === 'failed' || data.status === 'expired') {
               setStatus('failed');
+            } else {
+              setStatus('waiting');
+              pollAttemptsRef.current = 0;
+              startPolling(existingPayment.id);
             }
           })
           .catch(() => { });
@@ -315,12 +335,14 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
           credentials: 'include',
         })
           .then((res) => res.json())
-          .then((data) => {
+          .then((data: { status?: string; expiresAt?: string }) => {
             if (!mountedRef.current) return;
             if (data.status === 'paid') {
               setStatus('paid');
               onSuccess(pkg.creditAllowance);
               fetchPostPaymentToken();
+            } else if (data.status === 'needs_review') {
+              setStatus('needs_review');
             } else if (data.status === 'failed' || data.status === 'expired') {
               setStatus('failed');
             } else {
@@ -394,8 +416,20 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
     fetchPostPaymentToken();
   };
 
-  const handlePayPalPending = () => {
+  const handlePayPalPending = (pid?: string) => {
     setStatus('pending_paypal');
+    const targetId = pid || paymentId || existingPayment?.id;
+    if (targetId) {
+      pollAttemptsRef.current = 0;
+      startPolling(targetId);
+    }
+  };
+
+  const handlePayPalProcessing = (pid: string) => {
+    setPaymentId(pid);
+    setStatus('waiting');
+    pollAttemptsRef.current = 0;
+    startPolling(pid);
   };
 
   const handlePayPalError = (msg: string) => {
@@ -555,14 +589,16 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
           )}
 
           {/* PayPal Flow */}
-          {paymentProvider === 'paypal' && status !== 'paid' && status !== 'pending_paypal' && status !== 'failed' && (
+          {paymentProvider === 'paypal' && status !== 'paid' && status !== 'waiting' && status !== 'pending_paypal' && status !== 'needs_review' && status !== 'failed' && (
             <div className="space-y-3 pt-1">
               <PayPalButton
                 packageId={pkg.id}
-                paymentId={existingPayment?.id}
+                paymentId={paymentId ?? existingPayment?.id}
+                onPaymentCreated={(pid) => setPaymentId(pid)}
                 onSuccess={handlePayPalSuccess}
                 onError={handlePayPalError}
-                onPendingPayPal={handlePayPalPending}
+                onPendingPayPal={() => handlePayPalPending()}
+                onProcessing={(pid) => handlePayPalProcessing(pid)}
               />
             </div>
           )}
@@ -587,6 +623,20 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
             <div className="flex items-center justify-center gap-2 py-2 text-sm text-neutral-600">
               <Loader2 className="h-4 w-4 animate-spin" />
               <span>{locale === 'en' ? 'Creating transaction…' : 'Membuat transaksi…'}</span>
+            </div>
+          )}
+
+          {isUSD && status === 'waiting' && (
+            <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-center space-y-2.5">
+              <div className="flex items-center justify-center gap-2 text-neutral-900 text-sm font-semibold">
+                <Loader2 className="h-4 w-4 animate-spin text-amber-700" />
+                <span>{locale === 'en' ? 'Verifying PayPal payment…' : 'Memverifikasi pembayaran PayPal…'}</span>
+              </div>
+              <p className="text-xs text-amber-800 leading-relaxed">
+                {locale === 'en'
+                  ? 'PayPal is processing your transaction. Please wait, this will update automatically.'
+                  : 'PayPal sedang memproses transaksi Anda. Mohon tunggu, halaman ini akan otomatis terupdate.'}
+              </p>
             </div>
           )}
 
@@ -638,6 +688,33 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
                   ? 'PayPal is reviewing this transaction. Credits will be added automatically once approved.'
                   : 'PayPal sedang meninjau transaksi ini. Kredit akan otomatis ditambahkan setelah disetujui.'}
               </div>
+            </div>
+          )}
+
+          {status === 'needs_review' && (
+            <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-center space-y-2.5">
+              <Clock className="h-8 w-8 text-amber-600 mx-auto" />
+              <div className="font-bold text-amber-950 text-sm">
+                {locale === 'en' ? 'Payment under review' : 'Pembayaran sedang ditinjau'}
+              </div>
+              <p className="text-xs text-amber-900 leading-relaxed">
+                {locale === 'en'
+                  ? 'Your payment is under review. Please contact support and quote your payment ID:'
+                  : 'Pembayaran Anda sedang dalam peninjauan. Silakan hubungi tim bantuan dan sebutkan ID pembayaran berikut:'}
+              </p>
+              {paymentId && (
+                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-100/90 border border-amber-300 font-mono text-xs font-bold text-amber-950">
+                  <span>{paymentId}</span>
+                  <button
+                    type="button"
+                    onClick={() => copyText(paymentId, 'key')}
+                    className="text-amber-800 hover:text-amber-950 cursor-pointer p-0.5"
+                    aria-label={copiedKey ? 'ID tersalin' : 'Salin ID'}
+                  >
+                    {copiedKey ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
@@ -977,7 +1054,7 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
             </button>
           )}
 
-          {(status === 'failed' || status === 'pending_paypal') && (
+          {(status === 'failed' || status === 'pending_paypal' || status === 'needs_review') && (
             <button
               id="checkout-close-btn"
               onClick={onClose}
@@ -987,7 +1064,7 @@ export function CheckoutModal({ pkg, existingPayment, onClose, onSuccess }: Chec
             </button>
           )}
 
-          {status !== 'idle' && status !== 'paid' && status !== 'failed' && status !== 'pending_paypal' && (
+          {status !== 'idle' && status !== 'paid' && status !== 'failed' && status !== 'pending_paypal' && status !== 'needs_review' && (
             <button
               id="checkout-cancel-btn"
               onClick={onClose}
