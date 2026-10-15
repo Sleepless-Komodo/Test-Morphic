@@ -23,12 +23,22 @@ export function assertDuitkuConfig() {
   if (!prod && env === 'production') {
     throw new Error('DUITKU_ENV=production is not allowed outside production environment');
   }
-  if (!process.env.DUITKU_MERCHANT_CODE) {
-    console.warn('[duitku] WARNING: DUITKU_MERCHANT_CODE is not set in environment variables');
+
+  const merchantCode = process.env.DUITKU_MERCHANT_CODE;
+  const apiKey = process.env.DUITKU_API_KEY;
+
+  // Unconfigured Duitku (PayPal-only deployment) is disabled, not fatal.
+  if (!merchantCode && !apiKey) {
+    console.warn('[duitku] disabled (DUITKU_MERCHANT_CODE and DUITKU_API_KEY are unset)');
+    return;
   }
-  if (!process.env.DUITKU_API_KEY) {
-    console.warn('[duitku] WARNING: DUITKU_API_KEY is not set in environment variables');
+
+  // A half-configured provider in production means payments would fail at request time; fail at boot.
+  if (prod) {
+    if (!merchantCode) throw new Error('DUITKU_MERCHANT_CODE is required in production');
+    if (!apiKey) throw new Error('DUITKU_API_KEY is required in production');
   }
+
   console.log(`[duitku] environment: ${env}`);
 }
 

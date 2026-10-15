@@ -48,7 +48,7 @@
 | T-B6-06 | 🟡 | FE | Support | Nol help center / tiket |
 | D-SK-02 | 🟡 | BE | Billing | Kurs hardcoded 1 USD = Rp 16.000 |
 | D-DB-01 | 🟡 | DB | Schema | `entitlements` tidak ada di PRD |
-| D-RT-02 | 🟡 | BE | Security | `/quickstart/opencode.sh` tanpa auth |
+| D-RT-02 | 🟡 | BE | Security | `/quickstart/opencode.sh` & `opencode.ps1` tanpa auth |
 | D-SK-03 | 🟡 | BE | Security | `make-admin.ts` tanpa audit log |
 | T-B1-09 | 🔵 | BE | Admin | `requireAdmin()` tanpa IP/MFA (subset T-B5-01) |
 | T-B2-07 | 🔵 | BE+DB | Key | Nol TPM/daily quota/spend cap per key |
@@ -167,7 +167,7 @@ P3-01 (margin tracking) ──► diperlukan sebelum FIX-P3-09 billing alarm
 | **OWN-05** | Hash algo: terima scrypt atau migrasi Argon2id? | T-B1-07 |
 | **OWN-06** | `entitlements` + `duration_hours`: fitur resmi atau hapus? | D-DB-01 |
 | **OWN-07** | Refund policy: batas waktu & jumlah maksimal? | FIX-P2-XX (future) |
-| **OWN-08** | `/quickstart/opencode.sh`: publik intentional? Perlu auth? | D-RT-02 |
+| **OWN-08** | `/quickstart/opencode.sh` & `/quickstart/opencode.ps1`: publik intentional? Perlu auth? | D-RT-02 |
 
 ---
 

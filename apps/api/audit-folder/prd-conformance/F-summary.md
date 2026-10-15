@@ -127,7 +127,7 @@
 | D-SK-01 | 🟠 | `/webhooks/mock` aktif produksi tanpa NODE_ENV guard | Aktif |
 | D-SK-02 | 🟡 | Kurs hardcoded 1 USD = Rp 16.000 | Aktif |
 | D-DB-01 | 🟡 | `entitlements` & `packages.duration_hours` tidak ada di PRD | Aktif |
-| D-RT-02 | 🟡 | `GET /quickstart/opencode.sh` tanpa auth, bash installer publik | Aktif |
+| D-RT-02 | 🟡 | `GET /quickstart/opencode.sh` & `opencode.ps1` tanpa auth, script installer publik | Aktif |
 | D-SK-03 | 🟡 | `make-admin.ts` tanpa `admin_audit_log` | Aktif |
 | D-SK-04 | 🔵 | `lastPollMap` in-memory, tidak sinkron multi-instance | Aktif |
 
@@ -202,7 +202,7 @@
 | OWN-05 | Hash algorithm: accept scrypt atau migrasi ke Argon2id? | T-B1-07 |
 | OWN-06 | `entitlements` + `duration_hours`: fitur resmi atau technical debt? | D-DB-01 |
 | OWN-07 | Refund policy: kapan & berapa batas refund? | T-B4-04 |
-| OWN-08 | `/quickstart/opencode.sh`: apakah public intentional? | D-RT-02 |
+| OWN-08 | `/quickstart/opencode.sh` & `/quickstart/opencode.ps1`: apakah public intentional? | D-RT-02 |
 
 ---
 

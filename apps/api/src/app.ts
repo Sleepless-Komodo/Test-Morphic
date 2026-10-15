@@ -10,8 +10,30 @@ import { redeem } from './routes/redeem';
 import { catalog } from './routes/catalog';
 import { quickstart } from './routes/quickstart';
 import { requestId } from './middleware/request-id';
+import { getTrustedClientIp, isLoopbackIp } from './lib/ip';
+import { checkRateLimit } from './ratelimit';
 
 const app = new Hono();
+
+// Loose per-IP flood guard for the webhook surface only. PayPal retries in bursts after an
+// outage, so this sits well above any legitimate delivery rate — it exists to stop a hostile
+// caller from making us verify signatures in a tight loop, not to shape provider traffic.
+const WEBHOOK_IP_RPM = Number(process.env.WEBHOOK_IP_RPM ?? 120);
+app.use('/webhooks/*', async (c, next) => {
+  const ip = getTrustedClientIp(c);
+  // No resolvable IP or loopback address means callers would share one bucket; skip rather than block them all.
+  if (ip !== 'unknown' && !isLoopbackIp(ip)) {
+    const rl = await checkRateLimit(ip, WEBHOOK_IP_RPM, 'rlwh');
+    if (!rl.ok) {
+      c.header('Retry-After', String(rl.retryAfter));
+      return c.json(
+        { error: { message: 'too many webhook requests', type: 'rate_limit_error', code: 'rate_limit_exceeded' } },
+        429,
+      );
+    }
+  }
+  await next();
+});
 
 // Baseline security headers on every API response.
 app.use('*', async (c, next) => {

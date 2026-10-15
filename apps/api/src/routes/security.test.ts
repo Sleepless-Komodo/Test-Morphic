@@ -2,7 +2,7 @@
  * Security regression tests (audit findings H3, H4, H7, M2, plus IDOR / mass-assignment).
  * Runs against the real DB via app.request, following the payments.test.ts pattern.
  */
-import { test } from 'node:test';
+import { test, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import { app } from '../app';
 import { db, schema as s } from '@morphic/db';
@@ -242,15 +242,73 @@ test('FIX-BE-P0-04: POST /webhooks/mock returns 404 when NODE_ENV=production', a
 
 // ── FIX-BE-P0-03 / Fix 1.4: PayPal webhook S2S endpoint ──────────────────────
 test('Fix 1.4: PayPal webhook rejects missing signature and processes valid event idempotently', async () => {
-  // 1. Missing signature headers returns 401
+  // 1. Missing transmission headers are rejected before any PayPal round-trip (T5: 400, not 401 —
+  //    the cheap header/cert-host pre-check runs first; 401 is reserved for a failed verification).
   const badRes = await app.request('/webhooks/paypal', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ id: 'WH-TEST-001', event_type: 'PAYMENT.CAPTURE.COMPLETED' }),
   });
-  assert.equal(badRes.status, 401, 'missing PayPal signature headers should return 401');
+  assert.equal(badRes.status, 400, 'missing PayPal transmission headers should return 400');
 
-  // 2. Valid test signature header processes event
+  // 2. Valid signature (PayPal verify API mocked) processes event
+  const prevEnv = {
+    webhookId: process.env.PAYPAL_WEBHOOK_ID,
+    clientId: process.env.PAYPAL_CLIENT_ID,
+    clientSecret: process.env.PAYPAL_CLIENT_SECRET,
+  };
+  process.env.PAYPAL_WEBHOOK_ID = 'WH-TEST-ID';
+  process.env.PAYPAL_CLIENT_ID = 'test-client-id';
+  process.env.PAYPAL_CLIENT_SECRET = 'test-client-secret';
+
+  const originalFetch = globalThis.fetch;
+  const fetchMock = mock.method(globalThis, 'fetch', async (url: any, init: any) => {
+    const urlStr = typeof url === 'string' ? url : url.toString();
+    if (urlStr.includes('paypal.com')) {
+      if (urlStr.includes('/v1/oauth2/token')) {
+        return new Response(JSON.stringify({ access_token: 'test-token', expires_in: 3600 }), { status: 200 });
+      }
+      if (urlStr.includes('verify-webhook-signature')) {
+        return new Response(JSON.stringify({ verification_status: 'SUCCESS' }), { status: 200 });
+      }
+      // T5: the COMPLETED path re-reads the order from PayPal before granting credits, so
+      // this mock must also serve GET /v2/checkout/orders/:id (order id + amount match).
+      if (urlStr.includes('/v2/checkout/orders/')) {
+        const id = decodeURIComponent(urlStr.split('/v2/checkout/orders/')[1].split('?')[0]);
+        return new Response(
+          JSON.stringify({
+            id,
+            status: 'COMPLETED',
+            purchase_units: [
+              {
+                amount: { currency_code: 'USD', value: '10.00' },
+                payments: {
+                  captures: [
+                    { id: `CAP-SEC-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, status: 'COMPLETED', amount: { currency_code: 'USD', value: '10.00' } },
+                  ],
+                },
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+    }
+    // Everything else — notably the Neon HTTP DB driver — must reach the real network.
+    return originalFetch(url, init);
+  });
+
+  try {
+    await runPaypalWebhookCase();
+  } finally {
+    fetchMock.mock.restore();
+    process.env.PAYPAL_WEBHOOK_ID = prevEnv.webhookId;
+    process.env.PAYPAL_CLIENT_ID = prevEnv.clientId;
+    process.env.PAYPAL_CLIENT_SECRET = prevEnv.clientSecret;
+  }
+});
+
+async function runPaypalWebhookCase() {
   const user = await mkUser('paypalwebhook');
   const orderId = `PAYPAL-ORD-${Date.now()}`;
   const [payment] = await db
@@ -306,7 +364,7 @@ test('Fix 1.4: PayPal webhook rejects missing signature and processes valid even
   assert.equal(dupRes.status, 200);
   const dupBody = await dupRes.json();
   assert.equal(dupBody.duplicate, true);
-});
+}
 
 // ── Key rotation ─────────────────────────────────────────────────────────────
 test('key rotation mints a replacement and puts the old key on a grace period', async () => {
@@ -347,3 +405,49 @@ test('key rotation mints a replacement and puts the old key on a grace period', 
   const again = await app.request(`/v1/keys/${created.id}/rotate`, { method: 'POST', headers: auth, body: '{}' });
   assert.equal(again.status, 409);
 });
+
+// ── P5-4: Suspended accounts cannot use API keys ──────────────────────────────
+test('P5-4: suspended accounts cannot authenticate via API key (403 account_suspended)', async () => {
+  const { user, token } = await mkUser('suspkey');
+  const auth = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+
+  // Mint a valid API key before suspension
+  const keyRes = await app.request('/v1/keys', { method: 'POST', headers: auth, body: '{"name":"test-key"}' });
+  assert.equal(keyRes.status, 201);
+  const created = await keyRes.json();
+  const apiKey = created.key;
+  const keyAuth = { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' };
+
+  // Sanity check: key works before suspension
+  const preCheck = await app.request('/v1/models', { headers: keyAuth });
+  assert.equal(preCheck.status, 200);
+
+  // Case A & B: Set users.suspended = true
+  await db.update(s.users).set({ suspended: true }).where(eq(s.users.id, user.id));
+
+  // Assert the key row itself is still 'active' (suspension alone must block)
+  const [keyRow] = await db.select({ status: s.apiKeys.status }).from(s.apiKeys).where(eq(s.apiKeys.id, created.id));
+  assert.equal(keyRow?.status, 'active', 'API key row status must still be active');
+
+  // Verify /v1/models is rejected with 403 account_suspended
+  const modelsRes = await app.request('/v1/models', { headers: keyAuth });
+  assert.equal(modelsRes.status, 403);
+  const modelsBody = await modelsRes.json();
+  assert.equal(modelsBody?.error?.code, 'account_suspended');
+
+  // Verify /v1/chat/completions is rejected with 403 account_suspended
+  const chatRes = await app.request('/v1/chat/completions', {
+    method: 'POST',
+    headers: keyAuth,
+    body: JSON.stringify({ model: 'gpt-4o', messages: [{ role: 'user', content: 'hi' }] }),
+  });
+  assert.equal(chatRes.status, 403);
+  const chatBody = await chatRes.json();
+  assert.equal(chatBody?.error?.code, 'account_suspended');
+
+  // Case C: Un-suspend -> the same key works again
+  await db.update(s.users).set({ suspended: false }).where(eq(s.users.id, user.id));
+  const postUnsuspend = await app.request('/v1/models', { headers: keyAuth });
+  assert.equal(postUnsuspend.status, 200);
+});
+

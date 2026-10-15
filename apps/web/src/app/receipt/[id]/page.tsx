@@ -1,5 +1,5 @@
 import { notFound } from 'next/navigation';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { db, schema as s } from '@morphic/db';
 import { requireUser } from '@/lib/actions';
 import { getServerTranslation } from '@/lib/i18n/server';
@@ -7,9 +7,8 @@ import { PrintButton } from './print-button';
 
 export const dynamic = 'force-dynamic';
 
-// Printable receipt for a paid top-up. Lives outside /dashboard so the dashboard shell does
-// not print. ponytail: browser "Save as PDF" instead of a server PDF; add a PDF renderer if
-// receipts need to be emailed as attachments.
+// Printable receipt for a paid, refunded, or disputed top-up. Lives outside /dashboard so the dashboard shell does
+// not print.
 export default async function ReceiptPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   if (!/^[0-9a-f-]{36}$/i.test(id)) notFound();
@@ -25,13 +24,20 @@ export default async function ReceiptPage({ params }: { params: Promise<{ id: st
       amountCents: s.payments.amountCents,
       currency: s.payments.currency,
       credits: s.payments.credits,
+      status: s.payments.status,
       paidAt: s.payments.paidAt,
       createdAt: s.payments.createdAt,
       packageName: s.packages.name,
     })
     .from(s.payments)
     .leftJoin(s.packages, eq(s.packages.id, s.payments.packageId))
-    .where(and(eq(s.payments.id, id), eq(s.payments.userId, user.id), eq(s.payments.status, 'paid')))
+    .where(
+      and(
+        eq(s.payments.id, id),
+        eq(s.payments.userId, user.id),
+        inArray(s.payments.status, ['paid', 'refunded', 'disputed']),
+      ),
+    )
     .limit(1);
   if (!row) notFound();
 
@@ -40,6 +46,14 @@ export default async function ReceiptPage({ params }: { params: Promise<{ id: st
     row.currency === 'USD'
       ? `$${(row.amountCents / 100).toFixed(2)} USD`
       : `Rp ${row.amountCents.toLocaleString('id-ID')}`;
+
+  const statusBadge =
+    row.status === 'refunded'
+      ? { text: isId ? 'DIKEMBALIKAN' : 'REFUNDED', className: 'bg-purple-50 border border-purple-200 text-purple-800' }
+      : row.status === 'disputed'
+        ? { text: isId ? 'SENGKETA' : 'DISPUTED', className: 'bg-rose-50 border border-rose-200 text-rose-800' }
+        : { text: isId ? 'LUNAS' : 'PAID', className: 'bg-emerald-50 border border-emerald-200 text-emerald-800' };
+
   const lines: Array<[string, string]> = [
     [isId ? 'Nomor kuitansi' : 'Receipt number', row.id.slice(0, 8).toUpperCase()],
     [isId ? 'Tanggal bayar' : 'Paid on', paidAt.toLocaleString(isId ? 'id-ID' : 'en-US', { dateStyle: 'long', timeStyle: 'short', timeZone: 'Asia/Jakarta' }) + ' WIB'],
@@ -48,6 +62,7 @@ export default async function ReceiptPage({ params }: { params: Promise<{ id: st
     [isId ? 'Kredit' : 'Credits', row.credits.toLocaleString(isId ? 'id-ID' : 'en-US')],
     [isId ? 'Metode bayar' : 'Payment method', row.provider === 'paypal' ? 'PayPal' : row.provider === 'duitku' ? 'Duitku' : row.provider],
     [isId ? 'ID transaksi gateway' : 'Gateway transaction ID', row.externalId],
+    [isId ? 'Status transaksi' : 'Transaction status', statusBadge.text],
   ];
 
   return (
@@ -62,8 +77,8 @@ export default async function ReceiptPage({ params }: { params: Promise<{ id: st
               <p className="font-heading text-xl font-extrabold text-neutral-950">Morphic</p>
               <p className="text-xs text-neutral-600">{isId ? 'Kuitansi pembayaran' : 'Payment receipt'}</p>
             </div>
-            <p className="rounded-md bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-800">
-              {isId ? 'LUNAS' : 'PAID'}
+            <p className={`rounded-md px-2.5 py-1 text-xs font-bold ${statusBadge.className}`}>
+              {statusBadge.text}
             </p>
           </header>
 

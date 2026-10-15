@@ -9,6 +9,7 @@ import {
   jsonb,
   index,
   uniqueIndex,
+  check,
 } from 'drizzle-orm/pg-core';
 import { relations, sql } from 'drizzle-orm';
 
@@ -243,7 +244,12 @@ export const creditLedger = pgTable(
     index('ledger_reservation_idx').on(t.reservationId),
     // A payment can be credited once. Only purchases: reservation/release rows share a requestId
     // reference by design, and admin adjustments reuse `admin:<id>`.
-    uniqueIndex('ledger_purchase_reference_unique').on(t.reference).where(sql`${t.entryType} = 'purchase'`),
+    uniqueIndex('ledger_purchase_reference_unique')
+      .on(t.reference)
+      .where(sql`${t.entryType} = 'purchase'`),
+    uniqueIndex('ledger_refund_reference_unique')
+      .on(t.reference)
+      .where(sql`${t.entryType} = 'refund'`),
   ],
 );
 
@@ -360,15 +366,40 @@ export const payments = pgTable(
     currency: text('currency').notNull().default('IDR'),
     credits: bigint('credits', { mode: 'number' }).notNull(),
     status: text('status', {
-      enum: ['pending', 'capturing', 'paid', 'pending_paypal', 'failed', 'expired', 'refunded'],
+      enum: [
+        'pending',
+        'capturing',
+        'paid',
+        'pending_paypal',
+        'failed',
+        'expired',
+        'refunded',
+        'needs_review',
+        'disputed',
+      ],
     })
       .notNull()
       .default('pending'),
+    captureId: text('capture_id'),
+    reconcileCheckedAt: timestamp('reconcile_checked_at', { withTimezone: true }),
+    refundedAmountMinorUnits: integer('refunded_amount_minor_units').notNull().default(0),
     paidAt: timestamp('paid_at', { withTimezone: true }),
     capturedAt: timestamp('captured_at', { withTimezone: true }),
     createdAt: now(),
   },
-  (t) => [index('payments_user_idx').on(t.userId)],
+  (t) => [
+    index('payments_user_idx').on(t.userId),
+    index('payments_open_idx')
+      .on(t.status, t.createdAt)
+      .where(sql`status IN ('pending','pending_paypal','capturing')`),
+    uniqueIndex('payments_capture_unique')
+      .on(t.captureId)
+      .where(sql`capture_id IS NOT NULL`),
+    check(
+      'payments_status_check',
+      sql`status IN ('pending','capturing','paid','pending_paypal','failed','expired','refunded','needs_review','disputed')`,
+    ),
+  ],
 );
 
 export const paymentEvents = pgTable('payment_events', {
