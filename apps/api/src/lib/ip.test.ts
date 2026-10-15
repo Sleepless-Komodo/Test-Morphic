@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { getTrustedClientIp, isLoopbackIp, _resetWarnedLoopback } from './ip.js';
+import { getTrustedClientIp, isLoopbackIp } from './ip.js';
 
 function mockContext(headers: Record<string, string>): any {
   return {

@@ -190,7 +190,7 @@ test('T7: centsToPaypalAmount formats whole cents and rejects non-integers', () 
 });
 
 test('T7: create-order throws when PayPal returns no approve link', { timeout: 30000 }, async () => {
-  const { user, token } = await mkPaypal();
+  const { token } = await mkPaypal();
 
   const [pkg] = await db
     .insert(s.packages)

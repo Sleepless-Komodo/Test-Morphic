@@ -484,7 +484,6 @@ export default function HowItWorksSteps() {
   });
 
   const x = useTransform([strip, travel], ([p, d]: number[]) => -p * d);
-  const railFill = useTransform(strip, [1 / (frames - 1) - 0.12, 1], [0, 1], { clamp: true });
   const introOut = useTransform(strip, [0, 0.12], [1, 0]);
 
   useMotionValueEvent(strip, 'change', (p) => {
@@ -547,12 +546,9 @@ export default function HowItWorksSteps() {
             ))}
           </motion.div>
 
-          {/* Progress rail: one line that fills across the steps; each stop jumps to its frame. */}
-          <div className="mx-auto mt-4 w-full max-w-3xl px-6">
-            <div className="relative h-px bg-neutral-200">
-              <motion.div style={{ scaleX: railFill }} className="absolute inset-0 origin-left bg-neutral-950" />
-            </div>
-            <div className="mt-3 grid grid-cols-4">
+          {/* Progress rail: segmented bars matching the active frame's width */}
+          <div className="mx-auto mt-6 sm:mt-8 w-[88vw] md:w-[76vw] lg:w-[68vw] max-w-[1040px] px-2 sm:px-4">
+            <div className="grid grid-cols-4 gap-3 sm:gap-6 lg:gap-8">
               {steps.map((s, i) => {
                 const on = active === i + 1;
                 const done = active > i + 1;
@@ -562,12 +558,29 @@ export default function HowItWorksSteps() {
                     type="button"
                     onClick={() => jumpTo(i)}
                     aria-current={on ? 'step' : undefined}
-                    className={`truncate rounded px-1 text-left text-xs sm:text-sm font-semibold transition-colors duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 ${
-                      on ? 'text-neutral-950' : done ? 'text-neutral-600' : 'text-neutral-400 hover:text-neutral-700'
-                    }`}
+                    className="group flex flex-col items-start gap-2 sm:gap-2.5 text-left transition-colors duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 rounded-sm py-1"
                   >
-                    <span className="font-mono">{s.num}</span>
-                    <span className="hidden sm:inline"> {s.title}</span>
+                    <span className="relative h-[2px] w-full overflow-hidden rounded-full bg-neutral-200">
+                      <motion.span
+                        className={`block h-full origin-left ${on ? 'bg-neutral-950' : done ? 'bg-neutral-700' : 'bg-neutral-950'}`}
+                        initial={false}
+                        animate={{ scaleX: on || done ? 1 : 0 }}
+                        transition={{ duration: 0.4, ease: EASE }}
+                      />
+                    </span>
+
+                    <span
+                      className={`truncate w-full text-xs sm:text-sm font-semibold transition-colors duration-300 ${
+                        on
+                          ? 'text-neutral-950 font-bold'
+                          : done
+                          ? 'text-neutral-700 hover:text-neutral-950'
+                          : 'text-neutral-400 group-hover:text-neutral-700'
+                      }`}
+                    >
+                      <span className="font-mono">{s.num}</span>
+                      <span className="hidden sm:inline"> {s.title}</span>
+                    </span>
                   </button>
                 );
               })}

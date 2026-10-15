@@ -3,6 +3,14 @@
 import React, { useState, useRef } from 'react';
 import Link from 'next/link';
 import { useTranslation } from '@/lib/i18n';
+import { Mail, MapPin, Phone, Clock } from 'lucide-react';
+
+// Support contact details displayed in the footer
+export const SUPPORT_PHONE =
+  process.env.NEXT_PUBLIC_SUPPORT_PHONE || '+62 889-7694-9503';
+export const SUPPORT_EMAIL = 'hello@mirraclefoundation.com';
+export const SUPPORT_ADDRESS = 'Taman Kenari Jagorawi Blok 10, Citeureup, Kab. Bogor';
+export const SUPPORT_HOURS = 'Senin - Jumat 09:00 - 17:00 WIB';
 
 export default function Footer() {
   const { locale, t } = useTranslation();
@@ -10,6 +18,15 @@ export default function Footer() {
   const footerRef = useRef<HTMLElement>(null);
   const textContainerRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef(0);
+
+  // Sanitize phone number for direct wa.me or tel: links
+  const cleanPhone = SUPPORT_PHONE.replace(/[^0-9+]/g, '');
+  const isPhonePlaceholder = SUPPORT_PHONE.includes('xx');
+  const phoneHref = isPhonePlaceholder
+    ? undefined
+    : cleanPhone.startsWith('+62') || cleanPhone.startsWith('62') || cleanPhone.startsWith('08')
+    ? `https://wa.me/${cleanPhone.replace(/^08/, '628').replace(/^\+/, '')}`
+    : `tel:${cleanPhone}`;
 
   // Pointer position goes straight into CSS variables, at most once per frame,
   // so moving the mouse never re-renders the footer.
@@ -39,7 +56,6 @@ export default function Footer() {
       onMouseLeave={() => setIsHovered(false)}
       className="relative z-10 pt-16 pb-0 px-4 sm:px-8 lg:px-12 bg-black text-neutral-300 border-t border-neutral-900 overflow-hidden transition-colors duration-300"
     >
-      {/* Interactive Cursor Spotlight Glow across the entire dark background */}
       <div
         className="absolute inset-0 pointer-events-none transition-opacity duration-300 will-change-transform"
         style={{
@@ -49,13 +65,11 @@ export default function Footer() {
       />
 
       <div className="w-full relative z-20 mb-8 sm:mb-12">
-        {/* Navigation & Brand Mission Area */}
-        <div className="w-full flex flex-col md:flex-row items-center md:items-start justify-between gap-6 text-xs font-body text-neutral-500">
-          {/* Left: Brand Tagline & Gateway Badge */}
-          <div className="flex flex-col items-center md:items-start gap-2 text-center md:text-left max-w-md">
+        <div className="w-full flex flex-col lg:flex-row justify-between items-start gap-8 lg:gap-12 text-xs font-body">
+          <div className="flex flex-col items-start gap-2.5 max-w-sm">
             <Link
               href="/"
-              className="font-heading font-extrabold text-base tracking-tight text-white hover:text-neutral-200 transition-colors inline-flex items-center gap-2"
+              className="font-heading font-extrabold text-base tracking-tight text-white hover:text-neutral-200 transition-colors inline-flex items-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 rounded-md"
             >
               <span>Morphic</span>
               <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-neutral-900 text-neutral-400 border border-neutral-800">
@@ -69,36 +83,80 @@ export default function Footer() {
             </p>
           </div>
 
-          {/* Right: Navigation Links */}
-          <div className="flex flex-wrap items-center justify-center md:justify-end gap-x-7 gap-y-3 text-neutral-400 text-xs font-body pt-1">
-            <Link href="/models" className="hover:text-white transition-colors">
-              <span suppressHydrationWarning>{t.nav.models}</span>
-            </Link>
-            <Link href="/pricing" className="hover:text-white transition-colors">
-              <span suppressHydrationWarning>{t.nav.price}</span>
-            </Link>
-            <Link href="/docs" className="hover:text-white transition-colors">
-              <span suppressHydrationWarning>{t.nav.docs}</span>
-            </Link>
-            <Link href="/#faq" className="hover:text-white transition-colors">
-              FAQ
-            </Link>
-            <Link href="/dashboard" className="hover:text-white transition-colors">
-              <span suppressHydrationWarning>{t.nav.dashboard}</span>
-            </Link>
-            <a href="mailto:hello@mirraclefoundation.com" className="hover:text-white transition-colors">
-              hello@mirraclefoundation.com
-            </a>
+          <div className="w-full lg:w-auto flex flex-col sm:flex-row items-start justify-between sm:justify-start gap-8 sm:gap-14 lg:gap-20">
+            <div className="flex flex-col items-start gap-2.5">
+              <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-neutral-300">
+                {locale === 'id' ? 'Navigasi' : 'Navigation'}
+              </span>
+              <div className="flex flex-col gap-2 text-neutral-400 text-xs font-body">
+                <Link href="/models" className="hover:text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 rounded-xs">
+                  <span suppressHydrationWarning>{t.nav.models}</span>
+                </Link>
+                <Link href="/pricing" className="hover:text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 rounded-xs">
+                  <span suppressHydrationWarning>{t.nav.price}</span>
+                </Link>
+                <Link href="/docs" className="hover:text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 rounded-xs">
+                  <span suppressHydrationWarning>{t.nav.docs}</span>
+                </Link>
+                <Link href="/#faq" className="hover:text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 rounded-xs">
+                  FAQ
+                </Link>
+                <Link href="/dashboard" className="hover:text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 rounded-xs">
+                  <span suppressHydrationWarning>{t.nav.dashboard}</span>
+                </Link>
+              </div>
+            </div>
+
+            <div className="flex flex-col items-start gap-2.5 max-w-xs">
+              <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-neutral-300">
+                {locale === 'id' ? 'Hubungi Kami' : 'Contact Us'}
+              </span>
+              <div className="flex flex-col gap-2.5 text-xs text-neutral-400">
+                <div className="flex items-start gap-2 text-left">
+                  <MapPin className="w-3.5 h-3.5 text-neutral-400 shrink-0 mt-0.5" aria-hidden="true" />
+                  <span className="leading-relaxed text-neutral-300">{SUPPORT_ADDRESS}</span>
+                </div>
+
+                <div className="flex items-center gap-2 text-left">
+                  <Phone className="w-3.5 h-3.5 text-neutral-400 shrink-0" aria-hidden="true" />
+                  {phoneHref ? (
+                    <a
+                      href={phoneHref}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-neutral-300 hover:text-white transition-colors underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 rounded-xs"
+                    >
+                      {SUPPORT_PHONE}
+                    </a>
+                  ) : (
+                    <span className="text-neutral-300 font-mono">{SUPPORT_PHONE}</span>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2 text-left">
+                  <Mail className="w-3.5 h-3.5 text-neutral-400 shrink-0" aria-hidden="true" />
+                  <a
+                    href={`mailto:${SUPPORT_EMAIL}`}
+                    className="text-neutral-300 hover:text-white transition-colors underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 rounded-xs"
+                  >
+                    {SUPPORT_EMAIL}
+                  </a>
+                </div>
+
+                <div className="flex items-center gap-2 text-[11px] text-neutral-400 font-mono text-left">
+                  <Clock className="w-3.5 h-3.5 text-neutral-400 shrink-0" aria-hidden="true" />
+                  <span>{SUPPORT_HOURS}</span>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* 2. SUBMERGED HALF-BODIED "Morphic" TEXT at the horizon */}
       <div
         ref={textContainerRef}
         className="w-full max-w-[98vw] mx-auto relative z-10 overflow-hidden select-none flex items-end justify-center pointer-events-none"
       >
-        {/* Layer 1: Dark Wireframe Base Layer (Always visible resting watermark) */}
         <svg
           viewBox="0 0 1000 110"
           className="w-full h-auto max-w-full block select-none pointer-events-none"
@@ -112,7 +170,6 @@ export default function Footer() {
             </linearGradient>
           </defs>
 
-          {/* Extrusion Depth Underlayer */}
           <text
             x="50%"
             y="177"
@@ -127,7 +184,6 @@ export default function Footer() {
             Morphic
           </text>
 
-          {/* Resting Base Wireframe Stroke */}
           <text
             x="50%"
             y="175"
@@ -144,7 +200,6 @@ export default function Footer() {
           </text>
         </svg>
 
-        {/* Layer 2: Glowing Cursor Spotlight Mask (Lights up dynamically with high clarity!) */}
         <div
           className="absolute inset-0 w-full h-full pointer-events-none transition-opacity duration-200 flex items-end justify-center"
           style={{
@@ -171,7 +226,6 @@ export default function Footer() {
               </filter>
             </defs>
 
-            {/* Crisp illuminated highlight directly under cursor spotlight */}
             <text
               x="50%"
               y="175"
@@ -191,7 +245,6 @@ export default function Footer() {
         </div>
       </div>
 
-      {/* 3. Horizon Deck: Dedicated Credit & Legal Bar Cleanly Positioned UNDERNEATH the Morphic Horizon */}
       <div className="w-full relative z-20 border-t border-neutral-900/90 py-5 sm:py-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs font-body text-neutral-500">
         <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2.5 text-center sm:text-left">
           <p className="text-neutral-400 font-body text-xs font-normal">
