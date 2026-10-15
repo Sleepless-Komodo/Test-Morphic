@@ -275,6 +275,7 @@ export function BillingView({
                                 ? new Date(e.expiresAt).toLocaleString(locale === 'en' ? 'en-US' : 'id-ID', {
                                     dateStyle: 'medium',
                                     timeStyle: 'short',
+                                    timeZone: 'Asia/Jakarta',
                                   })
                                 : t.dashboard.billingToday}
                             </div>
@@ -584,6 +585,7 @@ export function BillingView({
                           <td className="px-5 py-3 text-neutral-500 whitespace-nowrap">
                             {new Date(p.createdAt).toLocaleDateString(locale === 'en' ? 'en-US' : 'id-ID', {
                               dateStyle: 'medium',
+                              timeZone: 'Asia/Jakarta',
                             })}
                           </td>
                           <td className="px-5 py-3 font-bold text-neutral-900">{p.packageName ?? (locale === 'en' ? 'Top-up' : 'Isi Ulang')}</td>
@@ -695,7 +697,7 @@ export function BillingView({
                         </td>
                         <td className={`px-5 py-3 font-mono font-bold ${entry.amount >= 0 ? 'text-emerald-600' : 'text-rose-600'
                           }`}>
-                          {entry.amount >= 0 ? '+' : ''}{entry.amount.toLocaleString()}
+                          {entry.amount >= 0 ? '+' : ''}{entry.amount.toLocaleString(locale === 'en' ? 'en-US' : 'id-ID')}
                         </td>
                         <td className="px-5 py-3 text-neutral-600 max-w-[260px] truncate" title={entry.reference ?? undefined}>
                           {entry.redeemCode
@@ -713,7 +715,7 @@ export function BillingView({
                         <td className="px-5 py-3 text-neutral-500 font-mono whitespace-nowrap">
                           {new Date(entry.createdAt).toLocaleString(
                             locale === 'en' ? 'en-US' : 'id-ID',
-                            { dateStyle: 'short', timeStyle: 'short' }
+                            { dateStyle: 'short', timeStyle: 'short', timeZone: 'Asia/Jakarta' }
                           )}
                         </td>
                       </tr>

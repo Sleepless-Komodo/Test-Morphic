@@ -614,8 +614,9 @@ export function UsageView({ today, month, total, topModels, recent }: UsageViewP
 
                         {/* Time */}
                         <td
+                          suppressHydrationWarning
                           className="px-5 py-3.5 text-right text-neutral-500 whitespace-nowrap font-mono text-[11px]"
-                          title={new Date(r.createdAt).toLocaleString(isId ? 'id-ID' : 'en-US')}
+                          title={new Date(r.createdAt).toLocaleString(isId ? 'id-ID' : 'en-US', { timeZone: 'Asia/Jakarta' })}
                         >
                           {timeAgo(r.createdAt, locale)}
                         </td>

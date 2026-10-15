@@ -232,6 +232,7 @@ export function SettingsView({ user, sessions, loginOtp }: SettingsViewProps) {
     ? new Date(user.createdAt).toLocaleDateString(isId ? 'id-ID' : 'en-US', {
         month: 'long',
         year: 'numeric',
+        timeZone: 'Asia/Jakarta',
       })
     : null;
 
@@ -447,6 +448,7 @@ export function SettingsView({ user, sessions, loginOtp }: SettingsViewProps) {
                         day: 'numeric',
                         month: 'short',
                         year: 'numeric',
+                        timeZone: 'Asia/Jakarta',
                       })}
                     </p>
                   </div>

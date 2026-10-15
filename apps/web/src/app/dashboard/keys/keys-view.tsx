@@ -390,8 +390,8 @@ export function KeysView({ initialKeys }: KeysViewProps) {
                             <span>{t.dashboard.keyStatusExpired}</span>
                           </span>
                         ) : (
-                          <span className="text-neutral-700 font-semibold" title={new Date(k.expiresAt).toLocaleString(locale === 'en' ? 'en-US' : 'id-ID')}>
-                            {new Date(k.expiresAt).toLocaleDateString(locale === 'en' ? 'en-US' : 'id-ID')}
+                          <span className="text-neutral-700 font-semibold" title={new Date(k.expiresAt).toLocaleString(locale === 'en' ? 'en-US' : 'id-ID', { timeZone: 'Asia/Jakarta' })}>
+                            {new Date(k.expiresAt).toLocaleDateString(locale === 'en' ? 'en-US' : 'id-ID', { timeZone: 'Asia/Jakarta' })}
                           </span>
                         )
                       ) : (
@@ -402,7 +402,7 @@ export function KeysView({ initialKeys }: KeysViewProps) {
                       {timeAgo(k.lastUsedAt, locale)}
                     </td>
                     <td className="px-6 py-4 text-neutral-500 font-mono text-[11px]">
-                      {new Date(k.createdAt).toLocaleDateString(locale === 'en' ? 'en-US' : 'id-ID')}
+                      {new Date(k.createdAt).toLocaleDateString(locale === 'en' ? 'en-US' : 'id-ID', { timeZone: 'Asia/Jakarta' })}
                     </td>
                     <td className="px-6 py-4 text-right">
                       {rotateId === k.id ? (

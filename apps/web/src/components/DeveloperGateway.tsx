@@ -196,6 +196,7 @@ export default function DeveloperGateway({
                   month: 'short',
                   hour: '2-digit',
                   minute: '2-digit',
+                  timeZone: 'Asia/Jakarta',
                 })}
               </p>
             )}
@@ -399,8 +400,9 @@ export default function DeveloperGateway({
                         )}
                         <span className="text-neutral-300">·</span>
                         <span
+                          suppressHydrationWarning
                           className="text-neutral-500"
-                          title={new Date(r.createdAt).toLocaleString(isId ? 'id-ID' : 'en-US')}
+                          title={new Date(r.createdAt).toLocaleString(isId ? 'id-ID' : 'en-US', { timeZone: 'Asia/Jakarta' })}
                         >
                           {timeAgo(r.createdAt, locale)}
                         </span>
