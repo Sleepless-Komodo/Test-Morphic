@@ -24,6 +24,8 @@ coverage/
 .env.test
 !.env.example
 !.env.test.example
+!.env.development.example
+!.env.production.example
 *.pem
 *.key
 *.p12
