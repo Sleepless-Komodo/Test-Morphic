@@ -22,26 +22,97 @@ export interface AlertConfig {
 const lastAlertMap = new Map<string, number>();
 
 /**
- * Sends notification via Telegram Bot API if configured
+ * Escapes characters that have special meaning in Telegram HTML parse mode.
+ * Order is strictly: & -> &amp;, then < -> &lt;, then > -> &gt;.
  */
-async function sendTelegramAlert(message: string): Promise<void> {
+export function escapeTelegramHtml(str: string): string {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/**
+ * Sanitizes an alert message for Telegram HTML parse mode.
+ * Preserves intentional allowed Telegram HTML tags (<b>, <code>, <i>, <a>, etc.)
+ * while escaping raw <, >, and & in all dynamic/untrusted text segments.
+ */
+export function sanitizeTelegramHtml(html: string): string {
+  const tagRegex = /<\/?(?:b|strong|i|em|u|ins|s|strike|del|span|tg-spoiler|code|pre|blockquote)(?:\s+[^>]*)?>|<a(?:\s+href="[^"]*")?\s*>|<\/a>/gi;
+  let lastIndex = 0;
+  let result = '';
+  let match: RegExpExecArray | null;
+
+  while ((match = tagRegex.exec(html)) !== null) {
+    const textBefore = html.slice(lastIndex, match.index);
+    result += escapeTelegramHtml(textBefore);
+    result += match[0];
+    lastIndex = tagRegex.lastIndex;
+  }
+
+  const remaining = html.slice(lastIndex);
+  result += escapeTelegramHtml(remaining);
+
+  return result;
+}
+
+/**
+ * Sends notification via Telegram Bot API if configured.
+ *
+ * Defaults to 100% full escaping via `escapeTelegramHtml` so dynamic content can never
+ * break entity parsing or inject unauthorized links. Internal templates with curated tags
+ * can opt-in to `isHtmlFormatted: true` to preserve allowed formatting tags.
+ *
+ * If Telegram returns 400 (entity parse error), retries once immediately without `parse_mode`
+ * so the alert is never silently dropped.
+ */
+export async function sendTelegramAlert(
+  message: string,
+  options?: { isHtmlFormatted?: boolean },
+): Promise<void> {
   const token = process.env.ALERT_TELEGRAM_BOT_TOKEN;
   const chatId = process.env.ALERT_TELEGRAM_CHAT_ID;
   if (!token || !chatId) return;
 
+  const text = options?.isHtmlFormatted ? sanitizeTelegramHtml(message) : escapeTelegramHtml(message);
+  const url = `https://api.telegram.org/bot${token}/sendMessage`;
+
   try {
-    const url = `https://api.telegram.org/bot${token}/sendMessage`;
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         chat_id: chatId,
-        text: message,
+        text,
         parse_mode: 'HTML',
       }),
     });
+
+    if (res.status === 400) {
+      const errBody = (await res.json().catch(() => ({}))) as { description?: string };
+      console.warn(
+        `[alert] Telegram returned 400 (${errBody?.description ?? 'Bad Request'}). Retrying once as plain text without parse_mode...`,
+      );
+
+      const retryRes = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: message,
+        }),
+      });
+
+      if (!retryRes.ok) {
+        const retryErr = (await retryRes.json().catch(() => ({}))) as { description?: string };
+        console.error(
+          `[alert] Telegram plain-text retry failed (${retryRes.status}): ${retryErr?.description ?? retryRes.statusText}`,
+        );
+      }
+      return;
+    }
+
     if (!res.ok) {
-      console.error('[alert] Telegram notification failed:', res.statusText);
+      const errBody = (await res.json().catch(() => ({}))) as { description?: string };
+      const desc = errBody?.description ?? res.statusText;
+      console.error(`[alert] Telegram notification failed (${res.status}): ${desc}`);
     }
   } catch (err) {
     console.error('[alert] Failed to send Telegram notification:', err);
@@ -72,7 +143,11 @@ async function sendWebhookAlert(payload: Record<string, unknown>): Promise<void>
 /** Push an ops alert to every configured channel (Telegram, webhook) and the server log. */
 export async function sendOpsAlert(message: string, payload: Record<string, unknown>): Promise<void> {
   console.warn(`[alert] ${message}`);
-  await Promise.all([sendTelegramAlert(message), sendWebhookAlert({ message, ...payload })]);
+  // opsAlert uses full escape (isHtmlFormatted: false) so dynamic payment content cannot break entity parsing
+  await Promise.all([
+    sendTelegramAlert(message, { isHtmlFormatted: false }),
+    sendWebhookAlert({ message, ...payload }),
+  ]);
 }
 
 /** Revenue below upstream cost on a request. At most one alert per model per hour. */
@@ -165,13 +240,13 @@ export async function checkProviderHealth(config: AlertConfig = {}): Promise<Pro
         health.lastAlertAt = new Date(now);
 
         const errorPct = (health.errorRate * 100).toFixed(1);
-        const alertMsg = `⚠️ <b>PROVIDER ALERT</b>: Provider <code>${health.providerName}</code> error rate is <b>${errorPct}%</b> (${health.errorRequests}/${health.totalRequests} failed in the last 5m).`;
+        const alertMsg = `⚠️ <b>PROVIDER ALERT</b>: Provider <code>${escapeTelegramHtml(health.providerName)}</code> error rate is <b>${errorPct}%</b> (${health.errorRequests}/${health.totalRequests} failed in the last 5m).`;
 
         console.error(`[ALERT] High error rate for provider ${health.providerName}: ${errorPct}% (${health.errorRequests}/${health.totalRequests})`);
 
         // Send notifications
         await Promise.allSettled([
-          sendTelegramAlert(alertMsg),
+          sendTelegramAlert(alertMsg, { isHtmlFormatted: true }),
           sendWebhookAlert({
             event: 'provider_error_rate_alert',
             provider: health.providerName,

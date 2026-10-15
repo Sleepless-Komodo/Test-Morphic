@@ -523,6 +523,62 @@ export function BillingView({
                         p.status === 'pending' && (age > 24 * 3_600_000 || (p.provider === 'duitku' && age > 5.5 * 60_000))
                           ? 'expired'
                           : p.status;
+                      const getStatusBadge = (st: string) => {
+                        if (st === 'paid' || st === 'success' || st === 'settlement') {
+                          return {
+                            className: 'bg-emerald-100 text-emerald-800',
+                            label: locale === 'en' ? 'Success' : 'Berhasil',
+                          };
+                        }
+                        if (st === 'needs_review') {
+                          return {
+                            className: 'bg-amber-100 text-amber-800 border border-amber-200',
+                            label: t.dashboard.billingStatusNeedsReview ?? (locale === 'en' ? 'Under review' : 'Sedang ditinjau'),
+                          };
+                        }
+                        if (st === 'disputed') {
+                          return {
+                            className: 'bg-rose-100 text-rose-800 border border-rose-200',
+                            label: t.dashboard.billingStatusDisputed ?? (locale === 'en' ? 'Disputed' : 'Sengketa'),
+                          };
+                        }
+                        if (st === 'refunded') {
+                          return {
+                            className: 'bg-purple-100 text-purple-800 border border-purple-200',
+                            label: t.dashboard.billingStatusRefunded ?? (locale === 'en' ? 'Refunded' : 'Dikembalikan'),
+                          };
+                        }
+                        if (st === 'pending_paypal') {
+                          return {
+                            className: 'bg-amber-100 text-amber-800 border border-amber-200',
+                            label: locale === 'en' ? 'Under Review' : 'Sedang Ditinjau',
+                          };
+                        }
+                        if (st === 'pending') {
+                          return {
+                            className: 'bg-amber-100 text-amber-800 border border-amber-200',
+                            label: locale === 'en' ? 'Pending' : 'Menunggu',
+                          };
+                        }
+                        if (st === 'expired') {
+                          return {
+                            className: 'bg-neutral-100 text-neutral-800',
+                            label: locale === 'en' ? 'Cancelled' : 'Dibatalkan',
+                          };
+                        }
+                        if (st === 'failed') {
+                          return {
+                            className: 'bg-neutral-100 text-neutral-800',
+                            label: locale === 'en' ? 'Failed' : 'Gagal',
+                          };
+                        }
+                        return {
+                          className: 'bg-neutral-100 text-neutral-800',
+                          label: st,
+                        };
+                      };
+                      const badge = getStatusBadge(status);
+
                       return (
                         <tr key={p.id}>
                           <td className="px-5 py-3 text-neutral-500 whitespace-nowrap">
@@ -540,27 +596,12 @@ export function BillingView({
                             <div className="flex items-center gap-2">
                               <span
                                 suppressHydrationWarning
-                                className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold ${status === 'paid' || status === 'success' || status === 'settlement'
-                                    ? 'bg-emerald-100 text-emerald-800'
-                                    : status === 'pending' || status === 'pending_paypal'
-                                      ? 'bg-amber-100 text-amber-800 border border-amber-200'
-                                      : 'bg-neutral-100 text-neutral-800'
-                                  }`}
+                                className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold ${badge.className}`}
                               >
-                                {status === 'success' || status === 'settlement' || status === 'paid'
-                                  ? (locale === 'en' ? 'Success' : 'Berhasil')
-                                  : status === 'pending_paypal'
-                                    ? (locale === 'en' ? 'Under Review' : 'Sedang Ditinjau')
-                                    : status === 'pending'
-                                      ? (locale === 'en' ? 'Pending' : 'Menunggu')
-                                      : status === 'expired'
-                                        ? (locale === 'en' ? 'Cancelled' : 'Dibatalkan')
-                                        : status === 'failed'
-                                          ? (locale === 'en' ? 'Failed' : 'Gagal')
-                                          : status}
+                                {badge.label}
                               </span>
 
-                              {status === 'paid' && (
+                              {(status === 'paid' || status === 'refunded' || status === 'disputed') && (
                                 <a
                                   href={`/receipt/${p.id}`}
                                   target="_blank"

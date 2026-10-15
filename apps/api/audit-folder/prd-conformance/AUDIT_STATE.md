@@ -228,7 +228,7 @@ morphic/
   1. `POST /webhooks/mock`: Webhook QRIS tiruan aktif di router produksi tanpa guard environment (Risiko Tinggi D-SK-01).
   2. Arsitektur **Entitlements & Time-Bound Model Pass**: Tabel `entitlements`, `packages.duration_hours`, dan prioritas penagihan `pickSource` tidak ada di PRD (D-DB-01).
   3. Konversi Kurs Statis Hardcoded: 1 USD = Rp 16.000 di `payments.ts:186` (D-SK-02).
-  4. Public Shell Script Installer: `GET /quickstart/opencode.sh` melayani file bash dinamis publik tanpa auth (D-RT-02).
+  4. Public Installer Script Endpoints: `GET /quickstart/opencode.sh` dan `/quickstart/opencode.ps1` melayani script installer dinamis publik (bash & PowerShell) tanpa auth (D-RT-02).
   5. In-Memory Throttling: `lastPollMap` pada proses Node membatasi keefektifan di arsitektur multi-instance (D-SK-04).
   6. Skrip Eskalasi Admin Out-of-Band: `packages/db/src/make-admin.ts` mengubah peran admin tanpa jejak audit log (D-SK-03).
 

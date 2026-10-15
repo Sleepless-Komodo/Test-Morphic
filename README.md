@@ -14,14 +14,27 @@ Morphic is a unified AI gateway. Instead of integrating each AI provider
 separately, developers use a single OpenAI-compatible API and switch between
 models (DeepSeek, Qwen, Kimi, and more) from one account and one credit system.
 
-## Quick Start
+## Environment & Quick Start
+
+Morphic menyediakan 2 environment terpisah yang aman dan mudah di-switch:
+- **Development (`.env.development`)**: Web di `http://localhost:3000`, API di `http://localhost:8787`, payment sandbox (Duitku & PayPal sandbox).
+- **Production (`.env.production`)**: Domain produksi `https://morphic-api.web.id`, port 3001 (VPS behind reverse proxy), payment live.
 
 ```bash
-cp .env.example .env       # fill secrets; PROVIDER_ENC_KEY: openssl rand -hex 32
-docker compose up -d postgres redis
+# 1. Switch ke Development environment
+pnpm env:dev
+
+# Periksa status environment aktif kapan saja
+pnpm env:status
+
+# 2. Jalankan database & dev server
 pnpm install
 pnpm db:migrate && pnpm db:seed
 pnpm dev                   # web :3000, api :8787
+
+# 3. Jalankan pengujian (Testing)
+pnpm test:web              # unit test frontend
+pnpm test:api              # test guard & unit test API
 ```
 
 First admin: sign in once with Google, then run
