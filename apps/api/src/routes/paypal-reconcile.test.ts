@@ -408,6 +408,7 @@ test('T4(e): two parallel reconciles process a row once', async () => {
 
     const after = await refetchPayment(payment.id);
     assert.equal(after?.status, 'paid');
+    assert.ok(after?.captureId, 'captureId must be persisted by reconcile before fulfillment');
 
     assert.equal(await refetchCredits(user.id), 100, 'credits must be granted exactly once');
   });

@@ -98,6 +98,7 @@ export async function settlePaypalPayment(
         });
         return 'needs_review';
       }
+      if (order.captureId) await saveCaptureId(payment.id, order.captureId);
       return (await fulfilPayment(payment.id)).success ? 'paid' : null;
     }
     case 'refunded': {

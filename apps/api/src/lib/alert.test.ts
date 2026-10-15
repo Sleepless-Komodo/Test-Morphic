@@ -38,7 +38,7 @@ test('P5-7b: sanitizeTelegramHtml preserves allowed Telegram tags and escapes un
   assert.equal(sanitizeTelegramHtml(plainWithChars), expectedPlain);
 });
 
-test('P5-7b: sendTelegramAlert mocked transport sends escaped HTML and keeps intended tags', async () => {
+test('P5-7b: sendTelegramAlert with isHtmlFormatted: true preserves allowed tags and escapes dynamic characters', async () => {
   const originalFetch = globalThis.fetch;
   const originalToken = process.env.ALERT_TELEGRAM_BOT_TOKEN;
   const originalChatId = process.env.ALERT_TELEGRAM_CHAT_ID;
@@ -61,18 +61,18 @@ test('P5-7b: sendTelegramAlert mocked transport sends escaped HTML and keeps int
   }) as typeof fetch;
 
   try {
-    const rawMessage = '🚨 <b>PAYMENT DISPUTE</b>: PayPal event <EV-1234> & amount > $50';
-    await sendTelegramAlert(rawMessage);
+    const templateMessage = '⚠️ <b>PROVIDER ALERT</b>: Provider <code>open-ai</code> failed with <err-code> & rate > 50%';
+    await sendTelegramAlert(templateMessage, { isHtmlFormatted: true });
 
     assert.equal(capturedUrl, 'https://api.telegram.org/botmock-bot-token-123/sendMessage');
     assert.ok(capturedBody);
     assert.equal(capturedBody.chat_id, '987654321');
     assert.equal(capturedBody.parse_mode, 'HTML');
 
-    // Asserts <b> is kept, while <EV-1234>, &, > are escaped!
+    // Asserts <b> and <code> are kept, while <err-code>, &, > are escaped!
     assert.equal(
       capturedBody.text,
-      '🚨 <b>PAYMENT DISPUTE</b>: PayPal event &lt;EV-1234&gt; &amp; amount &gt; $50',
+      '⚠️ <b>PROVIDER ALERT</b>: Provider <code>open-ai</code> failed with &lt;err-code&gt; &amp; rate &gt; 50%',
     );
   } finally {
     globalThis.fetch = originalFetch;
@@ -83,7 +83,7 @@ test('P5-7b: sendTelegramAlert mocked transport sends escaped HTML and keeps int
   }
 });
 
-test('P5-7b: sendTelegramAlert handles non-2xx Telegram response gracefully without crashing', async () => {
+test('P5-7b: sendTelegramAlert defaults to full escaping (no HTML whitelist)', async () => {
   const originalFetch = globalThis.fetch;
   const originalToken = process.env.ALERT_TELEGRAM_BOT_TOKEN;
   const originalChatId = process.env.ALERT_TELEGRAM_CHAT_ID;
@@ -91,21 +91,30 @@ test('P5-7b: sendTelegramAlert handles non-2xx Telegram response gracefully with
   process.env.ALERT_TELEGRAM_BOT_TOKEN = 'mock-bot-token-123';
   process.env.ALERT_TELEGRAM_CHAT_ID = '987654321';
 
-  globalThis.fetch = (async () => {
-    return new Response(
-      JSON.stringify({ ok: false, error_code: 400, description: "Bad Request: can't parse entities" }),
-      {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' },
-      },
-    );
+  let capturedBody: any = null;
+
+  globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+    if (init?.body) {
+      capturedBody = JSON.parse(init.body as string);
+    }
+    return new Response(JSON.stringify({ ok: true, result: { message_id: 43 } }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
   }) as typeof fetch;
 
   try {
-    // Should not throw
-    await assert.doesNotReject(async () => {
-      await sendTelegramAlert('test message');
-    });
+    const rawMessage = 'Payment dispute: user injected <a href="evil.com">click</a> and <b>unclosed tag';
+    await sendTelegramAlert(rawMessage);
+
+    assert.ok(capturedBody);
+    assert.equal(capturedBody.chat_id, '987654321');
+    assert.equal(capturedBody.parse_mode, 'HTML');
+    // ALL tags escaped into character entities: no tag whitelist!
+    assert.equal(
+      capturedBody.text,
+      'Payment dispute: user injected &lt;a href="evil.com"&gt;click&lt;/a&gt; and &lt;b&gt;unclosed tag',
+    );
   } finally {
     globalThis.fetch = originalFetch;
     if (originalToken) process.env.ALERT_TELEGRAM_BOT_TOKEN = originalToken;
@@ -115,7 +124,59 @@ test('P5-7b: sendTelegramAlert handles non-2xx Telegram response gracefully with
   }
 });
 
-test('P5-7b: sendOpsAlert delivers sanitized message to Telegram while keeping raw payload for webhook', async () => {
+test('P5-7b: sendTelegramAlert retries once as plain text without parse_mode when Telegram responds 400', async () => {
+  const originalFetch = globalThis.fetch;
+  const originalToken = process.env.ALERT_TELEGRAM_BOT_TOKEN;
+  const originalChatId = process.env.ALERT_TELEGRAM_CHAT_ID;
+
+  process.env.ALERT_TELEGRAM_BOT_TOKEN = 'mock-bot-token-123';
+  process.env.ALERT_TELEGRAM_CHAT_ID = '987654321';
+
+  const fetchCalls: Array<{ url: string; body: any }> = [];
+
+  globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+    const parsedBody = init?.body ? JSON.parse(init.body as string) : null;
+    fetchCalls.push({ url: String(url), body: parsedBody });
+
+    // First call (with parse_mode) simulates a Telegram entity parsing error
+    if (fetchCalls.length === 1) {
+      return new Response(
+        JSON.stringify({ ok: false, error_code: 400, description: "Bad Request: can't parse entities: unclosed tag" }),
+        { status: 400, headers: { 'Content-Type': 'application/json' } },
+      );
+    }
+
+    // Second call (retry) succeeds
+    return new Response(JSON.stringify({ ok: true, result: { message_id: 44 } }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }) as typeof fetch;
+
+  try {
+    const rawMessage = 'Alert with broken formatting: <b unmatched tag';
+    await sendTelegramAlert(rawMessage, { isHtmlFormatted: true });
+
+    // Must have made 2 calls: the initial HTML attempt, followed by the plain text retry
+    assert.equal(fetchCalls.length, 2, 'Must perform immediate fallback retry on 400');
+
+    // First call had parse_mode HTML
+    assert.equal(fetchCalls[0].body.parse_mode, 'HTML');
+
+    // Second call (retry) must NOT have parse_mode, sending raw plain text
+    assert.equal(fetchCalls[1].body.parse_mode, undefined, 'Retry must omit parse_mode');
+    assert.equal(fetchCalls[1].body.text, rawMessage, 'Retry must carry full uncorrupted message');
+    assert.equal(fetchCalls[1].body.chat_id, '987654321');
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalToken) process.env.ALERT_TELEGRAM_BOT_TOKEN = originalToken;
+    else delete process.env.ALERT_TELEGRAM_BOT_TOKEN;
+    if (originalChatId) process.env.ALERT_TELEGRAM_CHAT_ID = originalChatId;
+    else delete process.env.ALERT_TELEGRAM_CHAT_ID;
+  }
+});
+
+test('P5-7b: sendOpsAlert delivers fully-escaped message to Telegram and raw payload to webhook', async () => {
   const originalFetch = globalThis.fetch;
   const originalToken = process.env.ALERT_TELEGRAM_BOT_TOKEN;
   const originalChatId = process.env.ALERT_TELEGRAM_CHAT_ID;
@@ -136,16 +197,17 @@ test('P5-7b: sendOpsAlert delivers sanitized message to Telegram while keeping r
   }) as typeof fetch;
 
   try {
-    const rawMessage = 'Needs review: id=<PAY-1> & reason="timeout > 5s"';
+    const rawMessage = 'Needs review: id=<PAY-1> & reason="timeout > 5s" & user="<b>alice</b>"';
     await sendOpsAlert(rawMessage, { paymentId: 'PAY-1' });
 
     assert.equal(dispatched.length, 2);
 
     const telegramCall = dispatched.find((d) => d.url.includes('api.telegram.org'));
     assert.ok(telegramCall);
+    // Verified 100% full escape: even <b>alice</b> is escaped to &lt;b&gt;alice&lt;/b&gt;
     assert.equal(
       telegramCall.body.text,
-      'Needs review: id=&lt;PAY-1&gt; &amp; reason="timeout &gt; 5s"',
+      'Needs review: id=&lt;PAY-1&gt; &amp; reason="timeout &gt; 5s" &amp; user="&lt;b&gt;alice&lt;/b&gt;"',
     );
 
     const webhookCall = dispatched.find((d) => d.url === 'https://webhook.internal/ops');

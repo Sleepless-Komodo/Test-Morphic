@@ -22,14 +22,7 @@ therefore **not** fixed (§0D.2). Recorded here so a later session can pick them
   - Or raise the fixed-window behaviour to a sliding window, if that is the intended product behaviour
     (that is a design decision, not a test fix).
 
-## 2. `settlePaypalPayment` in reconcile does not persist `captureId` before fulfilling payment
-
-- **File:** `apps/api/src/lib/paypal-reconcile.ts:101-105`
-- **Symptom:** When background reconciliation queries `paypal.getOrder` and encounters `order.effectiveStatus === 'paid'`, it calls `fulfilPayment(payment.id)` but does not call `saveCaptureId(payment.id, order.captureId)`.
-- **Why it is not in scope for P5-2:** P5-2 task allowlist strictly allowed `apps/api/src/routes/payments.ts` and its test; `paypal-reconcile.ts` was outside the allowlist.
-- **Recommended fix:** Add `if (order.captureId) await saveCaptureId(payment.id, order.captureId);` right before `fulfilPayment(payment.id)` in `settlePaypalPayment`.
-
-## 3. API PDF receipt route (`/:id/receipt`) filters strictly on `status = 'paid'`
+## 2. API PDF receipt route (`/:id/receipt`) filters strictly on `status = 'paid'`
 
 - **File:** `apps/api/src/routes/payments.ts:238`
 - **Symptom:** The backend PDF generation route `GET /v1/payments/:id/receipt` only queries `eq(s.payments.status, 'paid')`, returning 404 for refunded or disputed transactions. Meanwhile, `apps/web/src/app/receipt/[id]/page.tsx` was updated in P5-6 to allow `status IN ('paid', 'refunded', 'disputed')` with appropriate status badges.

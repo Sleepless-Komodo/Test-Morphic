@@ -139,3 +139,44 @@ Duitku **does not** provide an automated refund webhook for QRIS or Virtual Acco
      refunded_amount_minor_units = amount_cents 
    WHERE id = '<PAYMENT_UUID>' AND status = 'paid';
    ```
+
+---
+
+## 5. Pre-Go-Live Database Inspection & Test Data Cleanup
+
+> [!WARNING]
+> **NEVER run blind wildcard deletes like `WHERE external_id LIKE 'temp:%'`.**
+> In Morphic's live PayPal checkout flow, every pending transaction is temporarily saved as `temp:${idempotencyKey}` while contacting the PayPal REST API. Deleting `temp:%` will break real transactions currently in-flight.
+
+### Fixture-Derived Query (Test Data Identification)
+Test fixtures in our automated test suite consistently generate predictable user emails and package names (`@test.local`, `@test.dev`, `tester-%`, `sec-user-%`, `T7 Package %`, etc.).
+
+Use these queries to inspect and safely purge leftover automated test artifacts:
+
+```sql
+-- 1. Inspect mock/test payments created by test runners:
+SELECT p.id, p.user_id, u.email, p.provider, p.external_id, p.amount_cents, p.currency, p.status, p.created_at
+FROM payments p
+JOIN users u ON p.user_id = u.id
+WHERE u.email LIKE '%@test.local'
+   OR u.email LIKE '%@test.dev'
+   OR u.email LIKE 'tester-%'
+   OR u.email LIKE 'test-user-%'
+   OR u.email LIKE 'sec-user-%'
+ORDER BY p.created_at DESC;
+
+-- 2. Inspect mock/test packages created during integration tests:
+SELECT id, name, price_cents, currency, status, credit_allowance
+FROM packages
+WHERE name LIKE 'T7 Package %'
+   OR name LIKE 'USD Package %'
+   OR name LIKE 'IDR Package %'
+   OR name LIKE 'pkg-%'
+ORDER BY created_at DESC;
+
+-- 3. Deactivate test packages rather than hard-deleting (preserves FK constraints):
+UPDATE packages
+SET status = 'archived'
+WHERE (name LIKE 'T7 Package %' OR name LIKE 'USD Package %' OR name LIKE 'IDR Package %')
+  AND status = 'active';
+```

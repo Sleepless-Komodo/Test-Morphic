@@ -112,6 +112,14 @@ payments.post('/create', async (c) => {
     );
   }
 
+  // Step 6b: Validate currency is supported (IDR or USD)
+  if (pkg.currency !== 'IDR' && pkg.currency !== 'USD') {
+    return c.json(
+      { error: { message: 'unsupported package currency', type: 'invalid_request_error', code: 'invalid_currency' } },
+      400,
+    );
+  }
+
   // Step 7: Determine IDR amount (USD packages converted at IDR_PER_USD)
   const amountIDR = packagePriceIdr(pkg.priceCents, pkg.currency);
 
@@ -385,6 +393,14 @@ payments.post('/paypal/create-order', async (c) => {
   if (!pkg.priceCents || pkg.priceCents <= 0) {
     return c.json(
       { error: { message: 'package has no price set', type: 'invalid_request_error', code: 'package_no_price' } },
+      400,
+    );
+  }
+
+  // Step 3b: Validate currency is supported (IDR or USD)
+  if (pkg.currency !== 'IDR' && pkg.currency !== 'USD') {
+    return c.json(
+      { error: { message: 'unsupported package currency', type: 'invalid_request_error', code: 'invalid_currency' } },
       400,
     );
   }
