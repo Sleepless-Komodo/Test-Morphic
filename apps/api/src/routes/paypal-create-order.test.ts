@@ -1,4 +1,4 @@
-import test, { mock } from 'node:test';
+import test from 'node:test';
 import assert from 'node:assert/strict';
 import { packagePriceUsdCents, IDR_PER_USD } from '@morphic/shared/credits';
 import { centsToPaypalAmount, paypalAmountToCents } from '../lib/paypal.js';
