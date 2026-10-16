@@ -118,9 +118,7 @@ res = client.chat.completions.create(
           <div className="rounded-2xl bg-neutral-950 border border-neutral-800 p-4 sm:p-5">
             <div className="flex items-start justify-between gap-3 mb-3">
               <span suppressHydrationWarning className="text-[11px] text-neutral-500">
-                {locale === 'id'
-                  ? 'Buka Settings AI di Cursor / Cline, lalu isi:'
-                  : 'Open the AI settings in Cursor / Cline, then fill in:'}
+                {t.dashboard.quickstartIdeInstructions}
               </span>
               <CopyButton
                 text={`Base URL: ${BASE_URL}\nModel: deepseek-v4\nAPI Key: mp-live-xxxxxxxx`}

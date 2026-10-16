@@ -13,7 +13,7 @@ export const SUPPORT_ADDRESS = 'Taman Kenari Jagorawi Blok 10, Citeureup, Kab. B
 export const SUPPORT_HOURS = 'Senin - Jumat 09:00 - 17:00 WIB';
 
 export default function Footer() {
-  const { locale, t } = useTranslation();
+  const { t } = useTranslation();
   const [isHovered, setIsHovered] = useState(false);
   const footerRef = useRef<HTMLElement>(null);
   const textContainerRef = useRef<HTMLDivElement>(null);
@@ -77,16 +77,14 @@ export default function Footer() {
               </span>
             </Link>
             <p className="text-neutral-400 font-body text-xs font-normal leading-relaxed">
-              {locale === 'id'
-                ? 'Reseller API Key AI Terpercaya untuk Developer Indonesia. Akses Claude, DeepSeek, Qwen, dan Kimi dengan pembayaran QRIS lokal otomatis.'
-                : 'Trusted AI API Key Gateway for Developers. Access Claude, DeepSeek, Qwen, and Kimi with instant local QRIS top-ups.'}
+              <span suppressHydrationWarning>{t.footer.desc}</span>
             </p>
           </div>
 
           <div className="w-full lg:w-auto flex flex-col sm:flex-row items-start justify-between sm:justify-start gap-8 sm:gap-14 lg:gap-20">
             <div className="flex flex-col items-start gap-2.5">
               <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-neutral-300">
-                {locale === 'id' ? 'Navigasi' : 'Navigation'}
+                <span suppressHydrationWarning>{t.footer.navigation}</span>
               </span>
               <div className="flex flex-col gap-2 text-neutral-400 text-xs font-body">
                 <Link href="/models" className="hover:text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 rounded-xs">
@@ -99,7 +97,7 @@ export default function Footer() {
                   <span suppressHydrationWarning>{t.nav.docs}</span>
                 </Link>
                 <Link href="/#faq" className="hover:text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 rounded-xs">
-                  FAQ
+                  <span suppressHydrationWarning>{t.nav.faq}</span>
                 </Link>
                 <Link href="/dashboard" className="hover:text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 rounded-xs">
                   <span suppressHydrationWarning>{t.nav.dashboard}</span>
@@ -109,12 +107,12 @@ export default function Footer() {
 
             <div className="flex flex-col items-start gap-2.5 max-w-xs">
               <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-neutral-300">
-                {locale === 'id' ? 'Hubungi Kami' : 'Contact Us'}
+                <span suppressHydrationWarning>{t.footer.contactUs}</span>
               </span>
               <div className="flex flex-col gap-2.5 text-xs text-neutral-400">
                 <div className="flex items-start gap-2 text-left">
                   <MapPin className="w-3.5 h-3.5 text-neutral-400 shrink-0 mt-0.5" aria-hidden="true" />
-                  <span className="leading-relaxed text-neutral-300">{SUPPORT_ADDRESS}</span>
+                  <span className="leading-relaxed text-neutral-300">{t.footer.supportAddress || SUPPORT_ADDRESS}</span>
                 </div>
 
                 <div className="flex items-center gap-2 text-left">
@@ -145,7 +143,7 @@ export default function Footer() {
 
                 <div className="flex items-center gap-2 text-[11px] text-neutral-400 font-mono text-left">
                   <Clock className="w-3.5 h-3.5 text-neutral-400 shrink-0" aria-hidden="true" />
-                  <span>{SUPPORT_HOURS}</span>
+                  <span suppressHydrationWarning>{t.footer.supportHours}</span>
                 </div>
               </div>
             </div>
@@ -155,6 +153,7 @@ export default function Footer() {
 
       <div
         ref={textContainerRef}
+        title={t.footer.morphicSub}
         className="w-full max-w-[98vw] mx-auto relative z-10 overflow-hidden select-none flex items-end justify-center pointer-events-none"
       >
         <svg
@@ -248,19 +247,17 @@ export default function Footer() {
       <div className="w-full relative z-20 border-t border-neutral-900/90 py-5 sm:py-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs font-body text-neutral-500">
         <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2.5 text-center sm:text-left">
           <p className="text-neutral-400 font-body text-xs font-normal">
-            {locale === 'id'
-              ? '© 2026 Morphic. Seluruh hak cipta dilindungi.'
-              : '© 2026 Morphic. All rights reserved.'}
+            <span suppressHydrationWarning>{t.footer.rights}</span>
           </p>
         </div>
 
         <div className="flex flex-wrap items-center justify-center sm:justify-end gap-5 text-neutral-400 text-xs font-body">
           <Link href="/terms" className="hover:text-neutral-300 transition-colors">
-            {locale === 'id' ? 'Ketentuan Layanan' : 'Terms of Service'}
+            <span suppressHydrationWarning>{t.footer.terms}</span>
           </Link>
           <span className="text-neutral-700 hidden sm:inline">·</span>
           <Link href="/privacy" className="hover:text-neutral-300 transition-colors">
-            {locale === 'id' ? 'Kebijakan Privasi' : 'Privacy Policy'}
+            <span suppressHydrationWarning>{t.footer.privacy}</span>
           </Link>
         </div>
       </div>

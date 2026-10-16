@@ -37,10 +37,10 @@ export function UsersTable({ users, currentAdminId }: UsersTableProps) {
         const fd = new FormData();
         fd.set('id', selectedUserForDelete.id);
         await deleteUserByAdmin(fd);
-        setSuccessMessage(`Pengguna ${selectedUserForDelete.email} berhasil dihapus.`);
+        setSuccessMessage(t.admin.users.deleteSuccess);
         setSelectedUserForDelete(null);
       } catch (err: any) {
-        setErrorMessage(err?.message || 'Gagal menghapus pengguna.');
+        setErrorMessage(err?.message || t.admin.users.deleteError);
       }
     });
   };
@@ -196,7 +196,7 @@ export function UsersTable({ users, currentAdminId }: UsersTableProps) {
                           <button
                             type="button"
                             onClick={() => setSelectedUserForDelete(u)}
-                            title="Hapus Pengguna"
+                            title={t.admin.users.deleteBtn}
                             className="p-1.5 rounded-lg border border-red-200 text-red-600 hover:text-red-700 hover:bg-red-50 transition cursor-pointer"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
@@ -231,7 +231,7 @@ export function UsersTable({ users, currentAdminId }: UsersTableProps) {
               </div>
               <div>
                 <h4 className="text-base font-bold text-neutral-950 font-heading">
-                  Hapus Akun Pengguna
+                  {t.admin.users.deleteModalTitle}
                 </h4>
                 <p className="text-xs text-neutral-500">{selectedUserForDelete.email}</p>
               </div>
@@ -239,12 +239,12 @@ export function UsersTable({ users, currentAdminId }: UsersTableProps) {
 
             <div className="p-3.5 rounded-2xl bg-red-50/70 border border-red-200/80 text-xs text-red-900 leading-relaxed space-y-1.5">
               <p>
-                Apakah Anda yakin ingin menghapus akun <strong>{selectedUserForDelete.email}</strong> secara permanen?
+                {t.admin.users.deleteModalConfirm}
               </p>
               <ul className="list-disc list-inside text-[11px] text-red-800 space-y-0.5">
-                <li>Semua API key aktif milik pengguna ini akan dicabut.</li>
-                <li>Saldo kredit ({formatCredits(selectedUserForDelete.credits ?? 0)} credits) akan dihapus.</li>
-                <li>Sesi login dan kredensial akun akan dibersihkan dari server.</li>
+                <li>{t.admin.users.deleteBullet1}</li>
+                <li>{t.admin.users.deleteBullet2} ({formatCredits(selectedUserForDelete.credits ?? 0)} credits)</li>
+                <li>{t.admin.users.deleteBullet3}</li>
               </ul>
             </div>
 
@@ -255,7 +255,7 @@ export function UsersTable({ users, currentAdminId }: UsersTableProps) {
                 disabled={isPending}
                 className="px-4 py-2 rounded-xl text-xs font-semibold text-neutral-700 hover:bg-neutral-100 transition cursor-pointer"
               >
-                Batal
+                {t.admin.users.cancelBtn}
               </button>
               <button
                 type="button"
@@ -266,12 +266,12 @@ export function UsersTable({ users, currentAdminId }: UsersTableProps) {
                 {isPending ? (
                   <>
                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    <span>Menghapus...</span>
+                    <span>{t.admin.users.deletingBtn}</span>
                   </>
                 ) : (
                   <>
                     <Trash2 className="w-3.5 h-3.5" />
-                    <span>Hapus Pengguna</span>
+                    <span>{t.admin.users.deleteBtn}</span>
                   </>
                 )}
               </button>

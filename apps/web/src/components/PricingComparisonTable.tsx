@@ -24,7 +24,7 @@ interface FeatureCategory {
 type MobileTier = 'starter' | 'pro' | 'ultra';
 
 export default function PricingComparisonTable({ isLoggedIn = false }: { isLoggedIn?: boolean }) {
-  const { locale } = useTranslation();
+  const { locale, t } = useTranslation();
   const en = locale === 'en';
 
   const [mobileTier, setMobileTier] = useState<MobileTier>('pro');
@@ -458,7 +458,7 @@ export default function PricingComparisonTable({ isLoggedIn = false }: { isLogge
                       href={targetBillingUrl}
                       className="inline-flex items-center justify-center gap-1 w-full max-w-[120px] py-2 px-3 rounded-full bg-neutral-950 hover:bg-neutral-800 text-white text-xs font-bold transition-all shadow-xs cursor-pointer"
                     >
-                      <span>Pilih Pro</span>
+                      <span>{t.pricing.choosePro}</span>
                       <ArrowUpRight className="w-3.5 h-3.5" />
                     </Link>
                   </td>
