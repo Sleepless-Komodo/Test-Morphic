@@ -108,6 +108,13 @@ export const auth = betterAuth({
     minPasswordLength: 8,
     resetPasswordTokenExpiresIn: 30 * 60,
     revokeSessionsOnPasswordReset: true,
+    // Signing up again with a registered email returns a generic 200 and sends nothing, so an
+    // unverified user who lost the first link would be stuck. Resend the link only while the
+    // account is unverified; a verified account still gets nothing (no enumeration signal).
+    onExistingUserSignUp: async ({ user }) => {
+      if (user.emailVerified) return;
+      await auth.api.sendVerificationEmail({ body: { email: user.email, callbackURL: '/dashboard' } });
+    },
     sendResetPassword: async ({ user, url }) => {
       await sendEmail({
         to: user.email,
