@@ -43,7 +43,7 @@ const nextConfig = {
             "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
             "img-src 'self' data: blob: https:",
             "font-src 'self' data: https://fonts.gstatic.com https://www.paypalobjects.com",
-            "connect-src 'self' https://www.paypal.com https://www.sandbox.paypal.com https://*.paypal.com",
+            "connect-src 'self' https://www.google.com https://www.paypal.com https://www.sandbox.paypal.com https://*.paypal.com",
             "frame-src https://www.google.com https://www.paypal.com https://www.sandbox.paypal.com",
             "object-src 'none'",
             "frame-ancestors 'none'",
