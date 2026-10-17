@@ -379,7 +379,7 @@ export function ModelsTable({ models, providers }: {
                           type="button"
                           onClick={() => setSelectedModelForDelete(m)}
                           className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border border-red-200 bg-red-50/50 hover:bg-red-50 text-red-600 hover:text-red-700 font-medium transition-colors cursor-pointer shadow-2xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
-                          aria-label={`Hapus model ${m.displayName}`}
+                          aria-label={`${t.admin.models.deleteBtn} ${m.displayName}`}
                         >
                           <Trash2 className="w-3 h-3" />
                           {t.admin.models.deleteBtn}
@@ -426,7 +426,7 @@ export function ModelsTable({ models, providers }: {
                 {t.admin.models.confirmDelete || 'Apakah Anda yakin ingin menghapus model ini?'}
               </p>
               <ul className="list-disc list-inside text-[11px] text-red-800 space-y-0.5">
-                <li>Model <strong>{selectedModelForDelete.publicModelId}</strong> tidak akan lagi tersedia di API inference.</li>
+                <li>Model <strong>{selectedModelForDelete.publicModelId}</strong> {t.admin.models.deleteModelApiNotice}</li>
                 <li>{t.admin.models.deleteModelWarning}</li>
               </ul>
             </div>
@@ -449,7 +449,7 @@ export function ModelsTable({ models, providers }: {
                 {isPending ? (
                   <>
                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    <span>Memproses...</span>
+                    <span>{t.admin.models.processingBtn}</span>
                   </>
                 ) : (
                   <>

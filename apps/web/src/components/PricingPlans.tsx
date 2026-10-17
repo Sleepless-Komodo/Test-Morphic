@@ -354,12 +354,10 @@ export default function PricingPlans({ isLoggedIn = false, showPricingHubLink = 
       : t.pricing.dailyTiers.map((pass) => ({
           name: pass.name,
           price: pass.price,
-          amount: en ? '24 hours' : '24 jam',
-          unit: en ? 'unlimited requests' : 'request tanpa batas',
+          amount: t.pricing.dailyAmount,
+          unit: t.pricing.dailyUnit,
           desc: pass.desc,
-          features: en
-            ? ['24 hours of access', 'Unlimited requests', 'Activated instantly by QRIS']
-            : ['Akses 24 jam', 'Request tanpa batas', 'Aktif instan lewat QRIS'],
+          features: t.pricing.dailyFeatures,
           badge: pass.popular ? t.pricing.bestValueBadge : undefined,
           cta: t.pricing.activatePass,
         }));
@@ -375,8 +373,8 @@ export default function PricingPlans({ isLoggedIn = false, showPricingHubLink = 
   };
 
   const tabs: { id: Mode; label: string }[] = [
-    { id: 'credits', label: en ? 'Credit balance' : 'Saldo kredit' },
-    { id: 'daily', label: en ? 'Daily pass' : 'Pass harian' },
+    { id: 'credits', label: t.pricing.tabCredits },
+    { id: 'daily', label: t.pricing.tabDaily },
   ];
 
   return (
@@ -403,7 +401,7 @@ export default function PricingPlans({ isLoggedIn = false, showPricingHubLink = 
             </motion.p>
           </div>
 
-          <div role="tablist" aria-label={en ? 'Billing mode' : 'Mode pembayaran'} className="inline-flex shrink-0 self-start rounded-full border border-neutral-200 bg-white p-1 md:self-auto">
+          <div role="tablist" aria-label={t.pricing.billingModeAria} className="inline-flex shrink-0 self-start rounded-full border border-neutral-200 bg-white p-1 md:self-auto">
             {tabs.map((tab) => (
               <button
                 key={tab.id}
@@ -567,7 +565,7 @@ export default function PricingPlans({ isLoggedIn = false, showPricingHubLink = 
                   href="/pricing"
                   className="group inline-flex items-center gap-1.5 text-sm font-semibold text-neutral-600 transition-colors hover:text-neutral-950"
                 >
-                  {en ? 'Full pricing and calculator' : 'Harga lengkap dan kalkulator'}
+                  <span suppressHydrationWarning>{t.pricing.fullPricingLink}</span>
                   <ArrowUpRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
                 </Link>
               )}

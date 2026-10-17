@@ -112,24 +112,15 @@ export default function LandingApiCta({ isLoggedIn = false }: LandingApiCtaProps
             {/* Eyebrow Badge */}
             <div className="mb-4 inline-flex items-center gap-2 rounded-md border border-neutral-300 bg-white px-3 py-1 text-xs font-mono font-medium text-neutral-700 shadow-2xs">
               <ShieldCheck className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
-              <span className="tracking-[0.16em] uppercase font-bold text-[10px]">
-                {locale === 'id' ? 'TANPA KARTU KREDIT · QRIS INSTAN' : 'NO CARD · INSTANT QRIS'}
+              <span className="tracking-[0.16em] uppercase font-bold text-[10px]" suppressHydrationWarning>
+                {t.cta.badge}
               </span>
             </div>
 
             {/* Big Editorial Headline */}
             <h2 className="font-heading text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight text-neutral-950 leading-[1.1]">
-              {locale === 'id' ? (
-                <>
-                  Semua model, satu key.
-                  <span className="block text-neutral-500 font-semibold">Mulai coding hari ini.</span>
-                </>
-              ) : (
-                <>
-                  Every model, one key.
-                  <span className="block text-neutral-500 font-semibold">Start shipping today.</span>
-                </>
-              )}
+              <span suppressHydrationWarning>{t.cta.title}</span>{' '}
+              <span className="block text-neutral-500 font-semibold" suppressHydrationWarning>{t.cta.titleSub}</span>
             </h2>
 
             {/* Action Buttons Row (Unified rounded-full pill buttons) */}
@@ -138,28 +129,26 @@ export default function LandingApiCta({ isLoggedIn = false }: LandingApiCtaProps
                 href={isLoggedIn ? '/dashboard/keys' : '/login'}
                 className="group relative inline-flex items-center justify-center gap-2.5 h-12 px-6 sm:px-7 rounded-full bg-neutral-950 hover:bg-neutral-900 active:bg-black text-white text-sm sm:text-base font-semibold shadow-xs transition-all duration-200 ease-out hover:shadow-md active:scale-[0.99] cursor-pointer text-center"
               >
-                <span>{isLoggedIn ? (locale === 'id' ? 'Kelola API Key' : 'Manage Keys') : t.cta.getStartedBtn}</span>
+                <span suppressHydrationWarning>{isLoggedIn ? t.cta.manageKeysBtn : t.cta.getStartedBtn}</span>
                 <ArrowUpRight className="w-4 h-4 shrink-0 transition-transform duration-200 ease-out group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
               </Link>
               <Link
                 href="/models"
                 className="group relative inline-flex items-center justify-center gap-2.5 h-12 px-6 sm:px-7 rounded-full bg-white hover:bg-neutral-100 active:bg-neutral-200 text-neutral-900 border border-neutral-300 hover:border-neutral-950 text-sm sm:text-base font-semibold transition-all duration-200 ease-out active:scale-[0.99] cursor-pointer text-center shadow-2xs"
               >
-                <span>{t.cta.viewModelsBtn}</span>
+                <span suppressHydrationWarning>{t.cta.viewModelsBtn}</span>
                 <ArrowUpRight className="w-4 h-4 shrink-0 text-neutral-500 group-hover:text-neutral-900 transition-all duration-200 ease-out group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
               </Link>
             </div>
 
             {/* Subtitle / Paragraph Description underneath buttons (LangChain sequence) */}
             <p className="mt-5 max-w-xl text-sm sm:text-base text-neutral-600 leading-relaxed font-body">
-              {t.cta.desc}
+              <span suppressHydrationWarning>{t.cta.desc}</span>
             </p>
 
             {/* Monochrome single-line trust note */}
             <div className="mt-7 pt-5 border-t border-neutral-200 text-[11px] font-mono text-neutral-500 w-full">
-              {locale === 'id'
-                ? 'Pembayaran QRIS instan · Hingga 180 RPM · Kompatibel format OpenAI SDK'
-                : 'Instant QRIS payment · Up to 180 RPM · OpenAI SDK compatible'}
+              <span suppressHydrationWarning>{t.cta.trustNote}</span>
             </div>
           </div>
         </div>

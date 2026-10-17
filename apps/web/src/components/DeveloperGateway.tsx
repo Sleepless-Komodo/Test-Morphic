@@ -190,7 +190,7 @@ export default function DeveloperGateway({
             </div>
             {balanceUpdatedAtState && (
               <p className="text-[11px] text-neutral-400 font-mono mb-2">
-                {isId ? 'Terakhir diperbarui: ' : 'Last updated: '}
+                <span suppressHydrationWarning>{t.dashboard.lastUpdated}</span>
                 {new Date(balanceUpdatedAtState).toLocaleDateString(isId ? 'id-ID' : 'en-US', {
                   day: 'numeric',
                   month: 'short',

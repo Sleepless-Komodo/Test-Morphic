@@ -95,8 +95,8 @@ export default function Navbar({ session }: NavbarProps) {
   }, [isHome]);
 
   const navLinks = [
-    { href: '/#integration', label: locale === 'id' ? 'Cara Kerja' : 'How it Works', isRoute: false },
-    { href: '/models', label: locale === 'id' ? 'Model' : 'Models', isRoute: true },
+    { href: '/#integration', label: t.nav.howItWorks, isRoute: false },
+    { href: '/models', label: t.nav.models, isRoute: true },
     { href: '/pricing', label: t.nav.price, isRoute: true },
     { href: '/docs', label: t.nav.docs || 'Docs', isRoute: true },
     { href: '/#faq', label: t.nav.faq, isRoute: false },
@@ -203,9 +203,9 @@ export default function Navbar({ session }: NavbarProps) {
           {/* Language Switcher Pill - Stationed on the far right edge */}
           <button
             onClick={toggleLanguage}
-            aria-label="Switch Language (ID / EN)"
+            aria-label={t.nav.switchLanguage}
             className="nav-ink flex items-center gap-1.5 px-3 py-2 rounded-full text-[13px] font-semibold text-neutral-700 hover:text-neutral-950 hover:bg-neutral-900/[0.06] transition-colors cursor-pointer select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
-            title="Switch Language (ID / EN)"
+            title={t.nav.switchLanguage}
           >
             <Globe className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
             <span suppressHydrationWarning className="uppercase">{locale}</span>
@@ -216,7 +216,7 @@ export default function Navbar({ session }: NavbarProps) {
         <div className="md:hidden flex items-center gap-2">
           <button
             onClick={toggleLanguage}
-            aria-label="Switch Language (ID / EN)"
+            aria-label={t.nav.switchLanguage}
             className="nav-ink flex items-center gap-1.5 px-3 py-2 rounded-full text-[13px] font-semibold uppercase text-neutral-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
           >
             <Globe className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
@@ -225,7 +225,7 @@ export default function Navbar({ session }: NavbarProps) {
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
             className="nav-ink p-2 text-neutral-800 hover:text-neutral-950 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
-            aria-label="Toggle Navigation Menu"
+            aria-label={t.nav.toggleMenu}
           >
             {mobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
           </button>
