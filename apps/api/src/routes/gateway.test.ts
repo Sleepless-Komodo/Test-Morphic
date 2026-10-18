@@ -325,3 +325,57 @@ test('P1-06: data export holds the account data and no secrets', async () => {
   assert.ok(j.profile.email.endsWith('@gw.test'));
   for (const secret of ['key_hash', 'keyHash', 'password', 'sk-test']) assert.ok(!text.includes(secret), secret);
 });
+
+// ── Agentic tool-calling & content: null compatibility ──────────────────────
+test('agentic tool calling: assistant message with content: null and tool_calls is accepted and forwarded intact', async () => {
+  const prov = await mkProvider('toolcall', 'http://toolcall.upstream.test');
+  const model = await mkModel(prov.id);
+  const { rawKey } = await mkUser(1_000_000);
+
+  let forwardedBody: Record<string, unknown> | null = null;
+  const messages = [
+    { role: 'user', content: 'pakai tool calc untuk 2+2' },
+    {
+      role: 'assistant',
+      content: null,
+      tool_calls: [
+        {
+          id: 'call_1',
+          type: 'function',
+          function: { name: 'calc', arguments: '{"expr":"2+2"}' },
+        },
+      ],
+    },
+    { role: 'tool', tool_call_id: 'call_1', content: '4' },
+  ];
+
+  const res = await withUpstream(
+    (_url, init) => {
+      forwardedBody = JSON.parse(String(init.body));
+      return okCompletion('Hasil dari 2+2 adalah 4.');
+    },
+    () => chat(rawKey, { model: model.publicModelId, messages }),
+  );
+
+  assert.equal(res.status, 200);
+  assert.ok(forwardedBody);
+  const fwdMessages = (forwardedBody as { messages: Array<Record<string, unknown>> }).messages;
+  assert.equal(fwdMessages.length, 3);
+
+  // Assistant turn: content null allowed & tool_calls preserved
+  assert.equal(fwdMessages[1]!.role, 'assistant');
+  assert.equal(fwdMessages[1]!.content, null);
+  assert.deepEqual(fwdMessages[1]!.tool_calls, [
+    {
+      id: 'call_1',
+      type: 'function',
+      function: { name: 'calc', arguments: '{"expr":"2+2"}' },
+    },
+  ]);
+
+  // Tool turn: tool_call_id preserved
+  assert.equal(fwdMessages[2]!.role, 'tool');
+  assert.equal(fwdMessages[2]!.tool_call_id, 'call_1');
+  assert.equal(fwdMessages[2]!.content, '4');
+});
+

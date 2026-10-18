@@ -243,9 +243,17 @@ v1.post('/chat/completions', async (c) => {
     );
   }
 
-  const promptText = body.messages
-    .map((m) => (typeof m.content === 'string' ? m.content : JSON.stringify(m.content)))
+  let promptText = body.messages
+    .map((m) => {
+      if (typeof m.content === 'string') return m.content;
+      if (m.content != null) return JSON.stringify(m.content);
+      if (m.tool_calls != null) return JSON.stringify(m.tool_calls);
+      return '';
+    })
     .join('\n');
+  if (Array.isArray(body.tools) && body.tools.length > 0) {
+    promptText += '\n' + JSON.stringify(body.tools);
+  }
   const promptTokens = estimatePromptTokens(promptText);
   const wantsStream = body.stream === true;
 

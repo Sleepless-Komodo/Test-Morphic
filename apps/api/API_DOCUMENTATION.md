@@ -97,6 +97,37 @@ Returns a standard OpenAI chat completion response object.
 **Special Headers**
 If the model requested is deprecated and redirected to a newer model, the API will include an `X-Morphic-Warning` header in the response.
 
+#### Tool Calling & Agentic Clients (OpenCode, Cline, Cursor, Continue)
+Morphic Gateway fully supports OpenAI tool calling and agentic workflows. When an assistant turn contains only tool calls, `"content": null` is accepted, and all tool calling fields (`tool_calls`, `tool_call_id`) are preserved intact when forwarded to the upstream provider:
+
+```json
+{
+  "model": "deepseek-v4.1",
+  "messages": [
+    { "role": "user", "content": "Calculate 2+2" },
+    {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_calc_1",
+          "type": "function",
+          "function": {
+            "name": "calculator",
+            "arguments": "{\"expression\":\"2+2\"}"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "call_calc_1",
+      "content": "4"
+    }
+  ]
+}
+```
+
 ---
 
 ### List Models

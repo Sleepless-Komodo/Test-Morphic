@@ -65,16 +65,54 @@ paths:
                   type: array
                   items:
                     type: object
+                    required:
+                      - role
                     properties:
                       role:
                         type: string
+                        enum: [system, user, assistant, tool, developer]
                         example: "user"
                       content:
                         type: string
+                        nullable: true
                         example: "Hello!"
+                      name:
+                        type: string
+                      tool_calls:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            id:
+                              type: string
+                            type:
+                              type: string
+                              example: "function"
+                            function:
+                              type: object
+                              properties:
+                                name:
+                                  type: string
+                                arguments:
+                                  type: string
+                      tool_call_id:
+                        type: string
+                tools:
+                  type: array
+                  items:
+                    type: object
+                tool_choice:
+                  oneOf:
+                    - type: string
+                    - type: object
                 stream:
                   type: boolean
                   default: false
+                stream_options:
+                  type: object
+                  properties:
+                    include_usage:
+                      type: boolean
                 max_tokens:
                   type: integer
       responses:
