@@ -73,4 +73,5 @@ apps/web/AGENTS.md
 # Internal audit notes — never commit
 audit-out/
 apps/api/audit-folder/
+docs/artifact/
 .skills/
