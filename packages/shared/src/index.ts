@@ -4,3 +4,4 @@ export * from './types.ts';
 export * from './models.ts';
 export * from './anthropic.ts';
 export * from './email.ts';
+export * from './admin-rbac.ts';

@@ -15,6 +15,15 @@ export function estimatePromptTokens(text: string): number {
   return Math.ceil(text.length / 4);
 }
 
+/**
+ * Conservative prompt-size estimate used ONLY to size the credit reservation. Settlement clamps the
+ * charge to the reservation, so under-estimating dense text (CJK, code) under-bills. UTF-8 bytes / 3
+ * over-reserves ASCII text (refunded at settle) and covers CJK. Do not use for display or settlement.
+ */
+export function estimatePromptTokensForReservation(text: string): number {
+  return Math.ceil(new TextEncoder().encode(text).length / 3);
+}
+
 export function tokensToCredits(tokens: number, creditsPer1m: number): number {
   return Math.ceil((tokens * creditsPer1m) / 1_000_000);
 }
