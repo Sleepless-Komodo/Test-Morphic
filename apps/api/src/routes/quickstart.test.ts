@@ -54,5 +54,63 @@ test('GET /.well-known/opencode: login command + remote provider config, key sta
     }
     // Nothing credential-shaped besides that placeholder.
     assert.ok(!JSON.stringify(body).replaceAll('{env:MORPHIC_API_KEY}', '').match(/encrypted|credential|env:/i));
+    // Without NEXT_PUBLIC_GATEWAY_URL, response must not be cached publicly by shared CDNs.
+    assert.equal(res.headers.get('cache-control'), 'private, no-store');
+    assert.match(res.headers.get('vary') ?? '', /Host, X-Forwarded-Proto/);
+  }
+});
+
+test('BUG-03: rejects malicious x-forwarded-proto and ignores spoofed x-forwarded-host', async () => {
+  const origGateway = process.env.NEXT_PUBLIC_GATEWAY_URL;
+  delete process.env.NEXT_PUBLIC_GATEWAY_URL;
+  try {
+    const bashRes = await app.request('http://morphic-api.web.id/quickstart/opencode.sh', {
+      headers: {
+        host: 'morphic-api.web.id',
+        'x-forwarded-host': 'evil.attacker.example',
+        'x-forwarded-proto': 'https"; touch /tmp/pwned #',
+      },
+    });
+    assert.equal(bashRes.status, 200);
+    const bashText = await bashRes.text();
+    assert.ok(!bashText.includes('pwned'));
+    assert.ok(!bashText.includes('evil.attacker.example'));
+    assert.ok(bashText.includes('http://morphic-api.web.id/v1'));
+
+    const psRes = await app.request('https://morphic-api.web.id/quickstart/opencode.ps1', {
+      headers: {
+        host: 'morphic-api.web.id',
+        'x-forwarded-host': 'evil.attacker.example',
+        'x-forwarded-proto': "https'; Invoke-Expression 'calc' #",
+      },
+    });
+    assert.equal(psRes.status, 200);
+    const psText = await psRes.text();
+    assert.ok(!psText.includes('Invoke-Expression'));
+    assert.ok(!psText.includes('evil.attacker.example'));
+    assert.ok(psText.includes('https://morphic-api.web.id/v1'));
+
+    const wkRes = await app.request('https://morphic-api.web.id/.well-known/opencode', {
+      headers: {
+        host: 'morphic-api.web.id',
+        'x-forwarded-host': 'evil.attacker.example',
+      },
+    });
+    assert.equal(wkRes.status, 200);
+    const wkBody = await wkRes.json();
+    assert.equal(wkBody.config.provider.morphic.options.baseURL, 'https://morphic-api.web.id/v1');
+
+    // When NEXT_PUBLIC_GATEWAY_URL is pinned, shared public caching is safe.
+    process.env.NEXT_PUBLIC_GATEWAY_URL = 'https://gateway.morphic.example';
+    const pinnedRes = await app.request('https://morphic-api.web.id/.well-known/opencode', {
+      headers: { 'x-forwarded-host': 'evil.attacker.example' },
+    });
+    assert.equal(pinnedRes.status, 200);
+    assert.equal(pinnedRes.headers.get('cache-control'), 'public, max-age=60');
+    const pinnedBody = await pinnedRes.json();
+    assert.equal(pinnedBody.config.provider.morphic.options.baseURL, 'https://gateway.morphic.example/v1');
+  } finally {
+    if (origGateway !== undefined) process.env.NEXT_PUBLIC_GATEWAY_URL = origGateway;
+    else delete process.env.NEXT_PUBLIC_GATEWAY_URL;
   }
 });

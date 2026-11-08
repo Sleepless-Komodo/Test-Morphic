@@ -1,4 +1,6 @@
 import { Hono } from 'hono';
+import { jsonBodyLimit, MANAGEMENT_MAX_BODY_BYTES } from '../middleware/body-limit';
+import { cookieOriginGuard } from '../middleware/origin-check';
 import { sessionAuth, denyKeyDerivedSession } from '../middleware/session-auth';
 import { sessionRateLimit } from '../middleware/session-ratelimit';
 import {
@@ -22,6 +24,8 @@ import {
  */
 const payments = new Hono();
 
+payments.use('*', jsonBodyLimit(MANAGEMENT_MAX_BODY_BYTES, '1MB'));
+payments.use('*', cookieOriginGuard);
 // Enforce session authentication for all payment routes
 payments.use('*', sessionAuth);
 payments.use('*', denyKeyDerivedSession);

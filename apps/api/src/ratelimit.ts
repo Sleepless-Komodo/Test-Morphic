@@ -152,6 +152,30 @@ export async function releaseConcurrency(keyId: string, token: string): Promise<
  * Fixed-window limiter for session-authenticated management routes.
  * Keyed on userId AND client IP so neither multi-account nor single-account abuse slips through.
  */
+export async function checkSessionRateLimitDetailed(
+  scope: string,
+  userId: string,
+  ip: string,
+  limit: number,
+  windowSeconds = 60,
+): Promise<{ ok: boolean; remaining: number; retryAfter: number }> {
+  const now = Date.now();
+  const windowMs = windowSeconds * 1000;
+  const bucket = Math.floor(now / windowMs);
+  const userKey = `srl:${scope}:u:${userId}:${bucket}`;
+  const ipKey = `srl:${scope}:ip:${ip}:${bucket}`;
+  const [u, i] = await Promise.all([
+    rateLimitStore.increment(userKey, windowSeconds * 2),
+    rateLimitStore.increment(ipKey, windowSeconds * 2),
+  ]);
+  const used = Math.max(u, i);
+  return {
+    ok: u <= limit && i <= limit,
+    remaining: Math.max(0, limit - used),
+    retryAfter: Math.max(1, Math.ceil(((bucket + 1) * windowMs - now) / 1000)),
+  };
+}
+
 export async function checkSessionRateLimit(
   scope: string,
   userId: string,
@@ -159,12 +183,6 @@ export async function checkSessionRateLimit(
   limit: number,
   windowSeconds = 60,
 ): Promise<boolean> {
-  const bucket = Math.floor(Date.now() / (windowSeconds * 1000));
-  const userKey = `srl:${scope}:u:${userId}:${bucket}`;
-  const ipKey = `srl:${scope}:ip:${ip}:${bucket}`;
-  const [u, i] = await Promise.all([
-    rateLimitStore.increment(userKey, windowSeconds * 2),
-    rateLimitStore.increment(ipKey, windowSeconds * 2),
-  ]);
-  return u <= limit && i <= limit;
+  const res = await checkSessionRateLimitDetailed(scope, userId, ip, limit, windowSeconds);
+  return res.ok;
 }

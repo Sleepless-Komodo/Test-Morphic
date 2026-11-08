@@ -240,6 +240,22 @@ test('FIX-BE-P0-04: POST /webhooks/mock returns 404 when NODE_ENV=production', a
   }
 });
 
+test('M3: POST /webhooks/mock fails closed with 404 when NODE_ENV is unset', async () => {
+  const origEnv = process.env.NODE_ENV;
+  try {
+    delete process.env.NODE_ENV;
+    const res = await app.request('/webhooks/mock', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event_id: 'test', payment_id: 'test', status: 'paid' }),
+    });
+    assert.equal(res.status, 404, 'mock webhook should be 404 when NODE_ENV is unset');
+  } finally {
+    if (origEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = origEnv;
+  }
+});
+
 // ── FIX-BE-P0-03 / Fix 1.4: PayPal webhook S2S endpoint ──────────────────────
 test('Fix 1.4: PayPal webhook rejects missing signature and processes valid event idempotently', async () => {
   // 1. Missing transmission headers are rejected before any PayPal round-trip (T5: 400, not 401 —
@@ -449,5 +465,115 @@ test('P5-4: suspended accounts cannot authenticate via API key (403 account_susp
   await db.update(s.users).set({ suspended: false }).where(eq(s.users.id, user.id));
   const postUnsuspend = await app.request('/v1/models', { headers: keyAuth });
   assert.equal(postUnsuspend.status, 200);
+});
+
+// ── H1: multiplier parameters on /v1/chat/completions are rejected ───────────
+test('H1: POST /v1/chat/completions rejects n > 1 and best_of > 1 with 400', async () => {
+  const { token } = await mkUser('h1mult');
+  const auth = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+  const keyRes = await app.request('/v1/keys', { method: 'POST', headers: auth, body: '{"name":"h1-key"}' });
+  assert.equal(keyRes.status, 201);
+  const created = (await keyRes.json()) as { key: string };
+  const keyAuth = { Authorization: `Bearer ${created.key}`, 'Content-Type': 'application/json' };
+
+  const resN = await app.request('/v1/chat/completions', {
+    method: 'POST',
+    headers: keyAuth,
+    body: JSON.stringify({ model: 'gpt-4o', n: 2, messages: [{ role: 'user', content: 'hi' }] }),
+  });
+  assert.equal(resN.status, 400);
+
+  const resBestOf = await app.request('/v1/chat/completions', {
+    method: 'POST',
+    headers: keyAuth,
+    body: JSON.stringify({ model: 'gpt-4o', best_of: 3, messages: [{ role: 'user', content: 'hi' }] }),
+  });
+  assert.equal(resBestOf.status, 400);
+  const bestOfBody = (await resBestOf.json()) as { error?: { code?: string } };
+  assert.equal(bestOfBody?.error?.code, 'unsupported_parameter');
+});
+
+// ── M1: key rotation caps total active unexpired keys at 10 ──────────────────
+test('M1: POST /v1/keys/:id/rotate allows 5 active keys (201) and refuses at 10 active keys (409)', async () => {
+  const { user, token } = await mkUser('m1rotcap');
+  const auth = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+  const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+  try {
+    // 5 active rows -> rotation succeeds (201, leaving 6 active rows)
+    const fiveRows = await db
+      .insert(s.apiKeys)
+      .values(
+        Array.from({ length: 5 }, (_, idx) => ({
+          userId: user.id,
+          name: `k-${idx}`,
+          keyHash: `hash5-${suffix}-${idx}`,
+          keyPrefix: 'mp-test500',
+          status: 'active' as const,
+        })),
+      )
+      .returning({ id: s.apiKeys.id });
+
+    const okRes = await app.request(`/v1/keys/${fiveRows[0]!.id}/rotate`, {
+      method: 'POST',
+      headers: auth,
+      body: '{}',
+    });
+    assert.equal(okRes.status, 201);
+
+    // Top up to 10 active rows (we currently have 6 active rows: 4 untouched + 1 in grace + 1 newly minted)
+    await db.insert(s.apiKeys).values(
+      Array.from({ length: 4 }, (_, idx) => ({
+        userId: user.id,
+        name: `k-extra-${idx}`,
+        keyHash: `hash10-${suffix}-${idx}`,
+        keyPrefix: 'mp-test100',
+        status: 'active' as const,
+      })),
+    );
+
+    const cappedRes = await app.request(`/v1/keys/${fiveRows[1]!.id}/rotate`, {
+      method: 'POST',
+      headers: auth,
+      body: '{}',
+    });
+    assert.equal(cappedRes.status, 409);
+    const cappedBody = (await cappedRes.json()) as { error?: { code?: string } };
+    assert.equal(cappedBody?.error?.code, 'max_active_keys_exceeded');
+  } finally {
+    await db.delete(s.apiKeys).where(eq(s.apiKeys.userId, user.id));
+  }
+});
+
+// ── M2 (CSRF): cookie-authenticated mutations require an allowed Origin ──────
+test('M2: cookie-only POST without allowed Origin returns 403 origin_not_allowed', async () => {
+  const { token } = await mkUser('m2origin');
+  const cookieHeader = `better-auth.session_token=${token}`;
+
+  const noOrigin = await app.request('/v1/keys', {
+    method: 'POST',
+    headers: { Cookie: cookieHeader, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: 'csrf-key' }),
+  });
+  assert.equal(noOrigin.status, 403);
+  const noOriginBody = (await noOrigin.json()) as { error?: { code?: string } };
+  assert.equal(noOriginBody?.error?.code, 'origin_not_allowed');
+
+  const evilOrigin = await app.request('/v1/keys', {
+    method: 'POST',
+    headers: { Cookie: cookieHeader, Origin: 'https://evil.example', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: 'csrf-key' }),
+  });
+  assert.equal(evilOrigin.status, 403);
+
+  const validOrigin = process.env.NEXT_PUBLIC_APP_URL
+    ? new URL(process.env.NEXT_PUBLIC_APP_URL).origin
+    : 'http://localhost:3000';
+  const okRes = await app.request('/v1/keys', {
+    method: 'POST',
+    headers: { Cookie: cookieHeader, Origin: validOrigin, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: 'csrf-ok-key' }),
+  });
+  assert.equal(okRes.status, 201);
 });
 

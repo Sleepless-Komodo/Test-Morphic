@@ -12,7 +12,11 @@ import { redeem } from './routes/redeem';
 import { catalog } from './routes/catalog';
 import { quickstart, wellKnown } from './routes/quickstart';
 import { requestId } from './middleware/request-id';
+import { jsonBodyLimit } from './middleware/body-limit';
+import { ipRateLimit } from './middleware/auth';
+import { MAX_BODY_BYTES } from './handlers/v1';
 import { getTrustedClientIp, isLoopbackIp } from './lib/ip';
+import { createInternalCallEnv } from './lib/internal-context';
 import { checkRateLimit } from './ratelimit';
 import { Scalar } from '@scalar/hono-api-reference';
 import { openApiApp } from './openapi/registry';
@@ -117,27 +121,43 @@ if (process.env.ANTHROPIC_ENABLED === 'true') app.route('/v1', anthropic);
 app.route('/v1', v1);
 
 if (process.env.RESPONSES_API_ENABLED === 'true') {
-  app.post('/v1/responses', (c) =>
-    handleResponses(c.req.raw, async (body, headers) =>
-      app.request('/v1/chat/completions', { method: 'POST', headers, body: JSON.stringify(body) }),
-    ),
-  );
+  app.use('/v1/responses', jsonBodyLimit(MAX_BODY_BYTES, '10MB'), ipRateLimit);
+  app.post('/v1/responses', (c) => {
+    const internalEnv = createInternalCallEnv({
+      requestId: c.get('requestId'),
+      clientIp: getTrustedClientIp(c),
+      ipRateLimited: true,
+    });
+    return handleResponses(c.req.raw, async (body, headers, signal) =>
+      app.request(
+        '/v1/chat/completions',
+        {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(body),
+          signal: signal ?? c.req.raw.signal,
+        },
+        internalEnv,
+      ),
+    );
+  });
 }
 
 /**
  * Helper to determine if OpenAPI docs & specification should be publicly accessible.
- * In production (NODE_ENV=production), documentation endpoints (/docs, /openapi.json)
- * are disabled by default to prevent attack surface enumeration and recon, unless
- * explicitly enabled via ENABLE_API_DOCS=true.
+ * Fail-closed outside development/test so unset NODE_ENV, staging, or production
+ * never expose documentation endpoints (/docs, /openapi.json) unless explicitly
+ * enabled via ENABLE_API_DOCS=true.
  */
 export const isDocsPubliclyAvailable = (): boolean => {
   if (process.env.ENABLE_API_DOCS === 'true') return true;
   if (process.env.ENABLE_API_DOCS === 'false') return false;
-  return process.env.NODE_ENV !== 'production';
+  return process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test';
 };
 
 // OpenAPI specification & interactive Scalar documentation
-// Blocked in production by default for security hardening (recon prevention).
+// Blocked outside development/test by default for security hardening (recon prevention).
+// Serve ONLY /openapi.json from openApiApp rather than mounting openApiApp's unauthenticated stub routes.
 app.use('/docs*', async (c, next) => {
   if (!isDocsPubliclyAvailable()) {
     return c.text('Not Found', 404);
@@ -145,14 +165,13 @@ app.use('/docs*', async (c, next) => {
   await next();
 });
 
-app.use('/openapi.json', async (c, next) => {
+app.get('/openapi.json', (c) => {
   if (!isDocsPubliclyAvailable()) {
     return c.text('Not Found', 404);
   }
-  await next();
+  return openApiApp.fetch(c.req.raw);
 });
 
-app.route('/', openApiApp);
 app.get(
   '/docs',
   Scalar({

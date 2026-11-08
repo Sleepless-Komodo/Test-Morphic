@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { db, schema as s } from '@morphic/db';
 import { eq } from 'drizzle-orm';
 import { readyModelIds } from '@morphic/shared/model-readiness';
+import { jsonBodyLimit, MANAGEMENT_MAX_BODY_BYTES } from '../middleware/body-limit';
 import { sessionAuth } from '../middleware/session-auth';
 import { sessionRateLimit } from '../middleware/session-ratelimit';
 
@@ -12,6 +13,7 @@ import { sessionRateLimit } from '../middleware/session-ratelimit';
  */
 const catalog = new Hono();
 
+catalog.use('*', jsonBodyLimit(MANAGEMENT_MAX_BODY_BYTES, '1MB'));
 catalog.use('*', sessionAuth);
 catalog.use('*', sessionRateLimit('catalog', 120));
 

@@ -664,7 +664,7 @@ test('1E: POOL_ENABLED=false keeps the legacy primary -> fallback path', async (
   const pooled = await mkProvider(`${upstream.baseUrl}/x`);
   const model = await mkModel(primary.id, { fallbackProviderId: fallback.id });
   await mkPool(model.id, pooled.id, { providerModelId: `pool/${uid()}`, priority: 1 });
-  delete process.env.POOL_ENABLED;
+  process.env.POOL_ENABLED = 'false';
   invalidateRouterCache();
   const { rawKey } = await mkUser();
 

@@ -522,7 +522,7 @@ test('Phase4: POOL_ENABLED=false ignores pool capability flags and uses the lega
   const pooled = await mkProvider('http://p4-pool-off.upstream.test');
   const model = await mkModel(legacy.id);
   await mkPool(model.id, pooled.id, { supportsTools: false });
-  delete process.env.POOL_ENABLED;
+  process.env.POOL_ENABLED = 'false';
   invalidateRouterCache();
   const { rawKey } = await mkUser();
 

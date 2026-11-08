@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { getTrustedClientIp, isLoopbackIp } from './ip.js';
+import { getTrustedClientIp, isLoopbackIp, trustedProxyHops } from './ip.js';
 
 function mockContext(headers: Record<string, string>): any {
   return {
@@ -58,4 +58,88 @@ test('P5-5: isLoopbackIp correctly identifies loopback hosts', () => {
   assert.equal(isLoopbackIp('192.168.1.1'), false);
   assert.equal(isLoopbackIp('173.0.81.1'), false);
   assert.equal(isLoopbackIp('unknown'), false);
+});
+
+test('H2: TRUSTED_PROXY_HOPS=2 selects 2nd hop from the right', () => {
+  const origCf = process.env.TRUST_CF_CONNECTING_IP;
+  const origHops = process.env.TRUSTED_PROXY_HOPS;
+  try {
+    delete process.env.TRUST_CF_CONNECTING_IP;
+    process.env.TRUSTED_PROXY_HOPS = '2';
+    const c = mockContext({ 'x-forwarded-for': '1.1.1.1, 2.2.2.2, 3.3.3.3' });
+    assert.equal(getTrustedClientIp(c), '2.2.2.2');
+  } finally {
+    if (origCf === undefined) delete process.env.TRUST_CF_CONNECTING_IP;
+    else process.env.TRUST_CF_CONNECTING_IP = origCf;
+    if (origHops === undefined) delete process.env.TRUSTED_PROXY_HOPS;
+    else process.env.TRUSTED_PROXY_HOPS = origHops;
+  }
+});
+
+test('H2: TRUSTED_PROXY_HOPS=0 ignores X-Forwarded-For', () => {
+  const origCf = process.env.TRUST_CF_CONNECTING_IP;
+  const origHops = process.env.TRUSTED_PROXY_HOPS;
+  try {
+    delete process.env.TRUST_CF_CONNECTING_IP;
+    process.env.TRUSTED_PROXY_HOPS = '0';
+    const c = mockContext({ 'x-forwarded-for': '9.9.9.9' });
+    assert.equal(getTrustedClientIp(c), 'unknown');
+  } finally {
+    if (origCf === undefined) delete process.env.TRUST_CF_CONNECTING_IP;
+    else process.env.TRUST_CF_CONNECTING_IP = origCf;
+    if (origHops === undefined) delete process.env.TRUSTED_PROXY_HOPS;
+    else process.env.TRUSTED_PROXY_HOPS = origHops;
+  }
+});
+
+test('H2: X-Forwarded-For with fewer hops than TRUSTED_PROXY_HOPS is ignored', () => {
+  const origCf = process.env.TRUST_CF_CONNECTING_IP;
+  const origHops = process.env.TRUSTED_PROXY_HOPS;
+  try {
+    delete process.env.TRUST_CF_CONNECTING_IP;
+    process.env.TRUSTED_PROXY_HOPS = '3';
+    const c = mockContext({ 'x-forwarded-for': '1.1.1.1' });
+    assert.equal(getTrustedClientIp(c), 'unknown');
+  } finally {
+    if (origCf === undefined) delete process.env.TRUST_CF_CONNECTING_IP;
+    else process.env.TRUST_CF_CONNECTING_IP = origCf;
+    if (origHops === undefined) delete process.env.TRUSTED_PROXY_HOPS;
+    else process.env.TRUSTED_PROXY_HOPS = origHops;
+  }
+});
+
+test('H2: invalid TRUSTED_PROXY_HOPS fails closed to 0', () => {
+  const origHops = process.env.TRUSTED_PROXY_HOPS;
+  try {
+    process.env.TRUSTED_PROXY_HOPS = 'abc';
+    assert.equal(trustedProxyHops(), 0);
+  } finally {
+    if (origHops === undefined) delete process.env.TRUSTED_PROXY_HOPS;
+    else process.env.TRUSTED_PROXY_HOPS = origHops;
+  }
+});
+
+test('H2: unset TRUSTED_PROXY_HOPS defaults to 0 in production and 1 in test', () => {
+  assert.equal(trustedProxyHops({ NODE_ENV: 'production' }), 0);
+  assert.equal(trustedProxyHops({ NODE_ENV: 'test' }), 1);
+});
+
+test('H2: production with unset TRUST_CF_CONNECTING_IP and unset hops ignores X-Forwarded-For', () => {
+  const origEnv = process.env.NODE_ENV;
+  const origCf = process.env.TRUST_CF_CONNECTING_IP;
+  const origHops = process.env.TRUSTED_PROXY_HOPS;
+  try {
+    process.env.NODE_ENV = 'production';
+    delete process.env.TRUST_CF_CONNECTING_IP;
+    delete process.env.TRUSTED_PROXY_HOPS;
+    const c = mockContext({ 'x-forwarded-for': '8.8.8.8' });
+    assert.equal(getTrustedClientIp(c), 'unknown');
+  } finally {
+    if (origEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = origEnv;
+    if (origCf === undefined) delete process.env.TRUST_CF_CONNECTING_IP;
+    else process.env.TRUST_CF_CONNECTING_IP = origCf;
+    if (origHops === undefined) delete process.env.TRUSTED_PROXY_HOPS;
+    else process.env.TRUSTED_PROXY_HOPS = origHops;
+  }
 });

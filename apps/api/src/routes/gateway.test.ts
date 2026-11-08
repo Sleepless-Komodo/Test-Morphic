@@ -15,7 +15,7 @@ const { app } = await import('../app');
 const { callProvider, invalidateRouterCache } = await import('../domain/router');
 const { recordFailure, recordSuccess, checkCircuit, computeProviderAggregate } = await import('../domain/circuit-breaker');
 const { getTrustedClientIp } = await import('../lib/ip');
-const { notifyLowBalance } = await import('../lib/notify');
+const { notifyLowBalance, notifyKeyRevoked, notifyAccountSuspended } = await import('../lib/notify');
 const { Hono } = await import('hono');
 
 const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -305,6 +305,45 @@ test('P2-02: low-balance email fires once per 24h window', async () => {
 
   const rich = await mkUser(10_000_000);
   assert.equal(await notifyLowBalance(rich.user.id, send as never), false);
+
+  const belowFiveThousandIdr = await mkUser(4_000_000); // Rp 2.000 (< Rp 5.000 default threshold)
+  const bodies: { subject: string; text?: string }[] = [];
+  assert.equal(
+    await notifyLowBalance(belowFiveThousandIdr.user.id, (async (m: { subject: string; text?: string }) => {
+      bodies.push(m);
+    }) as never),
+    true,
+  );
+  assert.match(bodies[0]!.text ?? '', /Rp 2\.000/);
+});
+
+test('P0-02: notifyKeyRevoked and notifyAccountSuspended email active users and skip deleted accounts', async () => {
+  const { user } = await mkUser();
+  const captured: { to: string; subject: string; text?: string; html: string }[] = [];
+  const fakeSend = async (m: { to: string; subject: string; text?: string; html: string }) => {
+    captured.push(m);
+  };
+
+  assert.equal(
+    await notifyKeyRevoked(user.id, { name: 'Prod <CLI>', keyPrefix: 'mp-abc1234' }, fakeSend as never),
+    true,
+  );
+  assert.equal(captured.length, 1);
+  assert.equal(captured[0]!.to, user.email);
+  assert.match(captured[0]!.subject, /API key Morphic dicabut/);
+  assert.match(captured[0]!.html, /Prod &lt;CLI&gt;/);
+
+  assert.equal(
+    await notifyAccountSuspended(user.id, 'Sengketa PayPal', fakeSend as never),
+    true,
+  );
+  assert.equal(captured.length, 2);
+  assert.match(captured[1]!.subject, /ditangguhkan/);
+  assert.match(captured[1]!.text ?? '', /Sengketa PayPal/);
+
+  await db.update(s.users).set({ deletedAt: new Date() }).where(eq(s.users.id, user.id));
+  assert.equal(await notifyKeyRevoked(user.id, { name: 'x', keyPrefix: 'mp-1234567' }, fakeSend as never), false);
+  assert.equal(await notifyAccountSuspended(user.id, 'x', fakeSend as never), false);
 });
 
 // ── P3-02 + P0-06: ledger guards ─────────────────────────────────────────────
@@ -690,5 +729,32 @@ test('Phase1: a client abort mid-stream still settles the request exactly once',
   }
   assert.equal(rows.length, 1, 'settle must run once after a client abort');
   assert.equal(rows[0]!.streamed, true);
+});
+
+test('G1 (T8): dense CJK prompt with small max_tokens reserves UTF-8 bytes/3 and bills full reported usage', async () => {
+  const { user, rawKey } = await mkUser(1_000);
+  const prov = await mkProvider('g1-cjk', 'https://g1-cjk.upstream.test/v1');
+  const model = await mkModel(prov.id); // 1_000_000 credits/1M => 1 credit per token
+  const cjkPrompt = '你'.repeat(100); // 100 chars (old est: 25) vs 300 UTF-8 bytes (new est: 100)
+
+  const res = await withUpstream(
+    () =>
+      new Response(
+        JSON.stringify({
+          id: 'cjk-1',
+          object: 'chat.completion',
+          choices: [{ message: { role: 'assistant', content: '好' } }],
+          usage: { prompt_tokens: 90, completion_tokens: 1 },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      ),
+    () => chat(rawKey, { model: model.publicModelId, max_tokens: 1, messages: [{ role: 'user', content: cjkPrompt }] }),
+  );
+  assert.equal(res.status, 200);
+
+  const [usage] = await db.select().from(s.usageRecords).where(eq(s.usageRecords.userId, user.id));
+  assert.ok(usage, 'usage record created');
+  // Old reservation was 25 + 1 = 26 credits; new reservation is 100 + 1 = 101 credits, so 91 is charged in full.
+  assert.equal(usage!.creditsConsumed, 91);
 });
 

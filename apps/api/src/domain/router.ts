@@ -1,6 +1,6 @@
 import { db, schema as s } from '@morphic/db';
-import { eq, and, or } from 'drizzle-orm';
 import { resolveProviderCredential } from '@morphic/shared/provider-crypto';
+import { isPoolEnabled } from '@morphic/shared/model-readiness';
 import { normalizeModelId } from '@morphic/shared/models';
 import { checkCircuit, getCircuitState } from './circuit-breaker';
 import { resolveUpstreamTotalTimeoutMs } from '../lib/redis-store';
@@ -10,6 +10,7 @@ import {
   supportsRequiredToolChoice,
   type RequiredCapability,
 } from './provider-capabilities';
+import { stripMultiplierParams } from './request-guards';
 
 export interface ResolvedRoute {
   providerName: string;
@@ -58,183 +59,7 @@ export function resolveUpstreamTtfbTimeoutMs(env: NodeJS.ProcessEnv = process.en
   return Number.isFinite(value) && value > 0 ? value : DEFAULT_UPSTREAM_TTFB_TIMEOUT_MS;
 }
 
-interface ModelRow {
-  modelId: string;
-  providerModelId: string;
-  contextLength: number;
-  inputCreditsPer1m: number;
-  outputCreditsPer1m: number;
-  providerCostInputPer1m: number | null;
-  providerCostOutputPer1m: number | null;
-  modelStatus: string;
-  replacementModelAlias: string | null;
-  fallbackProviderId: string | null;
-  providerId: string;
-  providerName: string;
-  baseUrl: string;
-  encryptedCredentials: string | null;
-  credentialReference: string | null;
-  providerStatus: string;
-}
-
-async function resolveModelRow(publicModelId: string): Promise<ModelRow | null> {
-  const normalized = normalizeModelId(publicModelId);
-  const [row] = await db
-    .select({
-      modelId: s.models.id,
-      providerModelId: s.models.providerModelId,
-      contextLength: s.models.contextLength,
-      inputCreditsPer1m: s.models.inputCreditsPer1m,
-      outputCreditsPer1m: s.models.outputCreditsPer1m,
-      providerCostInputPer1m: s.models.providerCostInputPer1m,
-      providerCostOutputPer1m: s.models.providerCostOutputPer1m,
-      modelStatus: s.models.status,
-      replacementModelAlias: s.models.replacementModelAlias,
-      fallbackProviderId: s.models.fallbackProviderId,
-      providerId: s.providers.id,
-      providerName: s.providers.name,
-      baseUrl: s.providers.baseUrl,
-      encryptedCredentials: s.providers.encryptedCredentials,
-      credentialReference: s.providers.credentialReference,
-      providerStatus: s.providers.status,
-    })
-    .from(s.models)
-    .innerJoin(s.providers, eq(s.models.providerId, s.providers.id))
-    .where(or(eq(s.models.publicModelId, publicModelId), eq(s.models.publicModelId, normalized)))
-    .limit(1);
-
-  return row ?? null;
-}
-
-function buildRoute(
-  row: ModelRow,
-  options: { providerOverride?: { id: string; name: string; baseUrl: string; encryptedCredentials: string | null; credentialReference: string | null }; isUsingFallback: boolean; deprecationWarning: string | null },
-): ResolvedRoute {
-  const prov = options.providerOverride ?? {
-    id: row.providerId,
-    name: row.providerName,
-    baseUrl: row.baseUrl,
-    encryptedCredentials: row.encryptedCredentials,
-    credentialReference: row.credentialReference,
-  };
-
-  return {
-    providerName: prov.name,
-    baseUrl: prov.baseUrl,
-    credential: resolveProviderCredential(prov.encryptedCredentials, prov.credentialReference),
-    providerModelId: row.providerModelId,
-    modelId: row.modelId,
-    contextLength: row.contextLength,
-    pricing: {
-      inputCreditsPer1m: row.inputCreditsPer1m,
-      outputCreditsPer1m: row.outputCreditsPer1m,
-    },
-    // ponytail: one cost per model; the fallback provider is assumed to charge the same.
-    upstreamPricing:
-      row.providerCostInputPer1m != null && row.providerCostOutputPer1m != null
-        ? { inputCreditsPer1m: row.providerCostInputPer1m, outputCreditsPer1m: row.providerCostOutputPer1m }
-        : null,
-    providerId: prov.id,
-    isUsingFallback: options.isUsingFallback,
-    deprecationWarning: options.deprecationWarning,
-    attemptIndex: options.isUsingFallback ? 1 : 0,
-    isTrial: false,
-    ttfbTimeoutMs: null,
-    // Legacy path (still used until Pooling 1G removes it): permissive capability
-    // defaults so behaviour is unchanged outside the pooled route plan.
-    supportsTools: true,
-    supportsParallelTools: true,
-    supportsReasoning: false,
-    reasoningEchoRequired: false,
-    supportsVision: true,
-    usageInStream: true,
-    maxOutputTokens: null,
-    apiFormat: 'openai',
-    supportsRequiredToolChoice: true,
-  };
-}
-
-/**
- * Resolve public_model_id -> provider route with Circuit Breaker, Fallback, and Deprecation support.
- */
-export async function resolveModelWithFallback(
-  publicModelId: string,
-): Promise<ResolvedRoute | null> {
-  const row = await resolveModelRow(publicModelId);
-  if (!row || row.modelStatus === 'inactive') return null;
-
-  // 1. Deprecation check -> redirect to replacement model alias if present
-  if (row.modelStatus === 'deprecated' && row.replacementModelAlias) {
-    const replacementRow = await resolveModelRow(row.replacementModelAlias);
-    if (replacementRow && replacementRow.modelStatus === 'active' && replacementRow.providerStatus === 'active') {
-      if (!(await checkCircuit(replacementRow.providerId, replacementRow.providerModelId)).open) {
-        return buildRoute(replacementRow, {
-          isUsingFallback: false,
-          deprecationWarning: `model '${publicModelId}' is deprecated; redirected to '${row.replacementModelAlias}'`,
-        });
-      }
-    }
-  }
-
-  // 2. Primary Provider Check
-  if (row.providerStatus === 'active' && !(await checkCircuit(row.providerId, row.providerModelId)).open) {
-    return buildRoute(row, {
-      isUsingFallback: false,
-      deprecationWarning: row.modelStatus === 'deprecated' ? `model '${publicModelId}' is deprecated` : null,
-    });
-  }
-
-  // 3. Fallback Provider Check
-  return resolveFallback(row, publicModelId);
-}
-
-async function resolveFallback(row: ModelRow, publicModelId: string): Promise<ResolvedRoute | null> {
-  if (row.fallbackProviderId && row.fallbackProviderId !== row.providerId) {
-    const [fallbackProvider] = await db
-      .select({
-        id: s.providers.id,
-        name: s.providers.name,
-        baseUrl: s.providers.baseUrl,
-        encryptedCredentials: s.providers.encryptedCredentials,
-        credentialReference: s.providers.credentialReference,
-        status: s.providers.status,
-      })
-      .from(s.providers)
-      .where(and(eq(s.providers.id, row.fallbackProviderId), eq(s.providers.status, 'active')))
-      .limit(1);
-
-    if (fallbackProvider && !(await checkCircuit(fallbackProvider.id, row.providerModelId)).open) {
-      return buildRoute(row, {
-        providerOverride: fallbackProvider,
-        isUsingFallback: true,
-        deprecationWarning: row.modelStatus === 'deprecated' ? `model '${publicModelId}' is deprecated` : null,
-      });
-    }
-  }
-
-  return null; // Primary & Fallback providers unavailable
-}
-
-/**
- * Runtime failover: the route just failed upstream (network error / 5xx). Returns the model's
- * fallback-provider route when one is configured, active and its circuit is not open.
- */
-export async function resolveRuntimeFallback(
-  failed: ResolvedRoute,
-  publicModelId: string,
-): Promise<ResolvedRoute | null> {
-  if (failed.isUsingFallback) return null;
-  const row = await resolveModelRow(publicModelId);
-  if (!row || row.modelId !== failed.modelId) return null;
-  return resolveFallback(row, publicModelId);
-}
-
-/** Backwards-compatible alias for resolveModelWithFallback */
-export async function resolveModel(publicModelId: string): Promise<ResolvedRoute | null> {
-  return resolveModelWithFallback(publicModelId);
-}
-
-// ── Routing snapshot (Pooling Phase 1D) ───────────────────────────────────────
+// ── Routing snapshot (Pooling Phase 1D / 1G) ──────────────────────────────────
 //
 // One module-level snapshot holds every model (including `inactive`, so 404 and
 // 503 can be told apart), every provider and every pool row. A refresh costs at
@@ -350,7 +175,7 @@ function routerCacheTtlMs(env: NodeJS.ProcessEnv = process.env): number {
 }
 
 function poolEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env.POOL_ENABLED === 'true';
+  return isPoolEnabled(env);
 }
 
 function lastResortEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
@@ -927,6 +752,7 @@ export class OpenAiCompatibleAdapter implements IAiProviderAdapter {
     const { route, body, stream } = req;
     const url = `${route.baseUrl.replace(/\/$/, '')}/chat/completions`;
     const payload: Record<string, unknown> = { ...body, model: route.providerModelId, stream };
+    stripMultiplierParams(payload);
     // Ask for the final usage chunk so streamed requests bill real token counts, not estimates.
     if (stream) {
       const opts = typeof body.stream_options === 'object' && body.stream_options !== null ? body.stream_options : {};

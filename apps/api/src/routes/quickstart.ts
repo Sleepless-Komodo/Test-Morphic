@@ -28,20 +28,30 @@ async function activeModels() {
   return models;
 }
 
-// Strict allowlist: hostname labels + optional port. Rejects any shell metacharacters
-// (quotes, semicolons, backticks, $, spaces, etc.) before they reach script templates.
+// Strict allowlist: hostname labels + optional port, and http/https schemes only.
+// Rejects any shell metacharacters (quotes, semicolons, backticks, $, spaces, etc.)
+// before they reach script templates, and ignores spoofable X-Forwarded-Host.
 const SAFE_HOST_RE = /^[a-zA-Z0-9.-]+(:[0-9]{1,5})?$/;
+const SAFE_PROTO_RE = /^https?$/;
 
 const gatewayBase = (c: { req: { url: string; header: (name: string) => string | undefined } }) => {
-  if (process.env.NEXT_PUBLIC_GATEWAY_URL) {
-    return `${process.env.NEXT_PUBLIC_GATEWAY_URL.replace(/\/+$/, '')}/v1`;
+  const configured = process.env.NEXT_PUBLIC_GATEWAY_URL?.trim();
+  if (configured) {
+    return `${configured.replace(/\/+$/, '')}/v1`;
   }
-  const rawHost = c.req.header('x-forwarded-host') || c.req.header('host');
-  const proto = c.req.header('x-forwarded-proto') || (c.req.url.startsWith('https') ? 'https' : 'http');
+  const url = new URL(c.req.url);
+  const rawHost = c.req.header('host')?.trim() || url.host;
+  const rawProto = c.req.header('x-forwarded-proto')?.split(',')[0]?.trim().toLowerCase();
+  const proto =
+    rawProto && SAFE_PROTO_RE.test(rawProto)
+      ? rawProto
+      : url.protocol === 'https:'
+        ? 'https'
+        : 'http';
   if (rawHost && SAFE_HOST_RE.test(rawHost)) {
     return `${proto}://${rawHost}/v1`;
   }
-  return `${new URL(c.req.url).origin.replace(/\/+$/, '')}/v1`;
+  return `${url.origin.replace(/\/+$/, '')}/v1`;
 };
 const modelsMap = (models: Array<{ id: string; name: string }>) =>
   Object.fromEntries(models.map((m) => [m.id, { name: m.name }]));
@@ -300,8 +310,17 @@ async function readyOpencodeModels() {
   return out;
 }
 
-const opencodeWellKnown = (command: string[]) => async (c: Context) =>
-  c.json(
+const opencodeWellKnown = (command: string[]) => async (c: Context) => {
+  const hasCanonicalGateway = Boolean(process.env.NEXT_PUBLIC_GATEWAY_URL?.trim());
+  const cacheHeaders: Record<string, string> = hasCanonicalGateway
+    ? { 'Cache-Control': 'public, max-age=60' }
+    : {
+        // Without a pinned NEXT_PUBLIC_GATEWAY_URL, baseURL depends on Host/X-Forwarded-Proto:
+        // never let a shared CDN cache one caller's derived origin for everyone else.
+        'Cache-Control': 'private, no-store',
+        Vary: 'Host, X-Forwarded-Proto',
+      };
+  return c.json(
     {
       auth: { command, env: OPENCODE_ENV },
       config: {
@@ -316,9 +335,9 @@ const opencodeWellKnown = (command: string[]) => async (c: Context) =>
       },
     },
     200,
-    // Same document for everyone; a short shared cache keeps opencode start-ups cheap.
-    { 'Cache-Control': 'public, max-age=60' },
+    cacheHeaders,
   );
+};
 
 const wellKnown = new Hono();
 wellKnown.get(

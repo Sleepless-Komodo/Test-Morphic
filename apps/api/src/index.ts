@@ -9,6 +9,7 @@ import { reconcileProviderCircuitStates } from './domain/circuit-breaker';
 import { reconcilePaypalPayments, sweepStaleDuitkuPayments } from './lib/paypal-reconcile';
 import { assertDuitkuConfig } from './lib/duitku';
 import { assertPaypalConfig } from './lib/paypal';
+import { warnIfProxyTrustUnset } from './lib/ip';
 import { runLeased } from './lib/job-lease';
 
 // Validate Duitku environment config at startup. Production must hard-exit on
@@ -26,6 +27,7 @@ if (process.env.NODE_ENV === 'production') {
 // Validate PayPal environment config at startup. Unlike Duitku this is unguarded:
 // a misconfigured production process must crash, not silently run against sandbox.
 assertPaypalConfig();
+warnIfProxyTrustUnset();
 
 const port = Number(process.env.API_PORT ?? 8787);
 serve({ fetch: app.fetch, port }, (info) => {

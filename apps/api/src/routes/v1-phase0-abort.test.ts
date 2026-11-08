@@ -9,6 +9,7 @@ import { db, schema as s } from '@morphic/db';
 import { grantCredits } from '@morphic/db/billing';
 
 process.env.TEST_UPSTREAM_KEY = 'sk-test';
+process.env.RESPONSES_API_ENABLED = 'true';
 const { app } = await import('../app');
 const { getCircuitState, checkCircuit } = await import('../domain/circuit-breaker');
 const { invalidateRouterCache } = await import('../domain/router');
@@ -99,5 +100,40 @@ test('0c: a client abort before upstream headers does not count against the prov
   assert.equal(res.status, 502);
   const state = await getCircuitState(prov.id, model.providerModelId);
   assert.equal(state.failures, 0, 'abort must not increment the failure counter');
+  assert.equal((await checkCircuit(prov.id, model.providerModelId)).open, false);
+});
+
+test('FIX-P0-05: POST /v1/responses propagates client abort before upstream headers and spares circuit breaker', async () => {
+  const prov = await mkProvider('p0-resp-abort', 'http://p0-resp-abort.upstream.test');
+  const model = await mkModel(prov.id);
+  const rawKey = await mkUser(1_000_000);
+  const ac = new AbortController();
+  let upstreamAborted = false;
+
+  const res = await withUpstream(
+    (_url, init) =>
+      new Promise<Response>((_resolve, reject) => {
+        const fail = () => {
+          upstreamAborted = true;
+          reject(new DOMException('The operation was aborted.', 'AbortError'));
+        };
+        if (init.signal?.aborted) return fail();
+        init.signal?.addEventListener('abort', fail, { once: true });
+      }),
+    async () => {
+      setTimeout(() => ac.abort(), 20);
+      return app.request('/v1/responses', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${rawKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: model.publicModelId, input: 'hi' }),
+        signal: ac.signal,
+      });
+    },
+  );
+
+  assert.equal(upstreamAborted, true, 'upstream fetch must receive abort from /v1/responses');
+  assert.equal(res.status, 502);
+  const state = await getCircuitState(prov.id, model.providerModelId);
+  assert.equal(state.failures, 0, 'abort on /v1/responses must not increment circuit failures');
   assert.equal((await checkCircuit(prov.id, model.providerModelId)).open, false);
 });

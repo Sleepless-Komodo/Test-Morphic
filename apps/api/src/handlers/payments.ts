@@ -259,6 +259,7 @@ export async function handleGetReceipt(c: Context): Promise<Response> {
       amountCents: s.payments.amountCents,
       currency: s.payments.currency,
       credits: s.payments.credits,
+      status: s.payments.status,
       paidAt: s.payments.paidAt,
       createdAt: s.payments.createdAt,
       packageName: s.packages.name,
@@ -268,12 +269,24 @@ export async function handleGetReceipt(c: Context): Promise<Response> {
     .from(s.payments)
     .innerJoin(s.users, eq(s.users.id, s.payments.userId))
     .leftJoin(s.packages, eq(s.packages.id, s.payments.packageId))
-    .where(and(eq(s.payments.id, paymentId), eq(s.payments.userId, userId), eq(s.payments.status, 'paid')))
+    .where(
+      and(
+        eq(s.payments.id, paymentId),
+        eq(s.payments.userId, userId),
+        inArray(s.payments.status, ['paid', 'refunded', 'disputed']),
+      ),
+    )
     .limit(1);
   if (!row) return notFound();
 
   const paidAt = row.paidAt ?? row.createdAt;
   const amount = row.currency === 'USD' ? `USD ${(row.amountCents / 100).toFixed(2)}` : `Rp ${row.amountCents.toLocaleString('id-ID')}`;
+  const statusLabel =
+    row.status === 'refunded'
+      ? 'DIKEMBALIKAN / REFUNDED'
+      : row.status === 'disputed'
+        ? 'SENGKETA / DISPUTED'
+        : 'LUNAS / PAID';
   const pdf = buildReceiptPdf(
     'Kuitansi pembayaran / Payment receipt',
     [
@@ -285,7 +298,7 @@ export async function handleGetReceipt(c: Context): Promise<Response> {
       ['Jumlah dibayar', amount],
       ['Metode bayar', row.provider === 'paypal' ? 'PayPal' : row.provider === 'duitku' ? 'Duitku' : row.provider],
       ['ID transaksi gateway', row.externalId],
-      ['Status', 'LUNAS / PAID'],
+      ['Status', statusLabel],
     ],
     `Dokumen ini diterbitkan secara elektronik oleh Morphic dan sah tanpa tanda tangan. Ref ${row.id}`,
   );

@@ -1,12 +1,15 @@
 import { randomBytes, createHash } from 'node:crypto';
 import type { Context } from 'hono';
 import { db, schema as s } from '@morphic/db';
-import { eq, and, desc, sql } from 'drizzle-orm';
+import { eq, and, or, isNull, gt, desc, sql } from 'drizzle-orm';
 import { getTrustedClientIp } from '../lib/ip';
+import { notifyKeyRevoked } from '../lib/notify';
 
 export const GRACE_SECONDS = new Set([3600, 86_400, 604_800]);
 
 export const EXPIRY_DAYS: Record<string, number | null> = { none: null, '30d': 30, '90d': 90 };
+
+export const MAX_ACTIVE_KEYS_DURING_ROTATION = 10;
 
 export interface MintedKeyResult {
   id: string;
@@ -196,6 +199,29 @@ export async function handleRotateKey(c: Context): Promise<Response> {
     );
   }
 
+  const [activeCount] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(s.apiKeys)
+    .where(
+      and(
+        eq(s.apiKeys.userId, userId),
+        eq(s.apiKeys.status, 'active'),
+        or(isNull(s.apiKeys.expiresAt), gt(s.apiKeys.expiresAt, new Date())),
+      ),
+    );
+  if ((activeCount?.count ?? 0) >= MAX_ACTIVE_KEYS_DURING_ROTATION) {
+    return c.json(
+      {
+        error: {
+          message: 'too many active keys; delete unused keys or wait for rotated keys to expire before rotating again',
+          type: 'invalid_request_error',
+          code: 'max_active_keys_exceeded',
+        },
+      },
+      409,
+    );
+  }
+
   const graceEnd = new Date(Date.now() + grace * 1000);
   // Never extend a key that would have expired sooner on its own.
   const oldExpiresAt = old.expiresAt && old.expiresAt < graceEnd ? old.expiresAt : graceEnd;
@@ -223,7 +249,7 @@ export async function handleDeleteKey(c: Context): Promise<Response> {
   }
 
   const [key] = await db
-    .select({ id: s.apiKeys.id, keyPrefix: s.apiKeys.keyPrefix, status: s.apiKeys.status })
+    .select({ id: s.apiKeys.id, name: s.apiKeys.name, keyPrefix: s.apiKeys.keyPrefix, status: s.apiKeys.status })
     .from(s.apiKeys)
     .where(and(eq(s.apiKeys.id, keyId), eq(s.apiKeys.userId, userId)))
     .limit(1);
@@ -239,6 +265,7 @@ export async function handleDeleteKey(c: Context): Promise<Response> {
   // Usage and request logs keep their rows (api_key_id is set null by the FK).
   await db.delete(s.apiKeys).where(and(eq(s.apiKeys.id, keyId), eq(s.apiKeys.userId, userId)));
   await auditKey(c, 'key.revoked', keyId, key.keyPrefix);
+  void notifyKeyRevoked(userId, { name: key.name, keyPrefix: key.keyPrefix });
 
   return c.json({ id: keyId, deleted: true }, 200);
 }
