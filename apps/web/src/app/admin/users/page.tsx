@@ -8,7 +8,7 @@ import { UsersTable, type UserItem } from './users-table';
 export const dynamic = 'force-dynamic';
 
 export default async function AdminUsers() {
-  const admin = await requireAdmin();
+  const admin = await requireAdmin('users:read');
   const { t } = await getServerTranslation();
 
   const users = await db
@@ -52,7 +52,7 @@ export default async function AdminUsers() {
       </div>
 
       {/* Interactive Users Table with Delete and Adjust capabilities */}
-      <UsersTable users={formattedUsers} currentAdminId={admin.id} />
+      <UsersTable users={formattedUsers} currentAdminId={admin.id} currentAdminRole={admin.role} />
     </div>
   );
 }

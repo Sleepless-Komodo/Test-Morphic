@@ -24,7 +24,7 @@ export default async function AdminApiKeyDetail({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ period?: string }>;
 }) {
-  await requireAdmin();
+  await requireAdmin('users:read');
   const { locale } = await getServerTranslation();
   const en = locale === 'en';
   const { id } = await params;

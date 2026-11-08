@@ -2,7 +2,7 @@ import { requireAdmin } from '@/lib/actions';
 import { AdminShell } from './admin-shell';
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
-  const adminUser = await requireAdmin();
+  const adminUser = await requireAdmin('overview');
   return (
     <AdminShell
       user={{

@@ -19,7 +19,7 @@ async function CatalogSection() {
 export const dynamic = 'force-dynamic';
 
 export default async function AdminProviders() {
-  await requireAdmin();
+  await requireAdmin('catalog:read');
   const { t } = await getServerTranslation();
 
   const providers = await db.select().from(s.providers);

@@ -10,6 +10,15 @@ import { eq, and, desc, sql, gt, gte, lte, ne, isNotNull } from 'drizzle-orm';
 import { createHash, randomInt, timingSafeEqual } from 'node:crypto';
 import { db, schema as s } from '@morphic/db';
 import { generateApiKey, maskedKey, hashApiKey } from '@morphic/shared/keys';
+import {
+  canonicalizeAdminIp,
+  evaluateAdminIpAccess,
+  extractTrustedAdminIp,
+  hasAdminPermission,
+  isAdminRole,
+  isLoopbackAdminIp,
+  type AdminPermission,
+} from '@morphic/shared/admin-rbac';
 import { sendEmail } from '@morphic/shared/email';
 import { auth } from '@/lib/auth';
 import { fetchBackendApi } from './api-client';
@@ -51,41 +60,142 @@ async function requireUser() {
   return session.user;
 }
 
+const adminTrustedIpId = (userId: string, canonicalIp: string) =>
+  `admin-trusted-ip:${userId}:${canonicalIp}`;
+const adminIpOtpId = (userId: string, canonicalIp: string) =>
+  `admin-ip-otp:${userId}:${canonicalIp}`;
+
 /**
- * The signed-in admin, or null for guests, non-admins, suspended admins and API-key sessions.
+ * The signed-in admin, or null for guests, non-admins, strictly-blocked IPs, suspended admins and API-key sessions.
  * Admins who sign in with a password must also have login OTP on (`mfaMissing` otherwise);
  * Google/GitHub-only admins are secured by their provider's MFA.
- * One joined query (user role + session auth method), memoised per request so the admin layout
+ * When an admin switches to a new public IP (different from their session login IP and not yet verified via
+ * Step-Up Email OTP within the last 7 days), `ipVerificationRequired` is set to true so `requireAdmin`
+ * redirects them to `/dashboard/settings?admin_ip=verify` to verify a 6-digit email OTP.
+ * One joined query (user role + session auth method + session IP), memoised per request so the admin layout
  * and page share it.
  */
-const adminCheck = cache(async (): Promise<{ user: typeof s.users.$inferSelect; mfaMissing: boolean } | null> => {
-  const session = await getSessionWithRetry();
-  if (!session) return null;
-  // Role comes from the DB on every request (never from the session payload), and admin power is
-  // refused to suspended accounts and to sessions minted from an mp-* API key, so a leaked key
-  // can never reach admin actions.
-  const [row] = await db
-    .select({ user: s.users, authMethod: s.sessions.authMethod })
-    .from(s.users)
-    .innerJoin(s.sessions, eq(s.sessions.userId, s.users.id))
-    .where(and(eq(s.users.id, session.user.id), eq(s.sessions.id, session.session.id)))
-    .limit(1);
-  if (!row || row.user.role !== 'admin' || row.user.suspended || row.authMethod === 'api_key') return null;
-  const mfaMissing = !row.user.twoFactorEnabled && (await hasPasswordLogin(row.user.id));
-  return { user: row.user, mfaMissing };
-});
+const adminCheck = cache(
+  async (): Promise<{
+    user: typeof s.users.$inferSelect;
+    sessionId: string;
+    mfaMissing: boolean;
+    ipVerificationRequired: boolean;
+    clientIp: string | null;
+  } | null> => {
+    const session = await getSessionWithRetry();
+    if (!session) return null;
+
+    // Role comes from the DB on every request (never from the session payload), and admin power is
+    // refused to suspended accounts and to sessions minted from an mp-* API key, so a leaked key
+    // can never reach admin actions.
+    const [row] = await db
+      .select({
+        user: s.users,
+        authMethod: s.sessions.authMethod,
+        sessionIp: s.sessions.ipAddress,
+        sessionId: s.sessions.id,
+      })
+      .from(s.users)
+      .innerJoin(s.sessions, eq(s.sessions.userId, s.users.id))
+      .where(and(eq(s.users.id, session.user.id), eq(s.sessions.id, session.session.id)))
+      .limit(1);
+    if (!row || !isAdminRole(row.user.role) || row.user.suspended || row.authMethod === 'api_key') {
+      return null;
+    }
+
+    const reqHeaders = await headers();
+    const clientIp = extractTrustedAdminIp(reqHeaders);
+    const canonicalClientIp = canonicalizeAdminIp(clientIp);
+    const canonicalSessionIp = canonicalizeAdminIp(row.sessionIp);
+
+    // Only query s.verifications for a trusted-IP badge if the client IP is non-local and differs from the session IP.
+    const trustedIps: string[] = [];
+    if (
+      canonicalClientIp &&
+      !isLoopbackAdminIp(canonicalClientIp) &&
+      canonicalClientIp !== canonicalSessionIp
+    ) {
+      const [trustedRow] = await db
+        .select({ id: s.verifications.id })
+        .from(s.verifications)
+        .where(
+          and(
+            eq(s.verifications.identifier, adminTrustedIpId(row.user.id, canonicalClientIp)),
+            gt(s.verifications.expiresAt, new Date()),
+          ),
+        )
+        .limit(1);
+      if (trustedRow) {
+        trustedIps.push(canonicalClientIp);
+      }
+    }
+
+    const ipEval = evaluateAdminIpAccess({
+      clientIp,
+      sessionIp: row.sessionIp,
+      trustedIps,
+      allowlistRaw: process.env.ADMIN_ALLOWED_IPS,
+      strictAllowlist: process.env.ADMIN_IP_ENFORCEMENT === 'strict',
+    });
+
+    if (ipEval.status === 'denied') {
+      console.warn('[adminCheck] blocked admin access from strictly non-allowlisted IP', {
+        userId: session.user.id,
+        clientIp: ipEval.canonicalClientIp,
+      });
+      return null;
+    }
+
+    const mfaMissing = !row.user.twoFactorEnabled && (await hasPasswordLogin(row.user.id));
+    return {
+      user: row.user,
+      sessionId: row.sessionId,
+      mfaMissing,
+      ipVerificationRequired: ipEval.status === 'step_up_required',
+      clientIp: ipEval.canonicalClientIp,
+    };
+  },
+);
 
 const currentAdmin = async () => {
   const check = await adminCheck();
   return check && !check.mfaMissing ? check.user : null;
 };
 
-async function requireAdmin() {
+async function requireAdmin(
+  permission?: AdminPermission,
+  options?: { mode?: 'redirect' | 'throw' },
+) {
+  const shouldThrow = options?.mode === 'throw';
   const session = await getSessionWithRetry();
-  if (!session) redirect('/login');
+  if (!session) {
+    if (shouldThrow) throw new Error('Unauthorized: sign-in required.');
+    redirect('/login');
+  }
   const check = await adminCheck();
-  if (!check) redirect('/dashboard');
-  if (check.mfaMissing) redirect('/dashboard/settings?mfa=required');
+  if (!check) {
+    if (shouldThrow) throw new Error('Forbidden: admin access denied.');
+    redirect('/dashboard');
+  }
+  if (check.mfaMissing) {
+    if (shouldThrow) throw new Error('Forbidden: login OTP (MFA) is required for admin accounts.');
+    redirect('/dashboard/settings?mfa=required');
+  }
+  if (check.ipVerificationRequired) {
+    if (shouldThrow) {
+      throw new Error(
+        `Forbidden: new admin IP address (${check.clientIp ?? 'unknown'}) requires email OTP verification.`,
+      );
+    }
+    redirect('/dashboard/settings?admin_ip=verify');
+  }
+  if (permission && !hasAdminPermission(check.user.role, permission)) {
+    if (shouldThrow) {
+      throw new Error(`Forbidden: role "${check.user.role}" lacks "${permission}" permission.`);
+    }
+    redirect('/admin?denied=1');
+  }
   return check.user;
 }
 
@@ -236,28 +346,52 @@ export async function revokeOtherSessions(): Promise<{ ok: boolean; error?: stri
   }
 }
 
-/** Permanently deletes one of the caller's API keys directly from the database and notifies the gateway. */
+/** Permanently deletes one of the caller's API keys via the gateway API (with direct DB fallback if offline). */
 export async function deleteApiKey(id: string): Promise<{ ok: boolean; error?: string }> {
   const user = await requireInteractiveUser();
   if (!/^[0-9a-f-]{36}$/i.test(id)) return { ok: false, error: 'Invalid key ID' };
 
   try {
-    // 1. Authoritative direct DB deletion
+    // 1. Call backend API first so delete + key.revoked audit log + revocation email execute atomically there.
+    const apiRes = await fetchBackendApi(`/v1/keys/${id}`, { method: 'DELETE' });
+    if (!apiRes.error) {
+      revalidatePath('/dashboard/keys');
+      revalidatePath('/dashboard');
+      return { ok: true };
+    }
+    if (apiRes.status === 404) {
+      return { ok: false, error: 'API key not found or already deleted' };
+    }
+    if (apiRes.status >= 400 && apiRes.status < 500) {
+      return { ok: false, error: apiRes.error };
+    }
+
+    // 2. Fallback when backend API is unreachable in local dev (status === 0 or 5xx):
+    //    delete directly in DB, record forensic audit row, and send revocation email.
     const [deleted] = await db
       .delete(s.apiKeys)
       .where(and(eq(s.apiKeys.id, id), eq(s.apiKeys.userId, user.id)))
-      .returning({ id: s.apiKeys.id });
+      .returning({ id: s.apiKeys.id, name: s.apiKeys.name, keyPrefix: s.apiKeys.keyPrefix });
 
     if (!deleted) {
       return { ok: false, error: 'API key not found or already deleted' };
     }
 
-    // 2. Best-effort notify backend API to clear in-memory caches / rate limiters
-    try {
-      await fetchBackendApi(`/v1/keys/${id}`, { method: 'DELETE' });
-    } catch {
-      // Backend may be offline or in local dev; DB deletion is already committed
-    }
+    await db.insert(s.adminAuditLog).values({
+      adminId: user.id,
+      action: 'key.revoked',
+      entity: 'api_key',
+      entityId: deleted.id,
+      detail: { actor: 'user', keyPrefix: deleted.keyPrefix, source: 'web_fallback' },
+    });
+
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://morphic-api.web.id';
+    void sendEmail({
+      to: user.email,
+      subject: `API key Morphic dicabut: ${deleted.name} (${deleted.keyPrefix}...)`,
+      text: `API key "${deleted.name}" (${deleted.keyPrefix}...) baru saja dicabut/dihapus dari akun Morphic Anda.\n\nJika ini bukan Anda, segera periksa keamanan akun di: ${appUrl}/dashboard/keys`,
+      html: `<p>API key <b>${deleted.name.replace(/[&<>"']/g, '')}</b> (<code>${deleted.keyPrefix}...</code>) baru saja dicabut/dihapus dari akun Morphic Anda.</p><p>Jika ini bukan Anda, segera periksa keamanan akun di <a href="${appUrl}/dashboard/keys">Dashboard API Keys</a>.</p>`,
+    }).catch((e) => console.error('[deleteApiKey] revocation email failed:', e));
 
     revalidatePath('/dashboard/keys');
     revalidatePath('/dashboard');
@@ -691,4 +825,145 @@ export async function deleteOwnAccount(formData: FormData) {
 export async function getNotificationsAction() {
   const user = await requireUser();
   return loadNotifications(user.id);
+}
+
+const ADMIN_IP_OTP_TTL_MS = 10 * 60 * 1000;
+const ADMIN_IP_OTP_MAX_ATTEMPTS = 5;
+const DEFAULT_ADMIN_TRUSTED_IP_DAYS = 7;
+
+function getAdminTrustedIpTtlMs(): number {
+  const days = Number(process.env.ADMIN_TRUSTED_IP_DAYS ?? DEFAULT_ADMIN_TRUSTED_IP_DAYS);
+  const safeDays = Number.isFinite(days) && days > 0 ? Math.min(days, 90) : DEFAULT_ADMIN_TRUSTED_IP_DAYS;
+  return safeDays * 24 * 60 * 60 * 1000;
+}
+
+export async function getAdminIpStepUpStatus() {
+  const check = await adminCheck();
+  if (!check) return { isAdmin: false, required: false, clientIp: null };
+  return {
+    isAdmin: true,
+    required: check.ipVerificationRequired,
+    clientIp: check.clientIp,
+  };
+}
+
+/**
+ * Sends a 6-digit Step-Up OTP to the signed-in admin's email address to authorize
+ * admin access from a new/unrecognized public IP address.
+ */
+export async function requestAdminIpVerificationCode() {
+  const check = await adminCheck();
+  if (!check) {
+    return { ok: false as const, error: 'Akses ditolak: akun bukan admin aktif.' };
+  }
+  if (!check.user.email) {
+    return { ok: false as const, error: 'Akun admin tidak memiliki alamat email terdaftar.' };
+  }
+  const canonicalIp = check.clientIp;
+  if (!canonicalIp) {
+    return { ok: false as const, error: 'Alamat IP tidak terdeteksi.' };
+  }
+
+  const otpId = adminIpOtpId(check.user.id, canonicalIp);
+  const [existing] = await db
+    .select({ createdAt: s.verifications.createdAt })
+    .from(s.verifications)
+    .where(eq(s.verifications.identifier, otpId))
+    .limit(1);
+  if (existing && Date.now() - existing.createdAt.getTime() < 60_000) {
+    return { ok: false as const, error: 'Tunggu 1 menit sebelum meminta kode baru.' };
+  }
+
+  const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
+  await db.delete(s.verifications).where(eq(s.verifications.identifier, otpId));
+  await db.insert(s.verifications).values({
+    identifier: otpId,
+    value: `${sha256(code)}:0`,
+    expiresAt: new Date(Date.now() + ADMIN_IP_OTP_TTL_MS),
+  });
+
+  await sendEmail({
+    to: check.user.email,
+    subject: `Kode verifikasi IP Admin Morphic: ${code}`,
+    text: `Permintaan akses Panel Admin Morphic terdeteksi dari alamat IP baru (${canonicalIp}).\n\nKode verifikasi Anda: ${code}\n\nKode ini berlaku 10 menit. Jika Anda tidak sedang mengakses Panel Admin, segera cabut sesi aktif Anda dan ganti kata sandi.`,
+    html: `<p>Permintaan akses <strong>Panel Admin Morphic</strong> terdeteksi dari alamat IP baru: <code>${canonicalIp}</code>.</p><p>Kode verifikasi Anda:</p><p style="font-size:24px;font-weight:700;letter-spacing:4px">${code}</p><p>Kode ini berlaku 10 menit. Jika Anda tidak sedang mengakses Panel Admin, segera cabut sesi aktif Anda dan ganti kata sandi.</p>`,
+  });
+
+  return { ok: true as const, clientIp: canonicalIp };
+}
+
+/**
+ * Verifies the 6-digit Step-Up OTP for a new admin IP, marks the IP as trusted for
+ * `ADMIN_TRUSTED_IP_DAYS` (default 7 days), updates the current session's IP, and logs to `admin_audit_log`.
+ */
+export async function verifyAdminIpCode(formData: FormData) {
+  const check = await adminCheck();
+  if (!check) {
+    return { ok: false as const, error: 'Akses ditolak: akun bukan admin aktif.' };
+  }
+  const canonicalIp = check.clientIp;
+  if (!canonicalIp) {
+    return { ok: false as const, error: 'Alamat IP tidak terdeteksi.' };
+  }
+
+  const code = String(formData.get('code') || '').trim();
+  const otpId = adminIpOtpId(check.user.id, canonicalIp);
+  const [row] = await db
+    .select()
+    .from(s.verifications)
+    .where(eq(s.verifications.identifier, otpId))
+    .limit(1);
+
+  if (!row || row.expiresAt.getTime() < Date.now()) {
+    return { ok: false as const, error: 'Kode sudah kedaluwarsa. Minta kode baru.' };
+  }
+  const [hash, n] = row.value.split(':');
+  const attempts = Number(n) || 0;
+  if (attempts >= ADMIN_IP_OTP_MAX_ATTEMPTS) {
+    return { ok: false as const, error: 'Terlalu banyak percobaan salah. Minta kode baru.' };
+  }
+
+  const ok =
+    /^\d{6}$/.test(code) &&
+    Boolean(hash) &&
+    timingSafeEqual(Buffer.from(sha256(code)), Buffer.from(hash));
+  if (!ok) {
+    await db
+      .update(s.verifications)
+      .set({ value: `${hash}:${attempts + 1}` })
+      .where(eq(s.verifications.id, row.id));
+    return { ok: false as const, error: 'Kode OTP salah.' };
+  }
+
+  const trustedId = adminTrustedIpId(check.user.id, canonicalIp);
+  const trustedExpiresAt = new Date(Date.now() + getAdminTrustedIpTtlMs());
+
+  await db.delete(s.verifications).where(eq(s.verifications.id, row.id));
+  await db.delete(s.verifications).where(eq(s.verifications.identifier, trustedId));
+  await db.insert(s.verifications).values({
+    identifier: trustedId,
+    value: 'verified',
+    expiresAt: trustedExpiresAt,
+  });
+
+  // Update the active session IP so subsequent checks on this session are fast-pathed without extra DB queries.
+  await db
+    .update(s.sessions)
+    .set({ ipAddress: canonicalIp, updatedAt: new Date() })
+    .where(eq(s.sessions.id, check.sessionId));
+
+  await db.insert(s.adminAuditLog).values({
+    adminId: check.user.id,
+    action: 'verify_admin_ip',
+    entity: 'session',
+    entityId: check.sessionId,
+    detail: {
+      ip: canonicalIp,
+      trustedUntil: trustedExpiresAt.toISOString(),
+    },
+  });
+
+  revalidatePath('/admin');
+  revalidatePath('/dashboard/settings');
+  return { ok: true as const };
 }

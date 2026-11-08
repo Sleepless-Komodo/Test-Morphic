@@ -6,7 +6,7 @@ import { formatCredits } from '@/lib/utils';
 import { Activity } from 'lucide-react';
 
 export default async function AdminUsage() {
-  await requireAdmin();
+  await requireAdmin('finance:read');
   const { t } = await getServerTranslation();
 
   const [byModel, recent] = await Promise.all([

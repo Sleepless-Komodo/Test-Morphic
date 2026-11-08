@@ -44,7 +44,7 @@ function Empty({ text }: { text: string }) {
 }
 
 export default async function AdminAlerts() {
-  await requireAdmin();
+  await requireAdmin('security:read');
   const { locale } = await getServerTranslation();
   const en = locale === 'en';
   const a = await memo('admin:alerts', 20_000, () => loadAlerts());
@@ -63,17 +63,25 @@ export default async function AdminAlerts() {
   return (
     <div className="w-full space-y-6">
       <AutoRefresh />
-      <div className="border-b border-neutral-200/80 pb-5">
-        <h1 className="flex items-center gap-2 font-heading text-xl font-extrabold tracking-tight text-neutral-950 sm:text-2xl">
-          <AlertTriangle className="h-5 w-5 text-neutral-700" />
-          {en ? 'Alerts' : 'Alert'}
-          {total > 0 && <span className="rounded-lg bg-red-600 px-2 py-0.5 text-sm text-white">{total}</span>}
-        </h1>
-        <p className="mt-0.5 text-xs text-neutral-500 sm:text-sm">
-          {en
-            ? 'Unusual usage and billing problems, recomputed every 30 seconds.'
-            : 'Pemakaian tidak wajar dan masalah billing, dihitung ulang tiap 30 detik.'}
-        </p>
+      <div className="flex flex-col gap-3 border-b border-neutral-200/80 pb-5 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="flex items-center gap-2 font-heading text-xl font-extrabold tracking-tight text-neutral-950 sm:text-2xl">
+            <AlertTriangle className="h-5 w-5 text-neutral-700" />
+            {en ? 'Alerts' : 'Alert'}
+            {total > 0 && <span className="rounded-lg bg-red-600 px-2 py-0.5 text-sm text-white">{total}</span>}
+          </h1>
+          <p className="mt-0.5 text-xs text-neutral-500 sm:text-sm">
+            {en
+              ? 'Unusual usage and billing problems, recomputed every 30 seconds.'
+              : 'Pemakaian tidak wajar dan masalah billing, dihitung ulang tiap 30 detik.'}
+          </p>
+        </div>
+        <Link
+          href="/admin/abuse"
+          className="inline-flex items-center gap-1.5 self-start rounded-xl bg-neutral-950 px-3.5 py-2 text-xs font-bold text-white hover:bg-neutral-800 sm:self-auto"
+        >
+          {en ? 'Open Abuse Queue (/admin/abuse)' : 'Buka Antrean Kasus Abuse (/admin/abuse)'}
+        </Link>
       </div>
 
       <h2 className="text-xs font-mono font-semibold uppercase tracking-wider text-neutral-500">{en ? 'Billing' : 'Billing'}</h2>

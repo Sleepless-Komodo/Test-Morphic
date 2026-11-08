@@ -13,7 +13,7 @@ export default async function AdminAudit({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  await requireAdmin();
+  await requireAdmin('security:read');
   const { t } = await getServerTranslation();
   const filters = readAuditFilters(await searchParams);
   const filtered = Boolean(filters.q || filters.action || filters.from || filters.to);
