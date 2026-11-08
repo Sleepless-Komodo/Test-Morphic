@@ -148,6 +148,20 @@
       "when": 1792730008764,
       "tag": "0020_job_leases",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1793943200000,
+      "tag": "0021_dsar_requests",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1794132800000,
+      "tag": "0022_abuse_cases",
+      "breakpoints": true
     }
   ]
 }
