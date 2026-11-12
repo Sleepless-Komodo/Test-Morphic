@@ -20,8 +20,13 @@ import {
   flagPaymentNeedsReview,
   saveCaptureId,
 } from '../lib/payment-state';
+import { jsonBodyLimit, WEBHOOK_MAX_BODY_BYTES } from '../middleware/body-limit';
+import { isDevOrTestEnv } from '../lib/runtime-env';
 
 const webhooks = new Hono();
+
+// Size cap first, before reading raw body text or verifying signatures.
+webhooks.use('*', jsonBodyLimit(WEBHOOK_MAX_BODY_BYTES, '1MB'));
 
 function verifyMockSignature(body: string, signature: string | undefined): boolean {
   const secret = process.env.MOCK_PAYMENT_WEBHOOK_SECRET;
@@ -37,12 +42,12 @@ function verifyMockSignature(body: string, signature: string | undefined): boole
 
 
 /**
- * Mock QRIS provider webhook. Active ONLY in non-production environments (Fix 1.3).
+ * Mock QRIS provider webhook. Active ONLY when NODE_ENV is 'development' or 'test' (Fix 1.3).
  * Payload: { event_id, payment_id, status: 'paid'|'failed' }
  * Idempotent: (provider, event_id) unique in payment_events; duplicate → 200 no-op.
  */
 export async function handleWebhookMock(c: Context): Promise<Response> {
-  if (process.env.NODE_ENV === 'production') {
+  if (!isDevOrTestEnv()) {
     return c.json({ error: 'not found' }, 404);
   }
 

@@ -1,6 +1,10 @@
 import type { Context } from 'hono';
 import { db, schema as s } from '@morphic/db';
 import { eq, and, desc, gte, lte, gt, count, sql, sum } from 'drizzle-orm';
+import { getTrustedClientIp } from '../lib/ip';
+
+/** Per-section row cap so synchronous DSAR exports cannot exhaust process memory (FIX-P1-06). */
+export const DSAR_EXPORT_ROW_LIMIT = 10_000;
 
 /**
  * Retrieves the authenticated user's current credit balance.
@@ -242,105 +246,230 @@ export async function handleGetPayments(c: Context): Promise<Response> {
 }
 
 /**
- * Exports all user data (UU PDP compliance) as an attachment JSON download.
+ * Exports all user data (UU PDP compliance / FIX-P1-06) as a bounded JSON attachment,
+ * tracked in `dsar_requests` and recorded in `admin_audit_log`.
  */
 export async function handleExportData(c: Context): Promise<Response> {
   const { userId } = c.get('userSession');
+  const clientIp = getTrustedClientIp(c);
+  const ipAddress = clientIp !== 'unknown' ? clientIp : null;
 
-  const [profile, balance, apiKeys, ledger, payments, entitlements, redemptions, usage] = await Promise.all([
-    db
-      .select({
-        id: s.users.id,
-        name: s.users.name,
-        email: s.users.email,
-        emailVerified: s.users.emailVerified,
-        role: s.users.role,
-        twoFactorEnabled: s.users.twoFactorEnabled,
-        createdAt: s.users.createdAt,
-      })
-      .from(s.users)
-      .where(eq(s.users.id, userId))
-      .limit(1),
-    db.select({ credits: s.balances.credits }).from(s.balances).where(eq(s.balances.userId, userId)).limit(1),
-    db
-      .select({
-        name: s.apiKeys.name,
-        prefix: s.apiKeys.keyPrefix,
-        status: s.apiKeys.status,
-        createdAt: s.apiKeys.createdAt,
-        lastUsedAt: s.apiKeys.lastUsedAt,
-        expiresAt: s.apiKeys.expiresAt,
-        revokedAt: s.apiKeys.revokedAt,
-      })
-      .from(s.apiKeys)
-      .where(eq(s.apiKeys.userId, userId)),
-    db
-      .select({
-        entryType: s.creditLedger.entryType,
-        amount: s.creditLedger.amount,
-        sourceType: s.creditLedger.sourceType,
-        reference: s.creditLedger.reference,
-        createdAt: s.creditLedger.createdAt,
-      })
-      .from(s.creditLedger)
-      .where(eq(s.creditLedger.userId, userId))
-      .orderBy(desc(s.creditLedger.createdAt)),
-    db
-      .select({
-        provider: s.payments.provider,
-        externalId: s.payments.externalId,
-        amountCents: s.payments.amountCents,
-        currency: s.payments.currency,
-        credits: s.payments.credits,
-        status: s.payments.status,
-        paidAt: s.payments.paidAt,
-        createdAt: s.payments.createdAt,
-      })
-      .from(s.payments)
-      .where(eq(s.payments.userId, userId))
-      .orderBy(desc(s.payments.createdAt)),
-    db
-      .select({
-        allowance: s.entitlements.allowance,
-        remaining: s.entitlements.remaining,
-        source: s.entitlements.source,
-        status: s.entitlements.status,
-        startsAt: s.entitlements.startsAt,
-        expiresAt: s.entitlements.expiresAt,
-      })
-      .from(s.entitlements)
-      .where(eq(s.entitlements.userId, userId)),
-    db
-      .select({ code: s.redeemCodes.code, createdAt: s.redemptions.createdAt })
-      .from(s.redemptions)
-      .innerJoin(s.redeemCodes, eq(s.redeemCodes.id, s.redemptions.codeId))
-      .where(eq(s.redemptions.userId, userId)),
-    db
-      .select({
-        day: sql<string>`to_char(${s.usageRecords.createdAt} at time zone 'UTC', 'YYYY-MM-DD')`,
-        model: s.models.publicModelId,
-        requests: count(),
-        totalTokens: sum(s.usageRecords.totalTokens).mapWith(Number),
-        creditsConsumed: sum(s.usageRecords.creditsConsumed).mapWith(Number),
-      })
-      .from(s.usageRecords)
-      .leftJoin(s.models, eq(s.models.id, s.usageRecords.modelId))
-      .where(eq(s.usageRecords.userId, userId))
-      .groupBy(sql`1`, s.models.publicModelId)
-      .orderBy(sql`1 desc`),
-  ]);
+  const [dsarReq] = await db
+    .insert(s.dsarRequests)
+    .values({
+      userId,
+      status: 'processing',
+      format: 'json',
+      ipAddress,
+    })
+    .returning({ id: s.dsarRequests.id });
 
-  c.header('Content-Disposition', `attachment; filename="morphic-data-${new Date().toISOString().slice(0, 10)}.json"`);
-  c.header('Cache-Control', 'no-store');
+  const capPlusOne = DSAR_EXPORT_ROW_LIMIT + 1;
+
+  try {
+    const [profile, balance, rawApiKeys, rawLedger, rawPayments, rawEntitlements, rawRedemptions, rawUsage] =
+      await Promise.all([
+        db
+          .select({
+            id: s.users.id,
+            name: s.users.name,
+            email: s.users.email,
+            emailVerified: s.users.emailVerified,
+            role: s.users.role,
+            twoFactorEnabled: s.users.twoFactorEnabled,
+            createdAt: s.users.createdAt,
+          })
+          .from(s.users)
+          .where(eq(s.users.id, userId))
+          .limit(1),
+        db.select({ credits: s.balances.credits }).from(s.balances).where(eq(s.balances.userId, userId)).limit(1),
+        db
+          .select({
+            name: s.apiKeys.name,
+            prefix: s.apiKeys.keyPrefix,
+            status: s.apiKeys.status,
+            createdAt: s.apiKeys.createdAt,
+            lastUsedAt: s.apiKeys.lastUsedAt,
+            expiresAt: s.apiKeys.expiresAt,
+            revokedAt: s.apiKeys.revokedAt,
+          })
+          .from(s.apiKeys)
+          .where(eq(s.apiKeys.userId, userId))
+          .orderBy(desc(s.apiKeys.createdAt))
+          .limit(capPlusOne),
+        db
+          .select({
+            entryType: s.creditLedger.entryType,
+            amount: s.creditLedger.amount,
+            sourceType: s.creditLedger.sourceType,
+            reference: s.creditLedger.reference,
+            createdAt: s.creditLedger.createdAt,
+          })
+          .from(s.creditLedger)
+          .where(eq(s.creditLedger.userId, userId))
+          .orderBy(desc(s.creditLedger.createdAt))
+          .limit(capPlusOne),
+        db
+          .select({
+            provider: s.payments.provider,
+            externalId: s.payments.externalId,
+            amountCents: s.payments.amountCents,
+            currency: s.payments.currency,
+            credits: s.payments.credits,
+            status: s.payments.status,
+            paidAt: s.payments.paidAt,
+            createdAt: s.payments.createdAt,
+          })
+          .from(s.payments)
+          .where(eq(s.payments.userId, userId))
+          .orderBy(desc(s.payments.createdAt))
+          .limit(capPlusOne),
+        db
+          .select({
+            allowance: s.entitlements.allowance,
+            remaining: s.entitlements.remaining,
+            source: s.entitlements.source,
+            status: s.entitlements.status,
+            startsAt: s.entitlements.startsAt,
+            expiresAt: s.entitlements.expiresAt,
+          })
+          .from(s.entitlements)
+          .where(eq(s.entitlements.userId, userId))
+          .orderBy(desc(s.entitlements.createdAt))
+          .limit(capPlusOne),
+        db
+          .select({ code: s.redeemCodes.code, createdAt: s.redemptions.createdAt })
+          .from(s.redemptions)
+          .innerJoin(s.redeemCodes, eq(s.redeemCodes.id, s.redemptions.codeId))
+          .where(eq(s.redemptions.userId, userId))
+          .orderBy(desc(s.redemptions.createdAt))
+          .limit(capPlusOne),
+        db
+          .select({
+            day: sql<string>`to_char(${s.usageRecords.createdAt} at time zone 'UTC', 'YYYY-MM-DD')`,
+            model: s.models.publicModelId,
+            requests: count(),
+            totalTokens: sum(s.usageRecords.totalTokens).mapWith(Number),
+            creditsConsumed: sum(s.usageRecords.creditsConsumed).mapWith(Number),
+          })
+          .from(s.usageRecords)
+          .leftJoin(s.models, eq(s.models.id, s.usageRecords.modelId))
+          .where(eq(s.usageRecords.userId, userId))
+          .groupBy(sql`1`, s.models.publicModelId)
+          .orderBy(sql`1 desc`)
+          .limit(capPlusOne),
+      ]);
+
+    const truncatedSections: string[] = [];
+    const capRows = <T>(rows: T[], name: string): T[] => {
+      if (rows.length > DSAR_EXPORT_ROW_LIMIT) {
+        truncatedSections.push(name);
+        return rows.slice(0, DSAR_EXPORT_ROW_LIMIT);
+      }
+      return rows;
+    };
+
+    const apiKeys = capRows(rawApiKeys, 'api_keys');
+    const ledger = capRows(rawLedger, 'credit_ledger');
+    const payments = capRows(rawPayments, 'payments');
+    const entitlements = capRows(rawEntitlements, 'entitlements');
+    const redemptions = capRows(rawRedemptions, 'redemptions');
+    const usage = capRows(rawUsage, 'usage_daily');
+
+    const truncated = truncatedSections.length > 0;
+    const rowCount =
+      apiKeys.length +
+      ledger.length +
+      payments.length +
+      entitlements.length +
+      redemptions.length +
+      usage.length;
+
+    await Promise.all([
+      db
+        .update(s.dsarRequests)
+        .set({
+          status: 'completed',
+          rowCount,
+          truncated,
+          completedAt: new Date(),
+        })
+        .where(eq(s.dsarRequests.id, dsarReq!.id)),
+      db.insert(s.adminAuditLog).values({
+        adminId: null,
+        action: 'account.dsar_export',
+        entity: 'user',
+        entityId: userId,
+        detail: {
+          actor: 'user_self',
+          dsarRequestId: dsarReq!.id,
+          ip: ipAddress,
+          rowCount,
+          truncated,
+          truncatedSections,
+        },
+      }),
+    ]);
+
+    c.header('Content-Disposition', `attachment; filename="morphic-data-${new Date().toISOString().slice(0, 10)}.json"`);
+    c.header('Cache-Control', 'no-store');
+    return c.json({
+      exported_at: new Date().toISOString(),
+      export_meta: {
+        request_id: dsarReq!.id,
+        row_limit_per_section: DSAR_EXPORT_ROW_LIMIT,
+        truncated,
+        truncated_sections: truncatedSections,
+      },
+      profile: profile[0] ?? null,
+      balance_credits: balance[0]?.credits ?? 0,
+      api_keys: apiKeys,
+      credit_ledger: ledger,
+      payments,
+      entitlements,
+      redemptions,
+      usage_daily: usage,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message.slice(0, 500) : 'export_failed';
+    await db
+      .update(s.dsarRequests)
+      .set({ status: 'failed', error: msg, completedAt: new Date() })
+      .where(eq(s.dsarRequests.id, dsarReq!.id))
+      .catch(() => {});
+    throw err;
+  }
+}
+
+/**
+ * Lists recent DSAR export requests initiated by the authenticated user.
+ */
+export async function handleListDsarRequests(c: Context): Promise<Response> {
+  const { userId } = c.get('userSession');
+  const rows = await db
+    .select({
+      id: s.dsarRequests.id,
+      status: s.dsarRequests.status,
+      format: s.dsarRequests.format,
+      rowCount: s.dsarRequests.rowCount,
+      truncated: s.dsarRequests.truncated,
+      createdAt: s.dsarRequests.createdAt,
+      completedAt: s.dsarRequests.completedAt,
+    })
+    .from(s.dsarRequests)
+    .where(eq(s.dsarRequests.userId, userId))
+    .orderBy(desc(s.dsarRequests.createdAt))
+    .limit(50);
+
   return c.json({
-    exported_at: new Date().toISOString(),
-    profile: profile[0] ?? null,
-    balance_credits: balance[0]?.credits ?? 0,
-    api_keys: apiKeys,
-    credit_ledger: ledger,
-    payments,
-    entitlements,
-    redemptions,
-    usage_daily: usage,
+    data: rows.map((r) => ({
+      id: r.id,
+      status: r.status,
+      format: r.format,
+      row_count: r.rowCount,
+      truncated: r.truncated,
+      created_at: r.createdAt.toISOString(),
+      completed_at: r.completedAt?.toISOString() ?? null,
+    })),
   });
 }

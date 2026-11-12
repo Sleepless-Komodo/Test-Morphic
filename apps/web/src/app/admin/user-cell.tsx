@@ -1,3 +1,5 @@
+import { isAdminRole } from '@morphic/shared/admin-rbac';
+
 export function Avatar({ name, image }: { name: string; image: string | null }) {
   if (image) {
     // eslint-disable-next-line @next/next/no-img-element -- OAuth avatars come from arbitrary hosts
@@ -18,8 +20,8 @@ export function UserCell({ name, email, image, role }: { name: string | null; em
       <div className="min-w-0">
         <div className="flex items-center gap-1.5">
           <span className="truncate font-semibold text-neutral-950">{name || '—'}</span>
-          {role === 'admin' && (
-            <span className="rounded-md bg-neutral-950 px-1.5 py-0.5 text-[10px] font-bold text-white">admin</span>
+          {isAdminRole(role) && (
+            <span className="rounded-md bg-neutral-950 px-1.5 py-0.5 text-[10px] font-bold text-white">{role}</span>
           )}
         </div>
         <div className="truncate text-xs text-neutral-500">{email ?? '—'}</div>

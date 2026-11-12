@@ -234,3 +234,64 @@ test('9. Stream cancellation cancels the upstream reader', async () => {
   assert.equal(cancelCalled, true);
   assert.equal(cancelReason, 'client abort');
 });
+
+test('10. FIX-P0-05: aborting request.signal before upstream resolves aborts forwardChat signal', async () => {
+  const ac = new AbortController();
+  let forwardedSignal: AbortSignal | undefined;
+
+  const req = new Request('http://localhost/v1/responses', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model: 'test-model', input: 'Hello' }),
+    signal: ac.signal,
+  });
+
+  const fakeForward = async (_body: ChatRequest, _headers: Headers, signal?: AbortSignal) => {
+    forwardedSignal = signal;
+    return new Promise<Response>((_resolve, reject) => {
+      const fail = () => reject(new DOMException('Aborted', 'AbortError'));
+      if (signal?.aborted) return fail();
+      signal?.addEventListener('abort', fail, { once: true });
+    });
+  };
+
+  setTimeout(() => ac.abort(), 15);
+  const res = await handleResponses(req, fakeForward);
+  assert.ok(forwardedSignal, 'forwardChat must receive an AbortSignal');
+  assert.equal(forwardedSignal.aborted, true, 'forwarded signal must abort when client aborts');
+  assert.equal(res.status, 500);
+});
+
+test('11. FIX-P0-05: cancelling streaming response body aborts forwardChat signal for partial billing', async () => {
+  let forwardedSignal: AbortSignal | undefined;
+  const encoder = new TextEncoder();
+
+  const fakeStream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(encoder.encode('data: {"model":"m","choices":[{"delta":{"content":"Hi"}}]}\n\n'));
+      // Leave open as if upstream is still generating more tokens
+    },
+  });
+
+  const req = new Request('http://localhost/v1/responses', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model: 'test-model', input: 'Hello', stream: true }),
+  });
+
+  const fakeForward = async (_body: ChatRequest, _headers: Headers, signal?: AbortSignal) => {
+    forwardedSignal = signal;
+    return new Response(fakeStream, {
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+    });
+  };
+
+  const res = await handleResponses(req, fakeForward);
+  assert.ok(res.body);
+  assert.ok(forwardedSignal);
+  assert.equal(forwardedSignal.aborted, false);
+
+  await res.body.cancel('client disconnected mid-stream');
+  assert.equal(forwardedSignal.aborted, true, 'stream cancel must abort inner chat signal');
+});

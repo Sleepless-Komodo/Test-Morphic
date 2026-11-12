@@ -11,6 +11,7 @@ import { detectOpenAiCapabilities } from '../domain/provider-capabilities';
 import { createOpenAiStreamFinalizer, heartbeatMs, startHeartbeat } from '../domain/stream-finalize';
 import { createSseSanitizer } from '../lib/sse-sanitize';
 import { alertProviderProblem } from '../lib/alert';
+import { rejectMultiplierParams, unifyOutputCap } from '../domain/request-guards';
 
 export const MAX_BODY_BYTES = 10 * 1024 * 1024; // PRD §14.1
 
@@ -259,6 +260,37 @@ export async function handleChatCompletions(c: Context): Promise<Response> {
     );
   }
 
+  // Reject parameters that multiply upstream work without being reserved (see request-guards.ts).
+  const multiplier = rejectMultiplierParams(body as unknown as Record<string, unknown>);
+  if (!multiplier.ok) {
+    logRequest({
+      requestId,
+      userId,
+      apiKeyId: keyId,
+      modelAlias: body.model,
+      resolvedModelId: null,
+      providerName: null,
+      servedProviderId: null,
+      servedProviderModelId: null,
+      attempts: 0,
+      failoverReasons: [],
+      attemptLatenciesMs: [],
+      promptTokens: null,
+      completionTokens: null,
+      creditsConsumed: null,
+      latencyMs: Date.now() - startedAt,
+      gatewayLatencyMs: Date.now() - startedAt,
+      status: 'error',
+      errorType: 'unsupported_parameter',
+      streamed: body.stream === true,
+    });
+    return c.json(
+      { error: { message: multiplier.message, type: 'invalid_request_error', code: multiplier.code } },
+      400,
+    );
+  }
+  body = unifyOutputCap(body as unknown as Record<string, unknown>) as unknown as typeof body;
+
   // Repair lenient client payloads (content: null, orphan tool pairs, ...) before dispatch.
   if (NORMALIZE_OPENAI) {
     body = normalizeRequest(body as unknown as Record<string, unknown>) as unknown as typeof body;
@@ -346,6 +378,9 @@ export async function handleChatCompletions(c: Context): Promise<Response> {
   }
 
   if (result.kind === 'failure') {
+    if (result.retryAfterSeconds != null) {
+      c.header('Retry-After', String(result.retryAfterSeconds));
+    }
     return c.json(
       {
         error: {

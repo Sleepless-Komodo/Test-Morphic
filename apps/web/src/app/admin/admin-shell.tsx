@@ -6,6 +6,11 @@ import { usePathname } from 'next/navigation';
 import { useTranslation } from '@/lib/i18n';
 import { LanguageToggle } from '@/components/LanguageToggle';
 import {
+  hasAdminPermission,
+  isSuperAdminRole,
+  type AdminPermission,
+} from '@morphic/shared/admin-rbac';
+import {
   LayoutDashboard,
   Users,
   Cpu,
@@ -22,6 +27,7 @@ import {
   KeyRound,
   TrendingUp,
   AlertTriangle,
+  ShieldAlert,
   Megaphone,
 } from 'lucide-react';
 
@@ -40,22 +46,31 @@ export function AdminShell({ user, children }: AdminShellProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const { t } = useTranslation();
 
-  const navItems = [
-    { href: '/admin', label: t.admin.nav.overview, icon: LayoutDashboard, exact: true },
-    { href: '/admin/users', label: t.admin.nav.users, icon: Users },
-    { href: '/admin/models', label: t.admin.nav.models, icon: Cpu },
-    { href: '/admin/providers', label: t.admin.nav.providers, icon: Server },
-    { href: '/admin/packages', label: t.admin.nav.packages, icon: Package },
-    { href: '/admin/transactions', label: t.admin.nav.transactions, icon: CreditCard },
-    { href: '/admin/usage', label: t.admin.nav.usage, icon: Activity },
-    { href: '/admin/api-keys', label: t.admin.nav.apiKeys, icon: KeyRound },
-    { href: '/admin/margin', label: t.admin.nav.margin, icon: TrendingUp },
-    { href: '/admin/alerts', label: t.admin.nav.alerts, icon: AlertTriangle },
-    { href: '/admin/codes', label: t.admin.nav.codes, icon: Ticket },
-    { href: '/admin/leaderboard', label: t.admin.nav.leaderboard, icon: Trophy },
-    { href: '/admin/announcements', label: t.admin.nav.announcements, icon: Megaphone },
-    { href: '/admin/audit', label: t.admin.nav.audit, icon: History },
+  const allNavItems: Array<{
+    href: string;
+    label: string;
+    icon: typeof LayoutDashboard;
+    permission: AdminPermission;
+    exact?: boolean;
+  }> = [
+    { href: '/admin', label: t.admin.nav.overview, icon: LayoutDashboard, permission: 'overview', exact: true },
+    { href: '/admin/users', label: t.admin.nav.users, icon: Users, permission: 'users:read' },
+    { href: '/admin/models', label: t.admin.nav.models, icon: Cpu, permission: 'catalog:read' },
+    { href: '/admin/providers', label: t.admin.nav.providers, icon: Server, permission: 'catalog:read' },
+    { href: '/admin/packages', label: t.admin.nav.packages, icon: Package, permission: 'finance:read' },
+    { href: '/admin/transactions', label: t.admin.nav.transactions, icon: CreditCard, permission: 'finance:read' },
+    { href: '/admin/usage', label: t.admin.nav.usage, icon: Activity, permission: 'finance:read' },
+    { href: '/admin/api-keys', label: t.admin.nav.apiKeys, icon: KeyRound, permission: 'users:read' },
+    { href: '/admin/margin', label: t.admin.nav.margin, icon: TrendingUp, permission: 'finance:read' },
+    { href: '/admin/alerts', label: t.admin.nav.alerts, icon: AlertTriangle, permission: 'security:read' },
+    { href: '/admin/abuse', label: 'Abuse Queue', icon: ShieldAlert, permission: 'security:read' },
+    { href: '/admin/codes', label: t.admin.nav.codes, icon: Ticket, permission: 'codes:read' },
+    { href: '/admin/leaderboard', label: t.admin.nav.leaderboard, icon: Trophy, permission: 'finance:read' },
+    { href: '/admin/announcements', label: t.admin.nav.announcements, icon: Megaphone, permission: 'announcements:read' },
+    { href: '/admin/audit', label: t.admin.nav.audit, icon: History, permission: 'security:read' },
   ];
+
+  const navItems = allNavItems.filter((item) => hasAdminPermission(user.role, item.permission));
 
   const isNavActive = (href: string, exact?: boolean) => {
     if (exact) return pathname === href;
@@ -132,9 +147,9 @@ export function AdminShell({ user, children }: AdminShellProps) {
             <div className="text-xs font-bold text-neutral-950 truncate font-heading">{user.name || 'Admin'}</div>
             <div className="text-[11px] font-mono text-neutral-500 truncate mt-0.5">{user.email}</div>
           </div>
-          <span className="shrink-0 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-neutral-900 text-white font-mono text-[10px] font-bold">
+          <span className="shrink-0 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-neutral-900 text-white font-mono text-[10px] font-bold uppercase">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" aria-hidden="true" />
-            {t.admin.rootBadge}
+            {isSuperAdminRole(user.role) ? t.admin.rootBadge : user.role}
           </span>
         </div>
       </div>

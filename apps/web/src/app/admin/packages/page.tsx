@@ -8,7 +8,7 @@ import { PackagesClient, type PackageRow } from './packages-client';
 export const dynamic = 'force-dynamic';
 
 export default async function AdminPackages() {
-  await requireAdmin();
+  await requireAdmin('finance:read');
   const { t } = await getServerTranslation();
 
   const count = sql<number>`count(*)::int`;

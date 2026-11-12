@@ -13,7 +13,7 @@ import {
   type AnthropicMessageResponse,
   type AnthropicMessagesRequest,
 } from '@morphic/shared/anthropic';
-import { apiKeyAuth, gatewayGuards, ipRateLimit } from '../middleware/auth';
+import { apiKeyAuth, createIpRateLimit, gatewayGuards } from '../middleware/auth';
 import { appFromRequest } from '../lib/app-attribution';
 import {
   buildPromptText,
@@ -30,6 +30,7 @@ import {
 } from '../domain/anthropic/reasoning-echo';
 import { detectAnthropicCapabilities } from '../domain/provider-capabilities';
 import { heartbeatMs, startHeartbeat } from '../domain/stream-finalize';
+import { alertProviderProblem } from '../lib/alert';
 
 /**
  * Anthropic Messages edge. Translation-first: every candidate is an OpenAI-
@@ -76,9 +77,9 @@ anthropic.use(
 
 anthropic.use(
   '/messages/*',
-  ipRateLimit,
-  apiKeyAuth({ allowXApiKey: true }),
-  gatewayGuards({ rpm: 120, concurrency: 5 }),
+  createIpRateLimit({ errorFormat: 'anthropic' }),
+  apiKeyAuth({ allowXApiKey: true, errorFormat: 'anthropic' }),
+  gatewayGuards({ rpm: 120, concurrency: 5, errorFormat: 'anthropic' }),
 );
 
 function fail(c: Context, status: ContentfulStatusCode, type: AnthropicErrorType, message: string) {
@@ -211,6 +212,17 @@ anthropic.post('/messages', async (c) => {
       onPlan: (plan) => {
         if (plan.deprecationWarning) c.header('X-Morphic-Warning', plan.deprecationWarning);
       },
+      onProviderAlert: (event) => {
+        // Appendix B alerts only on provider 401/402/403/404; transport kinds are ignored.
+        if (typeof event.upstreamStatus !== 'number') return;
+        void alertProviderProblem({
+          providerId: event.providerId,
+          providerName: event.providerName,
+          status: event.upstreamStatus,
+          code: event.code,
+          requestId: event.requestId,
+        });
+      },
       // A 2xx that cannot become an Anthropic message is an `invalid_body` attempt
       // (countable and failable-over), not a billed success.
       validateNonStreamBody: (json) => {
@@ -236,6 +248,9 @@ anthropic.post('/messages', async (c) => {
       );
     }
     if (result.kind === 'failure') {
+      if (result.retryAfterSeconds != null) {
+        c.header('Retry-After', String(result.retryAfterSeconds));
+      }
       const mapped = failureStatus(result);
       return fail(c, mapped.status as ContentfulStatusCode, mapped.type, mapped.message);
     }

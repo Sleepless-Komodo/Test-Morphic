@@ -24,7 +24,13 @@ export const users = pgTable('users', {
   email: text('email').notNull().unique(),
   emailVerified: boolean('email_verified').notNull().default(false),
   image: text('image'),
-  role: text('role', { enum: ['user', 'admin'] }).notNull().default('user'),
+  // TS-only enum on plain text column: 'admin' + 'super_admin' grant full privileges;
+  // 'finance', 'support', and 'security' grant scoped admin permissions (FIX-P1-01).
+  role: text('role', {
+    enum: ['user', 'admin', 'super_admin', 'finance', 'support', 'security'],
+  })
+    .notNull()
+    .default('user'),
   suspended: boolean('suspended').notNull().default(false),
   // Better Auth twoFactor plugin: when true, email+password sign-in asks for an emailed OTP.
   twoFactorEnabled: boolean('two_factor_enabled').notNull().default(false),
@@ -598,6 +604,66 @@ export const jobLeases = pgTable('job_leases', {
   lastRunAt: timestamp('last_run_at', { withTimezone: true }).notNull(),
 });
 
+// ── DSAR Personal-Data Export Requests (FIX-P1-06 / UU PDP) ─────────────────
+
+export const dsarRequests = pgTable(
+  'dsar_requests',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    status: text('status', { enum: ['pending', 'processing', 'completed', 'failed'] })
+      .notNull()
+      .default('pending'),
+    format: text('format').notNull().default('json'),
+    rowCount: integer('row_count').notNull().default(0),
+    truncated: boolean('truncated').notNull().default(false),
+    ipAddress: text('ip_address'),
+    error: text('error'),
+    createdAt: now(),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+  },
+  (t) => [index('dsar_requests_user_idx').on(t.userId, t.createdAt)],
+);
+
+// ── Abuse Cases Queue (FIX-P2-06 / T-B5-03 / DM-ENT-13 / AI-09 Zero-Prompt Auditing) ──
+
+export const abuseCases = pgTable(
+  'abuse_cases',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }),
+    apiKeyId: uuid('api_key_id').references(() => apiKeys.id, { onDelete: 'set null' }),
+    signalType: text('signal_type', {
+      enum: ['traffic_spike', 'high_error_rate', 'credit_burn_spike', 'shared_ip_farming', 'manual'],
+    }).notNull(),
+    severity: text('severity', {
+      enum: ['low', 'medium', 'high', 'critical'],
+    })
+      .notNull()
+      .default('medium'),
+    status: text('status', {
+      enum: ['open', 'investigating', 'resolved', 'dismissed'],
+    })
+      .notNull()
+      .default('open'),
+    fingerprint: text('fingerprint').notNull(),
+    summary: text('summary').notNull(),
+    metadata: jsonb('metadata'),
+    resolutionNote: text('resolution_note'),
+    resolvedBy: uuid('resolved_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: now(),
+    updatedAt: now(),
+    resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+  },
+  (t) => [
+    index('abuse_cases_status_created_idx').on(t.status, t.createdAt),
+    index('abuse_cases_user_idx').on(t.userId),
+    index('abuse_cases_fingerprint_idx').on(t.fingerprint),
+  ],
+);
+
 // ── Relations ─────────────────────────────────────────
 
 export const usersRelations = relations(users, ({ many, one }) => ({
@@ -610,6 +676,8 @@ export const usersRelations = relations(users, ({ many, one }) => ({
   usage: many(usageRecords),
   payments: many(payments),
   requestLogs: many(requestLogs),
+  dsarRequests: many(dsarRequests),
+  abuseCases: many(abuseCases),
 }));
 
 export const providersRelations = relations(providers, ({ many }) => ({

@@ -249,7 +249,13 @@ export async function settle(input: {
   latencyMs?: number | null;
   streamed?: boolean;
   app?: string | null;
-}): Promise<{ actualCredits: number; refunded: number; usageRecordId: string; upstreamCostCredits: number | null }> {
+}): Promise<{
+  actualCredits: number;
+  refunded: number;
+  usageRecordId: string;
+  upstreamCostCredits: number | null;
+  unlimitedPass: boolean;
+}> {
   const chargeable = input.status !== 'error';
   const up = input.upstreamPricing;
   const upstreamCostCredits =
@@ -276,7 +282,8 @@ export async function settle(input: {
             .from(s.entitlements)
             .where(and(eq(s.entitlements.id, res.sourceId), eq(s.entitlements.unlimited, true)))
         : [];
-    const pricing = pass ? passPricing(input.pricing) : input.pricing;
+    const unlimitedPass = Boolean(pass);
+    const pricing = unlimitedPass ? passPricing(input.pricing) : input.pricing;
     const actual =
       chargeable
         ? tokensToCredits(input.promptTokens, pricing.inputCreditsPer1m) +
@@ -285,7 +292,7 @@ export async function settle(input: {
     // actual is clamped to estimate: settlement never charges more than reserved
     const charged = Math.min(actual, res.estimatedCredits);
     const refunded = res.estimatedCredits - charged;
-    const actualCredits = pass ? 0 : charged;
+    const actualCredits = unlimitedPass ? 0 : charged;
 
     // usage record
     const [usage] = await tx
@@ -347,7 +354,7 @@ export async function settle(input: {
       })
       .where(eq(s.reservations.id, res.id));
 
-    return { actualCredits, refunded, usageRecordId: usage!.id, upstreamCostCredits };
+    return { actualCredits, refunded, usageRecordId: usage!.id, upstreamCostCredits, unlimitedPass };
   });
 }
 

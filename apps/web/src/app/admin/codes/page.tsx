@@ -8,7 +8,7 @@ import { formatCredits } from '@/lib/utils';
 import { Ticket, Plus } from 'lucide-react';
 
 export default async function AdminCodes() {
-  await requireAdmin();
+  await requireAdmin('codes:read');
   const { t } = await getServerTranslation();
 
   const [codes, packages] = await Promise.all([

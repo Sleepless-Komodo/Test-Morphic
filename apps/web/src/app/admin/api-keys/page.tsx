@@ -19,7 +19,7 @@ type Sort = (typeof SORTS)[number];
 type Params = { period?: string; q?: string; sort?: string; status?: string; page?: string };
 
 export default async function AdminApiKeys({ searchParams }: { searchParams: Promise<Params> }) {
-  await requireAdmin();
+  await requireAdmin('users:read');
   const { locale } = await getServerTranslation();
   const en = locale === 'en';
   const params = await searchParams;

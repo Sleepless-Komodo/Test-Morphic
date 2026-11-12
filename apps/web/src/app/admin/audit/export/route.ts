@@ -5,7 +5,13 @@ import { queryAuditLog, readAuditFilters } from '../query';
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: Request) {
-  await requireAdmin();
+  try {
+    await requireAdmin('security:read', { mode: 'throw' });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Forbidden';
+    const status = msg.startsWith('Unauthorized') ? 401 : 403;
+    return new Response(msg, { status });
+  }
   const filters = readAuditFilters(Object.fromEntries(new URL(req.url).searchParams));
   // ponytail: 10k-row cap; stream if the log outgrows it.
   const rows = await queryAuditLog(filters, 10_000);

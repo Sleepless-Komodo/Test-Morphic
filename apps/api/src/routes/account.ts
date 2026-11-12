@@ -1,5 +1,7 @@
 import { Hono } from 'hono';
-import { sessionAuth } from '../middleware/session-auth';
+import { jsonBodyLimit, MANAGEMENT_MAX_BODY_BYTES } from '../middleware/body-limit';
+import { cookieOriginGuard } from '../middleware/origin-check';
+import { denyKeyDerivedSession, sessionAuth } from '../middleware/session-auth';
 import { sessionRateLimit } from '../middleware/session-ratelimit';
 import {
   handleGetBalance,
@@ -8,10 +10,13 @@ import {
   handleGetEntitlements,
   handleGetPayments,
   handleExportData,
+  handleListDsarRequests,
 } from '../handlers/account';
 
 const account = new Hono();
 
+account.use('*', jsonBodyLimit(MANAGEMENT_MAX_BODY_BYTES, '1MB'));
+account.use('*', cookieOriginGuard);
 account.use('*', sessionAuth);
 account.use('*', sessionRateLimit('account', 120));
 
@@ -29,10 +34,12 @@ account.get('/entitlements', handleGetEntitlements);
 // Payment history for the authenticated user (never cross-user).
 account.get('/payments', handleGetPayments);
 
-// ── GET /v1/account/export ─────────────────────────────
-// Personal-data export (UU PDP access right): everything held about the signed-in user as
-// one JSON download. Usage is summarised per day and model.
-// ponytail: synchronous; move to a background job + dsar_requests table if exports get large.
-account.get('/export', sessionRateLimit('account-export', 5), handleExportData);
+// ── GET & POST /v1/account/export ─────────────────────
+// Personal-data export (UU PDP access right / FIX-P1-06):
+// - Blocked for API-key-derived sessions (`denyKeyDerivedSession`) so a leaked mp-* key cannot exfiltrate PII.
+// - Tracked in `dsar_requests` + audited in `admin_audit_log`, with bounded per-section row limits.
+account.get('/export', denyKeyDerivedSession, sessionRateLimit('account-export', 5), handleExportData);
+account.post('/export', denyKeyDerivedSession, sessionRateLimit('account-export', 5), handleExportData);
+account.get('/export/requests', denyKeyDerivedSession, handleListDsarRequests);
 
 export { account };

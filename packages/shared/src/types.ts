@@ -34,6 +34,8 @@ export const chatCompletionRequestSchema = z
     temperature: z.number().min(0).max(2).optional(),
     top_p: z.number().min(0).max(1).optional(),
     max_tokens: z.number().int().positive().optional(),
+    max_completion_tokens: z.number().int().positive().optional(),
+    n: z.literal(1).optional(),
     stop: z.union([z.string(), z.array(z.string())]).nullish(),
     tools: z.array(z.unknown()).optional(),
     tool_choice: z.unknown().optional(),

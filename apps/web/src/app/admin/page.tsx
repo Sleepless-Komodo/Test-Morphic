@@ -326,13 +326,26 @@ async function CircuitBreakersSection({ t }: { t: any }) {
   );
 }
 
-export default async function AdminOverview() {
-  await requireAdmin();
+export default async function AdminOverview({
+  searchParams,
+}: {
+  searchParams?: Promise<{ denied?: string }>;
+}) {
+  await requireAdmin('overview');
   const { t } = await getServerTranslation();
+  const params = searchParams ? await searchParams : undefined;
 
   return (
     <div className="space-y-6 w-full">
       <AutoRefresh />
+      {params?.denied === '1' && (
+        <div
+          role="alert"
+          className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900"
+        >
+          Akses ditolak: role admin Anda tidak memiliki izin untuk membuka halaman tersebut.
+        </div>
+      )}
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pb-5 border-b border-neutral-200/80">
         <div>

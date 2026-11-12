@@ -1,10 +1,15 @@
 import { db, schema as s } from '@morphic/db';
 import { and, eq, isNull } from 'drizzle-orm';
 import { sendEmail } from '@morphic/shared/email';
+import { BALANCE_CREDITS_PER_IDR } from '@morphic/shared/credits';
 import { processPaymentSuccess } from '@morphic/db/billing';
 import { rateLimitStore } from '../ratelimit';
 
-const LOW_BALANCE_CREDITS = Number(process.env.LOW_BALANCE_CREDITS ?? 100_000);
+/** Default 10,000,000 credits = Rp 5.000 (at BALANCE_CREDITS_PER_IDR = 2,000), ~25% of the minimum Rp 20.000 top-up pack. */
+export const DEFAULT_LOW_BALANCE_CREDITS = 10_000_000;
+const lowBalanceThreshold = () => Number(process.env.LOW_BALANCE_CREDITS ?? DEFAULT_LOW_BALANCE_CREDITS);
+const formatBalanceIdr = (credits: number) =>
+  `Rp ${Math.floor(Math.max(0, credits) / BALANCE_CREDITS_PER_IDR).toLocaleString('id-ID')}`;
 const escapeHtml = (v: string) =>
   v.replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]!);
 const appUrl = () => process.env.NEXT_PUBLIC_APP_URL || 'https://morphic-api.web.id';
@@ -26,21 +31,77 @@ export async function notifyLowBalance(userId: string, sendFn = sendEmail): Prom
   try {
     const [bal] = await db.select({ credits: s.balances.credits }).from(s.balances).where(eq(s.balances.userId, userId));
     const credits = bal?.credits ?? 0;
-    if (credits >= LOW_BALANCE_CREDITS) return false;
+    if (credits >= lowBalanceThreshold()) return false;
     // First caller in the 24h window wins; everyone else sees count > 1 and stays quiet.
     if ((await rateLimitStore.increment(`notif:low_balance:${userId}`, 86_400)) !== 1) return false;
     const to = await activeUserEmail(userId);
     if (!to) return false;
+    const idrLeft = formatBalanceIdr(credits);
     const left = credits.toLocaleString('id-ID');
     await sendFn({
       to,
-      subject: 'Saldo kredit Morphic hampir habis',
-      text: `Sisa saldo Anda ${left} kredit. Request API akan ditolak (402) saat saldo habis.\n\nIsi ulang: ${appUrl()}/dashboard/billing`,
-      html: `<p>Sisa saldo Anda <b>${left} kredit</b>. Request API akan ditolak (402) saat saldo habis.</p><p><a href="${appUrl()}/dashboard/billing">Isi ulang saldo</a></p>`,
+      subject: 'Saldo Morphic hampir habis',
+      text: `Sisa saldo Anda tinggal sekitar ${idrLeft} (${left} kredit). Request API akan ditolak (402) saat saldo habis.\n\nIsi ulang: ${appUrl()}/dashboard/billing`,
+      html: `<p>Sisa saldo Anda tinggal sekitar <b>${idrLeft}</b> (${left} kredit). Request API akan ditolak (402) saat saldo habis.</p><p><a href="${appUrl()}/dashboard/billing">Isi ulang saldo</a></p>`,
     });
     return true;
   } catch (e) {
     console.error('[notify] low balance email failed:', e);
+    return false;
+  }
+}
+
+/**
+ * Security notification when an API key is revoked/deleted (AC-NOT-01 / FIX-P0-02).
+ * Never throws into the caller.
+ */
+export async function notifyKeyRevoked(
+  userId: string,
+  keyInfo: { name: string; keyPrefix: string },
+  sendFn = sendEmail,
+): Promise<boolean> {
+  try {
+    const to = await activeUserEmail(userId);
+    if (!to) return false;
+    const safeName = escapeHtml(keyInfo.name);
+    const safePrefix = escapeHtml(keyInfo.keyPrefix);
+    const keysUrl = `${appUrl()}/dashboard/keys`;
+    await sendFn({
+      to,
+      subject: `API key Morphic dicabut: ${keyInfo.name} (${keyInfo.keyPrefix}...)`,
+      text: `API key "${keyInfo.name}" (${keyInfo.keyPrefix}...) baru saja dicabut/dihapus dari akun Morphic Anda.\n\nJika ini bukan Anda, segera periksa keamanan akun dan cabut sesi lain di: ${keysUrl}`,
+      html: `<p>API key <b>${safeName}</b> (<code>${safePrefix}...</code>) baru saja dicabut/dihapus dari akun Morphic Anda.</p><p>Jika ini bukan Anda, segera periksa keamanan akun di <a href="${keysUrl}">Dashboard API Keys</a>.</p>`,
+    });
+    return true;
+  } catch (e) {
+    console.error('[notify] key revoked email failed:', e);
+    return false;
+  }
+}
+
+/**
+ * Notification when a user account is suspended (AC-NOT-01 / FIX-P0-02).
+ * Never throws into the caller.
+ */
+export async function notifyAccountSuspended(
+  userId: string,
+  reason?: string,
+  sendFn = sendEmail,
+): Promise<boolean> {
+  try {
+    const to = await activeUserEmail(userId);
+    if (!to) return false;
+    const reasonText = reason ? `\nAlasan: ${reason}` : '';
+    const reasonHtml = reason ? `<p>Alasan: <b>${escapeHtml(reason)}</b></p>` : '';
+    await sendFn({
+      to,
+      subject: 'Akun Morphic Anda ditangguhkan (suspended)',
+      text: `Akun Morphic Anda telah ditangguhkan sementara sehingga akses API key dan dashboard dihentikan.${reasonText}\n\nJika Anda merasa ini adalah kekeliruan atau ingin mengajukan klarifikasi, hubungi tim dukungan kami di support@morphic.id.`,
+      html: `<p>Akun Morphic Anda telah <b>ditangguhkan sementara</b> sehingga akses API key dan dashboard dihentikan.</p>${reasonHtml}<p>Jika Anda merasa ini adalah kekeliruan atau ingin mengajukan klarifikasi, hubungi tim dukungan kami di <a href="mailto:support@morphic.id">support@morphic.id</a>.</p>`,
+    });
+    return true;
+  } catch (e) {
+    console.error('[notify] account suspended email failed:', e);
     return false;
   }
 }

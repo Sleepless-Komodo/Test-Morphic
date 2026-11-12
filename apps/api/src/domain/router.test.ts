@@ -333,13 +333,22 @@ test('1D: legacy candidates are used only when the pool is empty', async () => {
   assert.equal((await pooledPlan.next())?.providerId, poolProvider.id);
 });
 
-test('1D: POOL_ENABLED=false ignores pool rows', async () => {
+test('1D: POOL_ENABLED=false ignores pool rows (while default unset enables pool)', async () => {
   const primary = await mkProvider();
   const pooled = await mkProvider();
   const model = await mkModel(primary.id, { providerModelId: 'legacy/upstream' });
   await mkPool(model.id, pooled.id, { providerModelId: 'pool/upstream' });
 
+  // Default (unset) enables pool routing
   delete process.env.POOL_ENABLED;
+  invalidateRouterCache();
+  const defaultPlan = requirePlan(await createRoutePlan(model.publicModelId));
+  assert.equal(defaultPlan.candidateCount, 1);
+  assert.equal((await defaultPlan.next())?.providerId, pooled.id);
+
+  // Explicit kill-switch POOL_ENABLED=false falls back to legacy primary
+  process.env.POOL_ENABLED = 'false';
+  invalidateRouterCache();
   const legacyPlan = requirePlan(await createRoutePlan(model.publicModelId));
   assert.equal(legacyPlan.candidateCount, 1);
   assert.equal((await legacyPlan.next())?.providerId, primary.id);

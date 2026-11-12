@@ -7,7 +7,7 @@ import { createAnnouncement, deleteAnnouncement } from '@/lib/admin-actions';
 export const dynamic = 'force-dynamic';
 
 export default async function AdminAnnouncements() {
-  await requireAdmin();
+  await requireAdmin('announcements:read');
   const { locale } = await getServerTranslation();
   const en = locale === 'en';
   const rows = await db.select().from(s.announcements).orderBy(desc(s.announcements.publishedAt)).limit(100);

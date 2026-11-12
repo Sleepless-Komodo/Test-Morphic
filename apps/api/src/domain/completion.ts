@@ -1,5 +1,5 @@
 import { reserve, settle, InsufficientCreditsError, type Reservation } from '@morphic/db/billing';
-import { estimatePromptTokens } from '@morphic/shared/credits';
+import { estimatePromptTokens, estimatePromptTokensForReservation } from '@morphic/shared/credits';
 import {
   createRoutePlan,
   callProvider,
@@ -16,6 +16,7 @@ import { logRequest } from '../middleware/logger';
 import { notifyLowBalance } from '../lib/notify';
 import { alertNegativeMargin } from '../lib/alert';
 import { sanitizeCompletionBody } from '../lib/sse-sanitize';
+import { requestedOutputCap } from './request-guards';
 
 /**
  * Shared completion orchestration: route plan -> reserve once -> dispatch/failover
@@ -123,6 +124,8 @@ export interface CompletionFailure {
   norm: NormalizedError;
   failureKind: 'unreachable' | 'upstream';
   upstreamStatus: UpstreamErrorInput;
+  /** Present on 429 provider rate-limit failures so callers can emit Retry-After (FIX-P1-04). */
+  retryAfterSeconds?: number;
 }
 
 export interface CompletionSuccess {
@@ -236,6 +239,11 @@ export function buildPromptText(body: Record<string, unknown>): string {
 
 export function estimateBodyTokens(body: Record<string, unknown>): number {
   return estimatePromptTokens(buildPromptText(body));
+}
+
+/** Prompt estimate for sizing the reservation only (see estimatePromptTokensForReservation). */
+export function estimateBodyTokensForReservation(body: Record<string, unknown>): number {
+  return estimatePromptTokensForReservation(buildPromptText(body));
 }
 
 type AttemptResult =
@@ -430,18 +438,18 @@ export async function startCompletion(input: StartCompletionInput): Promise<Comp
     };
   }
 
-  const body = input.prepareBody ? input.prepareBody(route) : input.body;
-  if (!body) throw new Error('startCompletion requires body or prepareBody');
+  const initialBody = input.prepareBody ? input.prepareBody(route) : input.body;
+  if (!initialBody) throw new Error('startCompletion requires body or prepareBody');
 
-  const promptTokens = estimateBodyTokens(body);
+  const promptTokens = estimateBodyTokens(initialBody);
   let reservation: Reservation;
   try {
     reservation = await reserve({
       userId,
       apiKeyId,
       model: { id: plan.modelId, contextLength: plan.contextLength, pricing: plan.pricing },
-      promptTokens,
-      requestedMaxTokens: typeof body.max_tokens === 'number' ? body.max_tokens : null,
+      promptTokens: estimateBodyTokensForReservation(initialBody),
+      requestedMaxTokens: requestedOutputCap(initialBody),
       requestId,
     });
   } catch (error) {
@@ -480,12 +488,15 @@ export async function startCompletion(input: StartCompletionInput): Promise<Comp
   const gatewayLatencyMs = Date.now() - startedAt;
 
   /** Dispatch one candidate. For non-stream, read and validate the body here so it can fail over. */
-  const attemptOnce = async (candidate: ResolvedRoute): Promise<AttemptResult> => {
+  const attemptOnce = async (
+    candidate: ResolvedRoute,
+    candidateBody: Record<string, unknown>,
+  ): Promise<AttemptResult> => {
     let res: Response;
     try {
       res = await callProvider({
         route: candidate,
-        body,
+        body: candidateBody,
         stream: wantsStream,
         signal: input.signal,
         totalTimeoutMs: input.totalTimeoutMs,
@@ -582,10 +593,11 @@ export async function startCompletion(input: StartCompletionInput): Promise<Comp
   const attempts: CompletionAttempt[] = [];
   let lastFailure: Extract<AttemptResult, { ok: false }> & { route: ResolvedRoute } | null = null;
   let success: Extract<AttemptResult, { ok: true }> | null = null;
+  let currentBody = initialBody;
 
   for (;;) {
     const attemptStartedAt = Date.now();
-    const outcome = await attemptOnce(route);
+    const outcome = await attemptOnce(route, currentBody);
     const latencyMs = Date.now() - attemptStartedAt;
 
     if (outcome.ok) {
@@ -637,6 +649,7 @@ export async function startCompletion(input: StartCompletionInput): Promise<Comp
     const next = await plan.next();
     if (!next) break; // return the last failure's envelope
     route = next;
+    currentBody = input.prepareBody ? input.prepareBody(route) : initialBody;
   }
 
   const servedRoute = route;
@@ -647,7 +660,25 @@ export async function startCompletion(input: StartCompletionInput): Promise<Comp
     failureKind: 'unreachable' | 'upstream';
     upstreamStatus: UpstreamErrorInput;
     error: string;
+    res?: Response;
   }): Promise<CompletionFailure> => {
+    let retryAfterSec: number | undefined;
+    if (failure.upstreamStatus === 429 || failure.norm.httpStatus === 429) {
+      const raw = failure.res?.headers.get('retry-after')?.trim();
+      if (raw) {
+        const asNum = Number(raw);
+        if (Number.isFinite(asNum) && asNum > 0) {
+          retryAfterSec = Math.min(120, Math.max(1, Math.ceil(asNum)));
+        } else {
+          const parsedDate = Date.parse(raw);
+          if (!Number.isNaN(parsedDate)) {
+            retryAfterSec = Math.min(120, Math.max(1, Math.ceil((parsedDate - Date.now()) / 1000)));
+          }
+        }
+      }
+      if (retryAfterSec === undefined) retryAfterSec = 5;
+    }
+
     const settleRes = await settle({
       reservation,
       app,
@@ -696,6 +727,7 @@ export async function startCompletion(input: StartCompletionInput): Promise<Comp
       norm: failure.norm,
       failureKind: failure.failureKind,
       upstreamStatus: failure.upstreamStatus,
+      ...(retryAfterSec !== undefined ? { retryAfterSeconds: retryAfterSec } : {}),
     };
   };
 
@@ -722,7 +754,11 @@ export async function startCompletion(input: StartCompletionInput): Promise<Comp
       streamed: metrics.streamed,
     });
     if (reservation.sourceType === 'balance') void notifyLowBalance(userId);
-    if (settleRes.upstreamCostCredits != null && settleRes.actualCredits < settleRes.upstreamCostCredits) {
+    if (
+      !settleRes.unlimitedPass &&
+      settleRes.upstreamCostCredits != null &&
+      settleRes.actualCredits < settleRes.upstreamCostCredits
+    ) {
       void alertNegativeMargin(publicModelId, settleRes.actualCredits, settleRes.upstreamCostCredits);
     }
     logRequest({
@@ -763,7 +799,7 @@ export async function startCompletion(input: StartCompletionInput): Promise<Comp
     reservation,
     promptTokens,
     gatewayLatencyMs,
-    body,
+    body: currentBody,
     sanitized: success.sanitized,
     attempts,
     finalize,

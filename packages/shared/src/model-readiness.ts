@@ -1,6 +1,10 @@
 // "Ready" = the API router would find at least one active provider with a key for this model.
-// Mirrors buildCandidates in apps/api/src/domain/router.ts: enabled pool rows win when
-// POOL_ENABLED=true, otherwise primary then fallback. Keys are checked for presence, not validity.
+// Mirrors buildCandidates in apps/api/src/domain/router.ts: enabled pool rows win by default
+// unless POOL_ENABLED=false (kill-switch), otherwise primary then fallback. Keys are checked for presence, not validity.
+
+export function isPoolEnabled(env: Record<string, string | undefined> = process.env): boolean {
+  return env.POOL_ENABLED !== 'false';
+}
 
 export interface ReadinessProvider {
   id: string;
@@ -38,7 +42,7 @@ export function readyModelIds(
 ): Set<string> {
   const usable = new Set(providers.filter((p) => providerUsable(p, env)).map((p) => p.id));
   const poolBy = new Map<string, string[]>();
-  if (env.POOL_ENABLED === 'true') {
+  if (isPoolEnabled(env)) {
     for (const r of pool) if (r.isEnabled) poolBy.set(r.modelId, [...(poolBy.get(r.modelId) ?? []), r.providerId]);
   }
   return new Set(

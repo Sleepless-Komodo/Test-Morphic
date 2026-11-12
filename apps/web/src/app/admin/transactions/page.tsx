@@ -8,7 +8,7 @@ import { memo } from '@/lib/memo';
 import { CreditCard } from 'lucide-react';
 
 export default async function AdminTransactions() {
-  await requireAdmin();
+  await requireAdmin('finance:read');
   const { t } = await getServerTranslation();
 
   const payments = await memo('admin:transactions', 10_000, () => db

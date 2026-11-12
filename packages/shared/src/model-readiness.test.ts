@@ -33,7 +33,7 @@ test('legacy: primary or fallback with a key is ready', () => {
   assert.deepEqual([...ready].sort(), ['a', 'b']);
 });
 
-test('pool rows replace primary only when POOL_ENABLED=true', () => {
+test('pool rows replace primary by default; POOL_ENABLED=false acts as kill-switch', () => {
   const models = [
     { id: 'm', providerId: 'none', fallbackProviderId: null },
     { id: 'n', providerId: 'enc', fallbackProviderId: null },
@@ -42,6 +42,9 @@ test('pool rows replace primary only when POOL_ENABLED=true', () => {
     { modelId: 'm', providerId: 'env', isEnabled: true },
     { modelId: 'n', providerId: 'missing', isEnabled: true },
   ];
-  assert.deepEqual([...readyModelIds(models, providers, pool, env)], ['n']);
+  // Default (POOL_ENABLED unset): enabled pool rows win over legacy primary
+  assert.deepEqual([...readyModelIds(models, providers, pool, env)], ['m']);
   assert.deepEqual([...readyModelIds(models, providers, pool, { ...env, POOL_ENABLED: 'true' })], ['m']);
+  // Kill-switch (POOL_ENABLED=false): ignores pool rows and uses legacy primary
+  assert.deepEqual([...readyModelIds(models, providers, pool, { ...env, POOL_ENABLED: 'false' })], ['n']);
 });

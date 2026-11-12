@@ -1,7 +1,17 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { toggleUserSuspension, adjustUserCredits, deleteUserByAdmin } from '@/lib/admin-actions';
+import {
+  toggleUserSuspension,
+  adjustUserCredits,
+  deleteUserByAdmin,
+  updateUserRole,
+} from '@/lib/admin-actions';
+import {
+  hasAdminPermission,
+  isAdminRole,
+  USER_ROLES,
+} from '@morphic/shared/admin-rbac';
 import { formatCredits } from '@/lib/utils';
 import { useTranslation } from '@/lib/i18n';
 import { Trash2, AlertTriangle, Loader2, Check } from 'lucide-react';
@@ -19,9 +29,14 @@ export interface UserItem {
 interface UsersTableProps {
   users: UserItem[];
   currentAdminId: string;
+  currentAdminRole: string;
 }
 
-export function UsersTable({ users, currentAdminId }: UsersTableProps) {
+export function UsersTable({ users, currentAdminId, currentAdminRole }: UsersTableProps) {
+  const canEditRoles = hasAdminPermission(currentAdminRole, 'users:role');
+  const canAdjustCredits = hasAdminPermission(currentAdminRole, 'finance:write');
+  const canSuspend = hasAdminPermission(currentAdminRole, 'users:write');
+  const canDelete = hasAdminPermission(currentAdminRole, 'users:delete');
   const { t } = useTranslation();
   const [selectedUserForDelete, setSelectedUserForDelete] = useState<UserItem | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -120,15 +135,39 @@ export function UsersTable({ users, currentAdminId }: UsersTableProps) {
                       <div className="text-[11px] text-neutral-500 mt-0.5">{u.name || t.admin.users.noDisplayName}</div>
                     </td>
                     <td className="py-3 px-3">
-                      <span
-                        className={`inline-flex items-center px-2 py-0.5 rounded-md font-mono text-[10px] font-bold uppercase tracking-wider ${
-                          u.role === 'admin'
-                            ? 'bg-neutral-950 text-white'
-                            : 'bg-neutral-100 text-neutral-600 border border-neutral-200/80'
-                        }`}
-                      >
-                        {u.role}
-                      </span>
+                      {canEditRoles && !isSelf ? (
+                        <form action={updateUserRole} className="inline-flex items-center gap-1">
+                          <input type="hidden" name="id" value={u.id} />
+                          <select
+                            name="role"
+                            defaultValue={u.role}
+                            aria-label={`Role for ${u.email}`}
+                            className="px-2 py-1 text-[11px] font-mono rounded-lg border border-neutral-200 bg-neutral-50 text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
+                          >
+                            {USER_ROLES.map((r) => (
+                              <option key={r} value={r}>
+                                {r}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            type="submit"
+                            className="px-2 py-1 text-[10px] font-semibold rounded-lg border border-neutral-200 bg-white hover:bg-neutral-100 text-neutral-900 cursor-pointer"
+                          >
+                            Save
+                          </button>
+                        </form>
+                      ) : (
+                        <span
+                          className={`inline-flex items-center px-2 py-0.5 rounded-md font-mono text-[10px] font-bold uppercase tracking-wider ${
+                            isAdminRole(u.role)
+                              ? 'bg-neutral-950 text-white'
+                              : 'bg-neutral-100 text-neutral-600 border border-neutral-200/80'
+                          }`}
+                        >
+                          {u.role}
+                        </span>
+                      )}
                     </td>
                     <td className="py-3 px-3 whitespace-nowrap">
                       {u.suspended ? (
@@ -152,30 +191,32 @@ export function UsersTable({ users, currentAdminId }: UsersTableProps) {
                     <td className="py-3 px-4">
                       <div className="flex items-center justify-end gap-1.5">
                         {/* Adjust credits form */}
-                        <form action={adjustUserCredits} className="flex items-center gap-1">
-                          <input type="hidden" name="id" value={u.id} />
-                          <label htmlFor={`adjust-${u.id}`} className="sr-only">
-                            Adjust credits for {u.email}
-                          </label>
-                          <input
-                            id={`adjust-${u.id}`}
-                            name="amount"
-                            type="number"
-                            aria-label={`Adjust credits for ${u.email}`}
-                            className="w-20 px-2 py-1 text-xs rounded-lg border border-neutral-200 bg-neutral-50 text-neutral-900 placeholder:text-neutral-500 font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
-                            placeholder={t.admin.users.adjustPlaceholder}
-                          />
-                          <button
-                            type="submit"
-                            title={t.admin.users.adjustBtn}
-                            className="px-2 py-1 text-xs font-semibold rounded-lg border border-neutral-200 bg-white hover:bg-neutral-100 text-neutral-900 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 cursor-pointer shadow-2xs whitespace-nowrap"
-                          >
-                            {t.admin.users.adjustBtn}
-                          </button>
-                        </form>
+                        {canAdjustCredits && (
+                          <form action={adjustUserCredits} className="flex items-center gap-1">
+                            <input type="hidden" name="id" value={u.id} />
+                            <label htmlFor={`adjust-${u.id}`} className="sr-only">
+                              Adjust credits for {u.email}
+                            </label>
+                            <input
+                              id={`adjust-${u.id}`}
+                              name="amount"
+                              type="number"
+                              aria-label={`Adjust credits for ${u.email}`}
+                              className="w-20 px-2 py-1 text-xs rounded-lg border border-neutral-200 bg-neutral-50 text-neutral-900 placeholder:text-neutral-500 font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
+                              placeholder={t.admin.users.adjustPlaceholder}
+                            />
+                            <button
+                              type="submit"
+                              title={t.admin.users.adjustBtn}
+                              className="px-2 py-1 text-xs font-semibold rounded-lg border border-neutral-200 bg-white hover:bg-neutral-100 text-neutral-900 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 cursor-pointer shadow-2xs whitespace-nowrap"
+                            >
+                              {t.admin.users.adjustBtn}
+                            </button>
+                          </form>
+                        )}
 
                         {/* Suspend / Unsuspend button */}
-                        {!isSelf && (
+                        {!isSelf && canSuspend && (
                           <form action={toggleUserSuspension}>
                             <input type="hidden" name="id" value={u.id} />
                             <button
@@ -192,7 +233,7 @@ export function UsersTable({ users, currentAdminId }: UsersTableProps) {
                         )}
 
                         {/* Delete User Button */}
-                        {!isSelf ? (
+                        {!isSelf && canDelete ? (
                           <button
                             type="button"
                             onClick={() => setSelectedUserForDelete(u)}

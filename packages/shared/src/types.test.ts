@@ -128,3 +128,13 @@ test('chatCompletionRequestSchema validates tool definitions, tool_choice, and r
   }
 });
 
+test('chatCompletionRequestSchema enforces n === 1 and positive integer max_completion_tokens', () => {
+  const base = { model: 'deepseek-v4.1', messages: [{ role: 'user', content: 'hi' }] };
+
+  assert.equal(chatCompletionRequestSchema.safeParse({ ...base, n: 1 }).success, true);
+  assert.equal(chatCompletionRequestSchema.safeParse({ ...base, n: 2 }).success, false);
+  assert.equal(chatCompletionRequestSchema.safeParse({ ...base, max_completion_tokens: 100 }).success, true);
+  assert.equal(chatCompletionRequestSchema.safeParse({ ...base, max_completion_tokens: -1 }).success, false);
+  assert.equal(chatCompletionRequestSchema.safeParse({ ...base, max_completion_tokens: 'abc' }).success, false);
+});
+

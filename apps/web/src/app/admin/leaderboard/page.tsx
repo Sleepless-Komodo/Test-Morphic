@@ -30,7 +30,7 @@ function Rank({ n }: { n: number }) {
 }
 
 export default async function AdminLeaderboard({ searchParams }: { searchParams: Promise<{ period?: string }> }) {
-  await requireAdmin();
+  await requireAdmin('finance:read');
   const { locale } = await getServerTranslation();
   const en = locale === 'en';
   const { period: periodParam } = await searchParams;

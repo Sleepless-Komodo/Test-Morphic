@@ -14,6 +14,7 @@ import { db, schema as s } from '@morphic/db';
 import { and, eq, isNull, type SQL } from 'drizzle-orm';
 import { getCapture } from './paypal';
 import { sendOpsAlert } from './alert';
+import { notifyAccountSuspended } from './notify';
 import {
   accrueRefund,
   markPaidPayment,
@@ -46,6 +47,7 @@ interface Outcome {
   status: string;
   alerts: Alert[];
   reason?: string;
+  suspendedUserId?: string;
 }
 
 export interface PostPaymentResult {
@@ -294,6 +296,7 @@ async function applyDisputeOpened(
   return {
     duplicate: false,
     status: moved.status,
+    suspendedUserId: suspended ? payment.userId : undefined,
     alerts: [
       {
         message: `PayPal ${eventType} pada payment ${payment.id} → ${moved.status}${suspended ? ' (akun dibekukan)' : ''}`,
@@ -454,7 +457,7 @@ export async function handlePostPaymentEvent(input: {
       { provider: 'paypal', eventId, paymentId: payment.id, payload: redacted },
       tx,
     );
-    if (!isNew) return { duplicate: true, status: payment.status, alerts: [] as Alert[], reason: undefined };
+    if (!isNew) return { duplicate: true, status: payment.status, alerts: [] as Alert[], reason: undefined, suspendedUserId: undefined };
 
     if (eventType === 'PAYMENT.CAPTURE.REFUNDED') return applyRefund(tx, payment, payload);
     if (eventType === 'PAYMENT.CAPTURE.REVERSED' || eventType === 'CUSTOMER.DISPUTE.CREATED') {
@@ -462,6 +465,13 @@ export async function handlePostPaymentEvent(input: {
     }
     return applyDisputeResolved(tx, payment, payload);
   });
+
+  if (outcome.suspendedUserId) {
+    void notifyAccountSuspended(
+      outcome.suspendedUserId,
+      'Sengketa atau penarikan pembayaran PayPal (dispute/reversal)',
+    );
+  }
 
   for (const alert of outcome.alerts) {
     try {

@@ -8,7 +8,12 @@ import { buildReceiptPdf } from '../lib/receipt-pdf';
 import { packagePriceIdr, packagePriceUsdCents } from '@morphic/shared/credits';
 import { giftCardInputSchema } from '@morphic/shared/types';
 import { eq, and, inArray, sql, gt } from 'drizzle-orm';
-import { createTransaction } from '../lib/duitku';
+import {
+  createTransaction,
+  DUITKU_BACKUP_PAYMENT_METHOD,
+  DUITKU_PRIMARY_PAYMENT_METHOD,
+  isDuitkuConfigured,
+} from '../lib/duitku';
 import * as paypal from '../lib/paypal';
 import {
   DUITKU_PAYMENT_TTL_MINUTES,
@@ -18,8 +23,11 @@ import {
 } from '../lib/paypal-reconcile';
 import { transitionPayment, saveCaptureId, flagPaymentNeedsReview } from '../lib/payment-state';
 
-// Allowed Duitku payment methods whitelist restricted to QRIS channels without fee discrepancies
-export const ALLOWED_DUITKU_PAYMENT_METHODS = new Set(['SP', 'LQ', 'NQ']);
+// Duitku QRIS channels are merchant-configurable; primary is used by default.
+export const ALLOWED_DUITKU_PAYMENT_METHODS = new Set([
+  DUITKU_PRIMARY_PAYMENT_METHOD,
+  DUITKU_BACKUP_PAYMENT_METHOD,
+].filter(Boolean));
 
 export const invalidGiftCard = {
   error: { message: 'invalid gift card', type: 'invalid_request_error', code: 'invalid_gift_card' },
@@ -54,6 +62,19 @@ export async function insertPayment(values: typeof s.payments.$inferInsert, gift
  */
 export async function handleCreatePayment(c: Context): Promise<Response> {
   const { userId } = c.get('userSession');
+
+  if (!DUITKU_PRIMARY_PAYMENT_METHOD || !isDuitkuConfigured()) {
+    return c.json(
+      {
+        error: {
+          message: 'Duitku payment configuration is incomplete',
+          type: 'server_error',
+          code: 'payment_channel_not_configured',
+        },
+      },
+      503,
+    );
+  }
 
   // Step 1: Parse and validate JSON request payload
   let body: { packageId?: string; paymentMethod?: string; giftCard?: unknown };
@@ -203,7 +224,7 @@ export async function handleCreatePayment(c: Context): Promise<Response> {
     duitkuResult = await createTransaction({
       merchantOrderId,
       paymentAmount: amountIDR,
-      paymentMethod: paymentMethod ?? 'SP',
+      paymentMethod: paymentMethod ?? DUITKU_PRIMARY_PAYMENT_METHOD,
       productDetails: gift ? `Morphic Gift Card — ${pkg.name}` : `Morphic Credits — ${pkg.name}`,
       email: user.email.slice(0, 50),
       customerVaName,
@@ -259,6 +280,7 @@ export async function handleGetReceipt(c: Context): Promise<Response> {
       amountCents: s.payments.amountCents,
       currency: s.payments.currency,
       credits: s.payments.credits,
+      status: s.payments.status,
       paidAt: s.payments.paidAt,
       createdAt: s.payments.createdAt,
       packageName: s.packages.name,
@@ -268,12 +290,24 @@ export async function handleGetReceipt(c: Context): Promise<Response> {
     .from(s.payments)
     .innerJoin(s.users, eq(s.users.id, s.payments.userId))
     .leftJoin(s.packages, eq(s.packages.id, s.payments.packageId))
-    .where(and(eq(s.payments.id, paymentId), eq(s.payments.userId, userId), eq(s.payments.status, 'paid')))
+    .where(
+      and(
+        eq(s.payments.id, paymentId),
+        eq(s.payments.userId, userId),
+        inArray(s.payments.status, ['paid', 'refunded', 'disputed']),
+      ),
+    )
     .limit(1);
   if (!row) return notFound();
 
   const paidAt = row.paidAt ?? row.createdAt;
   const amount = row.currency === 'USD' ? `USD ${(row.amountCents / 100).toFixed(2)}` : `Rp ${row.amountCents.toLocaleString('id-ID')}`;
+  const statusLabel =
+    row.status === 'refunded'
+      ? 'DIKEMBALIKAN / REFUNDED'
+      : row.status === 'disputed'
+        ? 'SENGKETA / DISPUTED'
+        : 'LUNAS / PAID';
   const pdf = buildReceiptPdf(
     'Kuitansi pembayaran / Payment receipt',
     [
@@ -285,7 +319,7 @@ export async function handleGetReceipt(c: Context): Promise<Response> {
       ['Jumlah dibayar', amount],
       ['Metode bayar', row.provider === 'paypal' ? 'PayPal' : row.provider === 'duitku' ? 'Duitku' : row.provider],
       ['ID transaksi gateway', row.externalId],
-      ['Status', 'LUNAS / PAID'],
+      ['Status', statusLabel],
     ],
     `Dokumen ini diterbitkan secara elektronik oleh Morphic dan sah tanpa tanda tangan. Ref ${row.id}`,
   );

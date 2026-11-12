@@ -156,7 +156,7 @@ function MarginSkeleton() {
 }
 
 export default async function AdminMargin({ searchParams }: { searchParams: Promise<{ period?: string }> }) {
-  await requireAdmin();
+  await requireAdmin('finance:read');
   const { locale } = await getServerTranslation();
   const en = locale === 'en';
   const { period, since } = parsePeriod((await searchParams).period);
