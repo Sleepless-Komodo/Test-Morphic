@@ -563,7 +563,7 @@ test('Duitku /create rejects unsupported paymentMethod and limits pending paymen
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `******
+      Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify({ packageId: pkg.id, paymentMethod: 'LQ' }),
   });
@@ -623,7 +623,7 @@ test('Duitku /create applies a per-session request limiter', async () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `******
+        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({}),
     });
