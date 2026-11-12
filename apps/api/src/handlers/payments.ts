@@ -8,7 +8,12 @@ import { buildReceiptPdf } from '../lib/receipt-pdf';
 import { packagePriceIdr, packagePriceUsdCents } from '@morphic/shared/credits';
 import { giftCardInputSchema } from '@morphic/shared/types';
 import { eq, and, inArray, sql, gt } from 'drizzle-orm';
-import { createTransaction } from '../lib/duitku';
+import {
+  createTransaction,
+  DUITKU_BACKUP_PAYMENT_METHOD,
+  DUITKU_PRIMARY_PAYMENT_METHOD,
+  isDuitkuConfigured,
+} from '../lib/duitku';
 import * as paypal from '../lib/paypal';
 import {
   DUITKU_PAYMENT_TTL_MINUTES,
@@ -18,8 +23,11 @@ import {
 } from '../lib/paypal-reconcile';
 import { transitionPayment, saveCaptureId, flagPaymentNeedsReview } from '../lib/payment-state';
 
-// Allowed Duitku payment methods whitelist restricted to QRIS channels without fee discrepancies
-export const ALLOWED_DUITKU_PAYMENT_METHODS = new Set(['SP', 'LQ', 'NQ']);
+// Duitku QRIS channels are merchant-configurable; primary is used by default.
+export const ALLOWED_DUITKU_PAYMENT_METHODS = new Set([
+  DUITKU_PRIMARY_PAYMENT_METHOD,
+  DUITKU_BACKUP_PAYMENT_METHOD,
+].filter(Boolean));
 
 export const invalidGiftCard = {
   error: { message: 'invalid gift card', type: 'invalid_request_error', code: 'invalid_gift_card' },
@@ -54,6 +62,19 @@ export async function insertPayment(values: typeof s.payments.$inferInsert, gift
  */
 export async function handleCreatePayment(c: Context): Promise<Response> {
   const { userId } = c.get('userSession');
+
+  if (!DUITKU_PRIMARY_PAYMENT_METHOD || !isDuitkuConfigured()) {
+    return c.json(
+      {
+        error: {
+          message: 'Duitku payment configuration is incomplete',
+          type: 'server_error',
+          code: 'payment_channel_not_configured',
+        },
+      },
+      503,
+    );
+  }
 
   // Step 1: Parse and validate JSON request payload
   let body: { packageId?: string; paymentMethod?: string; giftCard?: unknown };
@@ -203,7 +224,7 @@ export async function handleCreatePayment(c: Context): Promise<Response> {
     duitkuResult = await createTransaction({
       merchantOrderId,
       paymentAmount: amountIDR,
-      paymentMethod: paymentMethod ?? 'SP',
+      paymentMethod: paymentMethod ?? DUITKU_PRIMARY_PAYMENT_METHOD,
       productDetails: gift ? `Morphic Gift Card — ${pkg.name}` : `Morphic Credits — ${pkg.name}`,
       email: user.email.slice(0, 50),
       customerVaName,

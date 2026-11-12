@@ -1,4 +1,18 @@
 import { z } from '@hono/zod-openapi';
+import {
+  DUITKU_BACKUP_PAYMENT_METHOD,
+  DUITKU_PRIMARY_PAYMENT_METHOD,
+} from '../../lib/duitku';
+
+const configuredDuitkuPaymentMethods = [
+  DUITKU_PRIMARY_PAYMENT_METHOD,
+  DUITKU_BACKUP_PAYMENT_METHOD,
+].filter(Boolean);
+
+const paymentMethodSchema =
+  configuredDuitkuPaymentMethods.length > 0
+    ? z.enum(configuredDuitkuPaymentMethods as [string, ...string[]])
+    : z.string().min(1);
 
 /**
  * Gift card personalization options.
@@ -25,9 +39,9 @@ export const CreatePaymentRequestSchema = z
       description: 'ID of the active package to purchase',
       example: 'e1f2a3b4-c5d6-7890-1234-56789abcdef0',
     }),
-    paymentMethod: z.enum(['SP', 'LQ', 'NQ']).optional().default('SP').openapi({
-      description: 'Duitku payment method channel (SP = QRIS ShopeePay, LQ = LinkAja QRIS, NQ = Nobu QRIS)',
-      example: 'SP',
+    paymentMethod: paymentMethodSchema.optional().openapi({
+      description: `Duitku QRIS channel (${DUITKU_PRIMARY_PAYMENT_METHOD || 'primary'} = primary; ${DUITKU_BACKUP_PAYMENT_METHOD || 'backup'} = backup)`,
+      example: DUITKU_PRIMARY_PAYMENT_METHOD || undefined,
     }),
     giftCard: GiftCardSchema.optional().openapi({
       description: 'Optional gift card parameters when purchasing as a gift voucher',

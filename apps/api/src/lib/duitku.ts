@@ -2,6 +2,21 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 
 // ── Config ────────────────────────────────────────────
 
+function configuredPaymentMethod(name: string): string {
+  return process.env[name]?.trim() ?? '';
+}
+
+/** Primary and backup Duitku channel codes are merchant-configurable. */
+export const DUITKU_PRIMARY_PAYMENT_METHOD = configuredPaymentMethod('DUITKU_PRIMARY_PAYMENT_METHOD');
+export const DUITKU_BACKUP_PAYMENT_METHOD = configuredPaymentMethod('DUITKU_BACKUP_PAYMENT_METHOD');
+
+export function isDuitkuConfigured(): boolean {
+  return Boolean(
+    process.env.DUITKU_MERCHANT_CODE?.trim() &&
+      process.env.DUITKU_API_KEY?.trim(),
+  );
+}
+
 function getMerchantCode(): string {
   const code = process.env.DUITKU_MERCHANT_CODE;
   if (!code) throw new Error('DUITKU_MERCHANT_CODE is not set');
@@ -33,6 +48,28 @@ export function assertDuitkuConfig() {
     return;
   }
 
+  // Production and production-mode test runs must declare the merchant's exact
+  // Duitku channel codes; there are no safe universal defaults.
+  if (prod || env === 'production') {
+    const primary = process.env.DUITKU_PRIMARY_PAYMENT_METHOD?.trim();
+    const backup = process.env.DUITKU_BACKUP_PAYMENT_METHOD?.trim();
+    if (!primary) {
+      throw new Error(
+        'DUITKU_PRIMARY_PAYMENT_METHOD is required for production; set it to the primary Duitku payment channel code',
+      );
+    }
+    if (!backup) {
+      throw new Error(
+        'DUITKU_BACKUP_PAYMENT_METHOD is required for production; set it to the backup Duitku payment channel code',
+      );
+    }
+    if (primary === backup) {
+      throw new Error(
+        'DUITKU_PRIMARY_PAYMENT_METHOD and DUITKU_BACKUP_PAYMENT_METHOD must differ',
+      );
+    }
+  }
+
   // A half-configured provider in production means payments would fail at request time; fail at boot.
   if (prod) {
     if (!merchantCode) throw new Error('DUITKU_MERCHANT_CODE is required in production');
@@ -40,6 +77,15 @@ export function assertDuitkuConfig() {
   }
 
   console.log(`[duitku] environment: ${env}`);
+  if (DUITKU_PRIMARY_PAYMENT_METHOD && DUITKU_BACKUP_PAYMENT_METHOD) {
+    console.log(
+      `[duitku] channels primary=${DUITKU_PRIMARY_PAYMENT_METHOD} backup=${DUITKU_BACKUP_PAYMENT_METHOD}`,
+    );
+  } else {
+    console.warn(
+      '[duitku] payment channels are not configured; Duitku payment creation is disabled',
+    );
+  }
 }
 
 function baseUrl(): string {
@@ -68,7 +114,7 @@ export interface CreateTransactionParams {
   callbackUrl: string;       // webhook URL (must be public HTTPS)
   returnUrl: string;         // redirect after payment
   expiryPeriod?: number;     // minutes, default 60
-  paymentMethod?: string;    // payment method code e.g. 'SP' (ShopeePay QRIS), default 'SP'
+  paymentMethod?: string;    // defaults to DUITKU_PRIMARY_PAYMENT_METHOD
 }
 
 export interface CreateTransactionResult {
@@ -104,7 +150,7 @@ export async function createTransaction(
     returnUrl: params.returnUrl,
     signature,
     expiryPeriod: params.expiryPeriod ?? 60,
-    paymentMethod: params.paymentMethod ?? 'SP',
+    paymentMethod: params.paymentMethod ?? DUITKU_PRIMARY_PAYMENT_METHOD,
   };
 
   const url = `${baseUrl()}/api/merchant/v2/inquiry`;

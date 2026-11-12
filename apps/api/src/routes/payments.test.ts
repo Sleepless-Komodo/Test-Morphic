@@ -4,7 +4,15 @@ import { createHash } from 'node:crypto';
 import { app } from '../app';
 import { db, schema as s } from '@morphic/db';
 import { markPaymentIfOpen, getBalance } from '@morphic/db/billing';
-import { verifyCallbackSignature, createTransaction, checkTransactionStatus, assertDuitkuConfig } from '../lib/duitku';
+import {
+  verifyCallbackSignature,
+  createTransaction,
+  checkTransactionStatus,
+  assertDuitkuConfig,
+  DUITKU_PRIMARY_PAYMENT_METHOD,
+  DUITKU_BACKUP_PAYMENT_METHOD,
+} from '../lib/duitku';
+import { ALLOWED_DUITKU_PAYMENT_METHODS } from '../handlers/payments';
 import { eq } from 'drizzle-orm';
 import { IDR_PER_USD } from '@morphic/shared/credits';
 
@@ -366,6 +374,10 @@ test('Security Test 6: verifyCallbackSignature calculates MD5 dynamically', () =
 test('Security Test 7: assertDuitkuConfig rejects mismatched NODE_ENV and DUITKU_ENV', () => {
   const prevNodeEnv = process.env.NODE_ENV;
   const prevDuitkuEnv = process.env.DUITKU_ENV;
+  const restore = (key: string, value: string | undefined) => {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  };
 
   try {
     process.env.NODE_ENV = 'production';
@@ -376,12 +388,117 @@ test('Security Test 7: assertDuitkuConfig rejects mismatched NODE_ENV and DUITKU
     process.env.DUITKU_ENV = 'production';
     assert.throws(() => assertDuitkuConfig(), /DUITKU_ENV=production is not allowed outside production/);
   } finally {
-    process.env.NODE_ENV = prevNodeEnv;
-    process.env.DUITKU_ENV = prevDuitkuEnv;
+    restore('NODE_ENV', prevNodeEnv);
+    restore('DUITKU_ENV', prevDuitkuEnv);
   }
 });
 
-test('Security Test 8: checkTransactionStatus throws on malformed Duitku response', async () => {
+test('Security Test 8: assertDuitkuConfig rejects missing production channel configuration', () => {
+  const previous = {
+    node: process.env.NODE_ENV,
+    duitkuEnv: process.env.DUITKU_ENV,
+    primary: process.env.DUITKU_PRIMARY_PAYMENT_METHOD,
+    backup: process.env.DUITKU_BACKUP_PAYMENT_METHOD,
+    merchantCode: process.env.DUITKU_MERCHANT_CODE,
+    apiKey: process.env.DUITKU_API_KEY,
+  };
+  const restore = (key: string, value: string | undefined) => {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  };
+
+  try {
+    process.env.NODE_ENV = 'production';
+    process.env.DUITKU_ENV = 'production';
+    process.env.DUITKU_MERCHANT_CODE = previous.merchantCode ?? 'test-merchant';
+    process.env.DUITKU_API_KEY = previous.apiKey ?? 'test-key';
+    delete process.env.DUITKU_PRIMARY_PAYMENT_METHOD;
+    delete process.env.DUITKU_BACKUP_PAYMENT_METHOD;
+
+    assert.throws(
+      () => assertDuitkuConfig(),
+      /DUITKU_PRIMARY_PAYMENT_METHOD is required for production/,
+    );
+  } finally {
+    restore('NODE_ENV', previous.node);
+    restore('DUITKU_ENV', previous.duitkuEnv);
+    restore('DUITKU_PRIMARY_PAYMENT_METHOD', previous.primary);
+    restore('DUITKU_BACKUP_PAYMENT_METHOD', previous.backup);
+    restore('DUITKU_MERCHANT_CODE', previous.merchantCode);
+    restore('DUITKU_API_KEY', previous.apiKey);
+  }
+});
+
+test('Duitku config allows a production PayPal-only deployment without channel variables', () => {
+  const previous = {
+    node: process.env.NODE_ENV,
+    duitkuEnv: process.env.DUITKU_ENV,
+    primary: process.env.DUITKU_PRIMARY_PAYMENT_METHOD,
+    backup: process.env.DUITKU_BACKUP_PAYMENT_METHOD,
+    merchantCode: process.env.DUITKU_MERCHANT_CODE,
+    apiKey: process.env.DUITKU_API_KEY,
+  };
+  const restore = (key: string, value: string | undefined) => {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  };
+
+  try {
+    process.env.NODE_ENV = 'production';
+    process.env.DUITKU_ENV = 'production';
+    delete process.env.DUITKU_PRIMARY_PAYMENT_METHOD;
+    delete process.env.DUITKU_BACKUP_PAYMENT_METHOD;
+    delete process.env.DUITKU_MERCHANT_CODE;
+    delete process.env.DUITKU_API_KEY;
+
+    assert.doesNotThrow(() => assertDuitkuConfig());
+  } finally {
+    restore('NODE_ENV', previous.node);
+    restore('DUITKU_ENV', previous.duitkuEnv);
+    restore('DUITKU_PRIMARY_PAYMENT_METHOD', previous.primary);
+    restore('DUITKU_BACKUP_PAYMENT_METHOD', previous.backup);
+    restore('DUITKU_MERCHANT_CODE', previous.merchantCode);
+    restore('DUITKU_API_KEY', previous.apiKey);
+  }
+});
+
+test('Duitku config rejects identical production channel variables', () => {
+  const previous = {
+    node: process.env.NODE_ENV,
+    duitkuEnv: process.env.DUITKU_ENV,
+    primary: process.env.DUITKU_PRIMARY_PAYMENT_METHOD,
+    backup: process.env.DUITKU_BACKUP_PAYMENT_METHOD,
+    merchantCode: process.env.DUITKU_MERCHANT_CODE,
+    apiKey: process.env.DUITKU_API_KEY,
+  };
+  const restore = (key: string, value: string | undefined) => {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  };
+
+  try {
+    process.env.NODE_ENV = 'production';
+    process.env.DUITKU_ENV = 'production';
+    process.env.DUITKU_MERCHANT_CODE = 'test-merchant';
+    process.env.DUITKU_API_KEY = 'test-key';
+    process.env.DUITKU_PRIMARY_PAYMENT_METHOD = 'same';
+    process.env.DUITKU_BACKUP_PAYMENT_METHOD = 'same';
+
+    assert.throws(
+      () => assertDuitkuConfig(),
+      /DUITKU_PRIMARY_PAYMENT_METHOD and DUITKU_BACKUP_PAYMENT_METHOD must differ/,
+    );
+  } finally {
+    restore('NODE_ENV', previous.node);
+    restore('DUITKU_ENV', previous.duitkuEnv);
+    restore('DUITKU_PRIMARY_PAYMENT_METHOD', previous.primary);
+    restore('DUITKU_BACKUP_PAYMENT_METHOD', previous.backup);
+    restore('DUITKU_MERCHANT_CODE', previous.merchantCode);
+    restore('DUITKU_API_KEY', previous.apiKey);
+  }
+});
+
+test('Duitku status check rejects malformed gateway responses', async () => {
   process.env.DUITKU_MERCHANT_CODE = 'DTEST';
   process.env.DUITKU_API_KEY = 'KEY_TEST_SECRET';
 
@@ -403,7 +520,7 @@ test('Security Test 8: checkTransactionStatus throws on malformed Duitku respons
   f.mock.restore();
 });
 
-test('Security Test 9: Duitku /create rejects unsupported paymentMethod and limits pending payments to 5', async () => {
+test('Duitku /create rejects unsupported paymentMethod and limits pending payments to 5', async () => {
   const runId = Date.now();
 
   const [user] = await db
@@ -442,6 +559,21 @@ test('Security Test 9: Duitku /create rejects unsupported paymentMethod and limi
   const badMethodData = await badMethodRes.json();
   assert.equal(badMethodData.error?.code, 'invalid_payment_method');
 
+  const unsupportedMethodRes = await app.request('/v1/payments/create', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `******
+    },
+    body: JSON.stringify({ packageId: pkg.id, paymentMethod: 'LQ' }),
+  });
+  assert.equal(unsupportedMethodRes.status, 400);
+  const unsupportedMethodData = await unsupportedMethodRes.json();
+  assert.equal(unsupportedMethodData.error?.code, 'invalid_payment_method');
+  assert.equal(ALLOWED_DUITKU_PAYMENT_METHODS.has(DUITKU_PRIMARY_PAYMENT_METHOD), true);
+  assert.equal(ALLOWED_DUITKU_PAYMENT_METHODS.has(DUITKU_BACKUP_PAYMENT_METHOD), true);
+  assert.equal(ALLOWED_DUITKU_PAYMENT_METHODS.has('LQ'), false);
+
   // Test 9b: Insert 5 pending payments for user
   for (let i = 0; i < 5; i++) {
     await db.insert(s.payments).values({
@@ -462,11 +594,50 @@ test('Security Test 9: Duitku /create rejects unsupported paymentMethod and limi
       'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify({ packageId: pkg.id, paymentMethod: 'SP' }),
+    body: JSON.stringify({
+      packageId: pkg.id,
+      paymentMethod: DUITKU_PRIMARY_PAYMENT_METHOD,
+    }),
   });
   assert.equal(rateLimitRes.status, 429);
   const rateLimitData = await rateLimitRes.json();
   assert.equal(rateLimitData.error?.code, 'too_many_pending_payments');
+});
+
+test('Duitku /create applies a per-session request limiter', async () => {
+  const runId = Date.now();
+  const [user] = await db
+    .insert(s.users)
+    .values({ name: 'Create RateLimit User', email: `create-ratelimit-${runId}@test.dev` })
+    .returning();
+
+  const token = `test_create_ratelimit_session_${runId}`;
+  await db.insert(s.sessions).values({
+    userId: user.id,
+    token,
+    expiresAt: new Date(Date.now() + 3600_000),
+  });
+
+  const request = () =>
+    app.request('/v1/payments/create', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `******
+      },
+      body: JSON.stringify({}),
+    });
+
+  for (let i = 0; i < 5; i++) {
+    const response = await request();
+    assert.equal(response.status, 400);
+    assert.equal(response.headers.get('x-ratelimit-limit-requests'), '5');
+  }
+
+  const limited = await request();
+  assert.equal(limited.status, 429);
+  assert.equal((await limited.json()).error?.code, 'rate_limit_exceeded');
+  assert.equal(limited.headers.get('retry-after') !== null, true);
 });
 
 test('PayPal Rescue Test: /paypal/verify rescues failed/expired row if PayPal returns COMPLETED', { timeout: 30000 }, async () => {
@@ -535,7 +706,7 @@ test('PayPal Rescue Test: /paypal/verify rescues failed/expired row if PayPal re
   assert.equal(refreshed?.status, 'paid');
 });
 
-test('Security Test 10: /paypal/capture rejects payment on amount or currency mismatch', { timeout: 30000 }, async () => {
+test('PayPal capture rejects payment on amount or currency mismatch', { timeout: 30000 }, async () => {
   const runId = Date.now();
 
   const [user] = await db

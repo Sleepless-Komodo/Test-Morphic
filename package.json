@@ -9,6 +9,8 @@
     "env:dev": "node scripts/switch-env.mjs dev",
     "env:prod": "node scripts/switch-env.mjs prod",
     "env:status": "node scripts/switch-env.mjs status",
+    "context:duitku": "node scripts/generate-duitku-context.mjs",
+    "context:duitku:watch": "node scripts/generate-duitku-context.mjs --watch",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "test": "node --test apps/web/src/lib/*.test.ts && pnpm --filter @morphic/api test",
