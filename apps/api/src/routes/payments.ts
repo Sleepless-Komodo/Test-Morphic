@@ -32,7 +32,7 @@ payments.use('*', denyKeyDerivedSession);
 
 // ── POST /v1/payments/create (Duitku) ─────────────────
 // Creates a Duitku checkout invoice for a given packageId (IDR currency).
-payments.post('/create', handleCreatePayment);
+payments.post('/create', sessionRateLimit('payments-create', 5), handleCreatePayment);
 
 // ── GET /v1/payments/:id/receipt ──────────────────────
 // Returns a dynamically generated PDF receipt for a completed payment.
