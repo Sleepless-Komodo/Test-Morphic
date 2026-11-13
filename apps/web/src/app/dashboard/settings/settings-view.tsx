@@ -46,7 +46,7 @@ interface SettingsViewProps {
     role?: string | null;
   };
   sessions: ActiveSession[];
-  loginOtp: { enabled: boolean; hasPassword: boolean };
+  loginOtp: { enabled: boolean; hasPassword: boolean; redirectAfterEnable?: string };
 }
 
 /** Reads the browser and platform out of a user agent string for the session list. */
@@ -502,7 +502,11 @@ export function SettingsView({ user, sessions, loginOtp }: SettingsViewProps) {
               </p>
             )}
 
-            <LoginOtpCard enabled={loginOtp.enabled} hasPassword={loginOtp.hasPassword} />
+            <LoginOtpCard
+              enabled={loginOtp.enabled}
+              hasPassword={loginOtp.hasPassword}
+              redirectAfterEnable={loginOtp.redirectAfterEnable}
+            />
 
             {/* Security Guarantee Rows */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
