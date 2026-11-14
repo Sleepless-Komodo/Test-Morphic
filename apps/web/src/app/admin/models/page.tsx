@@ -1,69 +1,13 @@
 import { asc, eq } from 'drizzle-orm';
 import { db, schema as s } from '@morphic/db';
 import { requireAdmin } from '@/lib/actions';
-import {
-  saveModel,
-  saveModelPoolEntry,
-  toggleModelPoolEntry,
-  deleteModelPoolEntry,
-} from '@/lib/admin-actions';
+import { toggleModelPoolEntry, deleteModelPoolEntry } from '@/lib/admin-actions';
 import { hasAdminPermission } from '@morphic/shared/admin-rbac';
 import { getServerTranslation } from '@/lib/i18n/server';
 import { readyModelIds } from '@morphic/shared/model-readiness';
 import { ModelsTable } from './models-table';
+import { AddModelForm, AddPoolEntryForm } from './models-forms';
 import { Cpu, Layers, Plus, Trash2 } from 'lucide-react';
-
-/** Inline tooltip — accessible via hover and keyboard focus */
-function Tip({ text }: { text: string }) {
-  return (
-    <span className="relative inline-flex items-center group ml-1.5">
-      <button
-        type="button"
-        aria-label={`Info: ${text}`}
-        tabIndex={0}
-        className="w-3.5 h-3.5 rounded-full bg-neutral-200 text-neutral-600 text-[9px] font-bold flex items-center justify-center leading-none cursor-help hover:bg-neutral-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
-      >
-        ?
-      </button>
-      <span
-        role="tooltip"
-        className="
-          pointer-events-none absolute z-50 left-5 top-1/2 -translate-y-1/2
-          w-60 px-3 py-2 rounded-xl
-          bg-neutral-950 text-white text-[11px] leading-relaxed
-          opacity-0 group-hover:opacity-100 group-focus-within:opacity-100
-          transition-opacity duration-150
-          shadow-xl border border-neutral-800
-        "
-      >
-        {text}
-      </span>
-    </span>
-  );
-}
-
-/** Label + optional tooltip wrapper */
-function Field({
-  label,
-  tip,
-  children,
-  span,
-}: {
-  label: string;
-  tip?: string;
-  children: React.ReactNode;
-  span?: 'col-span-2' | 'col-span-full';
-}) {
-  return (
-    <div className={`flex flex-col gap-1.5 ${span ?? ''}`}>
-      <label className="flex items-center text-[11px] font-mono font-semibold uppercase tracking-wider text-neutral-500">
-        {label}
-        {tip && <Tip text={tip} />}
-      </label>
-      {children}
-    </div>
-  );
-}
 
 export default async function AdminModels() {
   const admin = await requireAdmin('catalog:read');
@@ -123,6 +67,13 @@ export default async function AdminModels() {
   }));
   const ready = readyModelIds(models, providers, pool);
 
+  const providerOptions = providers.map((p) => ({ id: p.id, name: p.name }));
+  const poolModelOptions = models.map((m) => ({
+    id: m.id,
+    publicModelId: m.publicModelId,
+    contextLength: m.contextLength,
+  }));
+
   return (
     <div className="space-y-6 w-full">
       {/* Header */}
@@ -139,155 +90,22 @@ export default async function AdminModels() {
       </div>
 
       {/* Add Model Card */}
-      <div className="bg-white p-6 rounded-2xl border border-neutral-200/90 shadow-xs">
-        <div className="flex items-center gap-2 mb-4 pb-3 border-b border-neutral-100">
-          <Plus className="w-4 h-4 text-neutral-700" />
-          <h2 className="text-sm font-heading font-bold text-neutral-950">{t.admin.models.addTitle}</h2>
-        </div>
-        <form action={saveModel} className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-4">
-          {/* Row 1 */}
-          <Field
-            label="Provider"
-            tip="Upstream provider that serves this model. Must be registered in the Providers table first."
-          >
-            <select
-              name="providerId"
-              aria-label="Provider"
-              className="w-full px-3 py-2 text-xs rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
-              required
-            >
-              {providers.map((p) => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
-            </select>
-          </Field>
-
-          <Field
-            label="Public Model ID"
-            tip="The model ID that external clients send in requests (e.g. deepseek-v4). This is what users put in their SDK config."
-          >
-            <input
-              name="publicModelId"
-              aria-label="Public Model ID"
-              className="w-full px-3 py-2 text-xs rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 placeholder:text-neutral-500 font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
-              placeholder="deepseek-v4"
-              required
-            />
-          </Field>
-
-          <Field
-            label="Provider Model ID"
-            tip="The actual model ID forwarded to upstream API (e.g. deepseek-chat). Check provider documentation."
-          >
-            <input
-              name="providerModelId"
-              aria-label="Provider Model ID"
-              className="w-full px-3 py-2 text-xs rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 placeholder:text-neutral-500 font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
-              placeholder="deepseek-chat"
-              required
-            />
-          </Field>
-
-          <Field
-            label="Display Name"
-            tip="Human-readable name shown in dashboard UI and model picker."
-          >
-            <input
-              name="displayName"
-              aria-label="Display Name"
-              className="w-full px-3 py-2 text-xs rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 placeholder:text-neutral-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
-              placeholder="DeepSeek V4"
-              required
-            />
-          </Field>
-
-          {/* Row 2 */}
-          <Field
-            label="Description"
-            tip="Short description of what this model is good for."
-            span="col-span-2"
-          >
-            <input
-              name="description"
-              aria-label="Description"
-              className="w-full px-3 py-2 text-xs rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 placeholder:text-neutral-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
-              placeholder="Fast and affordable coding model by DeepSeek"
-            />
-          </Field>
-
-          <Field
-            label="Capabilities"
-            tip="Comma-separated: coding, reasoning, chat, multimodal, vision."
-            span="col-span-2"
-          >
-            <input
-              name="capabilities"
-              aria-label="Capabilities"
-              className="w-full px-3 py-2 text-xs rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 placeholder:text-neutral-500 font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
-              placeholder="coding, reasoning"
-            />
-          </Field>
-
-          {/* Row 3 */}
-          <Field
-            label="Context Length (tokens)"
-            tip="Maximum context window in tokens. ≥128K = Long Context badge."
-          >
-            <input
-              name="contextLength"
-              aria-label="Context Length in tokens"
-              className="w-full px-3 py-2 text-xs rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 placeholder:text-neutral-500 font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
-              type="number"
-              placeholder="65536"
-              min={1024}
-              step={1024}
-              required
-            />
-          </Field>
-
-          <Field
-            label="Input Credits / 1M"
-            tip="Credits charged per 1 million input (prompt) tokens."
-          >
-            <input
-              name="inputCreditsPer1m"
-              aria-label="Input credits per 1 million tokens"
-              className="w-full px-3 py-2 text-xs rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 placeholder:text-neutral-500 font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
-              type="number"
-              placeholder="100"
-              min={1}
-              required
-            />
-          </Field>
-
-          <Field
-            label="Output Credits / 1M"
-            tip="Credits charged per 1 million output (completion) tokens."
-          >
-            <input
-              name="outputCreditsPer1m"
-              aria-label="Output credits per 1 million tokens"
-              className="w-full px-3 py-2 text-xs rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 placeholder:text-neutral-500 font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
-              type="number"
-              placeholder="300"
-              min={1}
-              required
-            />
-          </Field>
-
-          <div className="flex items-end">
-            <button
-              type="submit"
-              className="w-full px-4 py-2 text-xs font-semibold rounded-xl bg-neutral-950 text-white hover:bg-neutral-800 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 cursor-pointer shadow-xs"
-            >
-              {t.admin.models.createBtn}
-            </button>
+      {canWrite && (
+        <div className="bg-white p-6 rounded-2xl border border-neutral-200/90 shadow-xs">
+          <div className="flex items-center gap-2 mb-4 pb-3 border-b border-neutral-100">
+            <Plus className="w-4 h-4 text-neutral-700" />
+            <h2 className="text-sm font-heading font-bold text-neutral-950">{t.admin.models.addTitle}</h2>
           </div>
-        </form>
-      </div>
+          <AddModelForm providers={providerOptions} />
+        </div>
+      )}
 
       {/* Model Table */}
-      <ModelsTable models={models.map(({ fallbackProviderId: _f, ...m }) => ({ ...m, ready: ready.has(m.id) }))} providers={providers.map((p) => ({ id: p.id, name: p.name }))} />
+      <ModelsTable
+        models={models.map(({ fallbackProviderId: _f, ...m }) => ({ ...m, ready: ready.has(m.id) }))}
+        providers={providerOptions}
+        canWrite={canWrite}
+      />
 
       {/* Provider Pool (N-way Routing & Multi-Key Failover) */}
       <div className="bg-white p-6 rounded-2xl border border-neutral-200/90 shadow-xs space-y-5">
@@ -307,136 +125,7 @@ export default async function AdminModels() {
         </div>
 
         {canWrite && models.length > 0 && providers.length > 0 && (
-          <form
-            action={saveModelPoolEntry}
-            className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-4 pb-5 border-b border-neutral-100"
-          >
-            <Field label="Public Model" tip="Model publik yang akan dilayani oleh kandidat pool ini.">
-              <select
-                name="modelId"
-                aria-label="Pool Public Model"
-                className="w-full px-3 py-2 text-xs rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
-                required
-              >
-                {models.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.publicModelId} (ctx {m.contextLength})
-                  </option>
-                ))}
-              </select>
-            </Field>
-
-            <Field label="Provider / Key Slot" tip="Pilih provider atau akun key spesifik dari tabel Providers.">
-              <select
-                name="providerId"
-                aria-label="Pool Provider"
-                className="w-full px-3 py-2 text-xs rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
-                required
-              >
-                {providers.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
-            </Field>
-
-            <Field label="Upstream Model ID" tip="ID model yang dikirim ke provider upstream tersebut.">
-              <input
-                name="providerModelId"
-                aria-label="Pool Upstream Model ID"
-                className="w-full px-3 py-2 text-xs rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 font-mono"
-                placeholder="deepseek-ai/DeepSeek-V3"
-                required
-              />
-            </Field>
-
-            <div className="grid grid-cols-2 gap-2">
-              <Field label="Priority" tip="1 = tier utama; angka lebih besar = tier failover.">
-                <input
-                  name="priority"
-                  type="number"
-                  min={1}
-                  defaultValue={1}
-                  className="w-full px-3 py-2 text-xs rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 font-mono"
-                  required
-                />
-              </Field>
-              <Field label="Weight" tip="Bobot distribusi beban pada tier priority yang sama.">
-                <input
-                  name="weight"
-                  type="number"
-                  min={1}
-                  defaultValue={100}
-                  className="w-full px-3 py-2 text-xs rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 font-mono"
-                  required
-                />
-              </Field>
-            </div>
-
-            <Field label="Context Length" tip="Wajib >= context length model publik (aturan D9). Kosongkan untuk mengikuti model.">
-              <input
-                name="contextLength"
-                type="number"
-                min={1024}
-                step={1024}
-                placeholder="Ikuti model"
-                className="w-full px-3 py-2 text-xs rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 font-mono"
-              />
-            </Field>
-
-            <Field label="Cost Input / 1M" tip="Biaya modal upstream input (opsional, untuk tracking margin per provider).">
-              <input
-                name="costInputPer1m"
-                type="number"
-                min={0}
-                placeholder="Opsional"
-                className="w-full px-3 py-2 text-xs rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 font-mono"
-              />
-            </Field>
-
-            <Field label="Cost Output / 1M" tip="Biaya modal upstream output (opsional, untuk tracking margin per provider).">
-              <input
-                name="costOutputPer1m"
-                type="number"
-                min={0}
-                placeholder="Opsional"
-                className="w-full px-3 py-2 text-xs rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 font-mono"
-              />
-            </Field>
-
-            <div className="flex flex-col justify-end gap-2">
-              <div className="flex flex-wrap items-center gap-3 text-[11px] font-mono text-neutral-700">
-                <label className="inline-flex items-center gap-1 cursor-pointer">
-                  <input type="checkbox" name="supportsTools" defaultChecked />
-                  tools
-                </label>
-                <label className="inline-flex items-center gap-1 cursor-pointer">
-                  <input type="checkbox" name="supportsParallelTools" defaultChecked />
-                  parallel
-                </label>
-                <label className="inline-flex items-center gap-1 cursor-pointer">
-                  <input type="checkbox" name="supportsVision" />
-                  vision
-                </label>
-                <label className="inline-flex items-center gap-1 cursor-pointer">
-                  <input type="checkbox" name="supportsReasoning" />
-                  reasoning
-                </label>
-                <label className="inline-flex items-center gap-1 cursor-pointer">
-                  <input type="checkbox" name="reasoningEchoRequired" />
-                  echo_req
-                </label>
-                <input type="hidden" name="usageInStream" value="true" />
-              </div>
-              <button
-                type="submit"
-                className="w-full px-4 py-2 text-xs font-semibold rounded-xl bg-neutral-950 text-white hover:bg-neutral-800 transition-colors cursor-pointer shadow-xs"
-              >
-                Simpan Pool Entry
-              </button>
-            </div>
-          </form>
+          <AddPoolEntryForm models={poolModelOptions} providers={providerOptions} />
         )}
 
         {poolEntries.length === 0 ? (
