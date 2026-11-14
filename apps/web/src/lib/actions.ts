@@ -17,6 +17,7 @@ import {
   hasAdminPermission,
   isAdminRole,
   isLoopbackAdminIp,
+  isSameAdminIpOrIpv6Prefix,
   type AdminPermission,
 } from '@morphic/shared/admin-rbac';
 import { sendEmail } from '@morphic/shared/email';
@@ -114,7 +115,7 @@ const adminCheck = cache(
     if (
       canonicalClientIp &&
       !isLoopbackAdminIp(canonicalClientIp) &&
-      canonicalClientIp !== canonicalSessionIp
+      !isSameAdminIpOrIpv6Prefix(canonicalClientIp, canonicalSessionIp)
     ) {
       const [trustedRow] = await db
         .select({ id: s.verifications.id })
@@ -158,10 +159,15 @@ const adminCheck = cache(
   },
 );
 
-const currentAdmin = async () => {
-  const check = await adminCheck();
-  return check && !check.mfaMissing ? check.user : null;
-};
+/**
+ * Used by `DashboardLayout` to decide whether to render the "Panel admin" link in the sidebar.
+ * Returns true for any active admin role even if Login OTP (`mfaMissing`) or IP Step-Up (`ipVerificationRequired`)
+ * is pending — clicking `/admin` then triggers `requireAdmin()` which redirects to `/dashboard/settings?mfa=required`
+ * or `/dashboard/settings?admin_ip=verify` with the appropriate setup prompt.
+ */
+async function isCurrentUserAdmin(): Promise<boolean> {
+  return (await adminCheck()) !== null;
+}
 
 async function requireAdmin(
   permission?: AdminPermission,
@@ -197,10 +203,6 @@ async function requireAdmin(
     redirect('/admin?denied=1');
   }
   return check.user;
-}
-
-async function isCurrentUserAdmin(): Promise<boolean> {
-  return (await currentAdmin()) !== null;
 }
 
 async function requireInteractiveUser() {

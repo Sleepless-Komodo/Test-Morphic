@@ -8,6 +8,7 @@ import {
   hasAdminPermission,
   isAdminIpAllowed,
   isAdminRole,
+  isSameAdminIpOrIpv6Prefix,
   isSuperAdminRole,
 } from './admin-rbac.ts';
 
@@ -133,5 +134,30 @@ test('Step-Up OTP IP evaluation (Opsi 1): allows login IP & trusted IPs, challen
       strictAllowlist: true,
     }).status,
     'denied',
+  );
+
+  // 6) IPv6 /64 prefix matching: Better Auth zero-padded /64 sessionIp matches full /128 clientIp on same network
+  assert.equal(
+    isSameAdminIpOrIpv6Prefix(
+      '2001:db8:abcd:1:9999:8888:7777:6666',
+      '2001:0db8:abcd:0001:0000:0000:0000:0000',
+    ),
+    true,
+  );
+  assert.equal(
+    evaluateAdminIpAccess({
+      clientIp: '2001:db8:abcd:1:9999:8888:7777:6666',
+      sessionIp: '2001:0db8:abcd:0001:0000:0000:0000:0000',
+    }).status,
+    'allowed',
+  );
+
+  // 7) Different IPv6 /64 prefix triggers step_up_required
+  assert.equal(
+    evaluateAdminIpAccess({
+      clientIp: '2001:db8:abcd:2::1',
+      sessionIp: '2001:0db8:abcd:0001:0000:0000:0000:0000',
+    }).status,
+    'step_up_required',
   );
 });

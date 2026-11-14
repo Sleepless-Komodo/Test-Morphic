@@ -71,7 +71,11 @@ export default async function SettingsPage({
         emailVerified: account?.emailVerified ?? null,
       }}
       sessions={sessions}
-      loginOtp={{ enabled: account?.twoFactorEnabled ?? false, hasPassword: account?.hasPassword ?? false }}
+      loginOtp={{
+        enabled: account?.twoFactorEnabled ?? false,
+        hasPassword: account?.hasPassword ?? false,
+        redirectAfterEnable: adminMfaNotice ? '/admin' : undefined,
+      }}
       />
     </>
   );

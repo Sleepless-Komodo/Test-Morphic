@@ -11,9 +11,11 @@ interface LoginOtpCardProps {
   enabled: boolean;
   /** OTP only guards email+password sign-in, so OAuth-only accounts get an explanation instead. */
   hasPassword: boolean;
+  /** Optional path (e.g. `/admin`) to navigate to after enabling OTP from a required-MFA redirect. */
+  redirectAfterEnable?: string;
 }
 
-export function LoginOtpCard({ enabled, hasPassword }: LoginOtpCardProps) {
+export function LoginOtpCard({ enabled, hasPassword, redirectAfterEnable }: LoginOtpCardProps) {
   const { locale } = useTranslation();
   const isId = locale === 'id';
   const router = useRouter();
@@ -101,6 +103,9 @@ export function LoginOtpCard({ enabled, hasPassword }: LoginOtpCardProps) {
             submitLabel={isId ? 'Aktifkan OTP' : 'Turn on OTP'}
             onVerified={() => {
               reset();
+              if (redirectAfterEnable) {
+                router.push(redirectAfterEnable);
+              }
               router.refresh();
             }}
           />

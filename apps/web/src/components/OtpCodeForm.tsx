@@ -35,10 +35,19 @@ export function OtpCodeForm({ onVerified, onSessionLost, submitLabel }: OtpCodeF
     setCooldown(RESEND_COOLDOWN_S);
     const res = await authClient.twoFactor.sendOtp();
     if (res.error) {
-      setCooldown(0);
+      const errStatus = (res.error as { status?: number }).status;
+      const isRateLimited =
+        errStatus === 429 ||
+        res.error.code === 'TOO_MANY_REQUESTS' ||
+        Boolean(res.error.message?.toLowerCase().includes('too many requests'));
+      setCooldown(isRateLimited ? 10 : 0);
       if (res.error.code === 'INVALID_TWO_FACTOR_COOKIE') {
         setError(t.login.otpSessionLost);
         onSessionLost?.();
+      } else if (isRateLimited) {
+        setError(t.login.otpRateLimited);
+      } else if (res.error.code === 'ACCOUNT_TEMPORARILY_LOCKED') {
+        setError(t.login.otpAccountLocked);
       } else {
         setError(t.login.otpSendFailed);
       }
@@ -79,13 +88,24 @@ export function OtpCodeForm({ onVerified, onSessionLost, submitLabel }: OtpCodeF
       onVerified();
       return;
     }
+    const errStatus = (res.error as { status?: number }).status;
+    const isRateLimited =
+      errStatus === 429 ||
+      res.error.code === 'TOO_MANY_REQUESTS' ||
+      Boolean(res.error.message?.toLowerCase().includes('too many requests'));
+    if (isRateLimited) {
+      setError(t.login.otpRateLimited);
+      inputRef.current?.focus();
+      return;
+    }
     const map: Record<string, string> = {
       INVALID_CODE: t.login.otpInvalid,
       OTP_HAS_EXPIRED: t.login.otpExpired,
       TOO_MANY_ATTEMPTS_REQUEST_NEW_CODE: t.login.otpTooMany,
+      ACCOUNT_TEMPORARILY_LOCKED: t.login.otpAccountLocked,
       INVALID_TWO_FACTOR_COOKIE: t.login.otpSessionLost,
     };
-    setError(map[res.error.code ?? ''] ?? t.login.authGenericError);
+    setError(map[res.error.code ?? ''] ?? t.login.otpVerifyFailed);
     if (res.error.code === 'INVALID_TWO_FACTOR_COOKIE') onSessionLost?.();
     setCode('');
     inputRef.current?.focus();
