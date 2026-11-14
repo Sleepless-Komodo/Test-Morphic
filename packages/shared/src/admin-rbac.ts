@@ -271,6 +271,25 @@ export function canonicalizeAdminIp(rawIp: string | null | undefined): string | 
   return groups.join(':');
 }
 
+/**
+ * Compares two IP strings for admin session/step-up matching:
+ * - IPv4: exact 32-bit match (including IPv4-mapped IPv6 `::ffff:a.b.c.d`).
+ * - IPv6: matches on `/64` network prefix so Better Auth `/64`-collapsed session IPs
+ *   (`2001:0db8:...:0000`) and SLAAC temporary privacy addresses on the same Wi-Fi/ISP
+ *   router do not trigger false-positive Step-Up OTP prompts.
+ */
+export function isSameAdminIpOrIpv6Prefix(
+  rawA: string | null | undefined,
+  rawB: string | null | undefined,
+): boolean {
+  if (!rawA || !rawB) return false;
+  const a = normalizeIp(rawA);
+  const b = normalizeIp(rawB);
+  if (!a || !b || a.version !== b.version) return false;
+  if (a.version === 4) return a.value === b.value;
+  return (a.value >> 64n) === (b.value >> 64n);
+}
+
 export interface AdminIpEvaluation {
   status: 'allowed' | 'step_up_required' | 'denied';
   canonicalClientIp: string | null;
@@ -303,13 +322,17 @@ export function evaluateAdminIpAccess(params: {
   strictAllowlist?: boolean;
 }): AdminIpEvaluation {
   const canonicalClientIp = canonicalizeAdminIp(params.clientIp);
-  const trustedSet = new Set<string>();
+  const trustedList: string[] = [];
   if (params.trustedIps) {
     for (const ip of params.trustedIps) {
       const c = canonicalizeAdminIp(ip);
-      if (c) trustedSet.add(c);
+      if (c) trustedList.push(c);
     }
   }
+  const isTrustedClient = Boolean(
+    canonicalClientIp &&
+      trustedList.some((trusted) => isSameAdminIpOrIpv6Prefix(canonicalClientIp, trusted)),
+  );
 
   const hasAllowlist = Boolean(params.allowlistRaw && params.allowlistRaw.trim());
   if (hasAllowlist) {
@@ -319,7 +342,7 @@ export function evaluateAdminIpAccess(params: {
     if (params.strictAllowlist) {
       return { status: 'denied', canonicalClientIp, reason: 'allowlist_strict_deny' };
     }
-    if (canonicalClientIp && trustedSet.has(canonicalClientIp)) {
+    if (isTrustedClient) {
       return { status: 'allowed', canonicalClientIp, reason: 'step_up_trusted' };
     }
     return { status: 'step_up_required', canonicalClientIp, reason: 'outside_allowlist_needs_otp' };
@@ -330,7 +353,7 @@ export function evaluateAdminIpAccess(params: {
     return { status: 'allowed', canonicalClientIp, reason: 'local_or_unknown' };
   }
 
-  if (trustedSet.has(canonicalClientIp)) {
+  if (isTrustedClient) {
     return { status: 'allowed', canonicalClientIp, reason: 'step_up_trusted' };
   }
 
@@ -338,7 +361,7 @@ export function evaluateAdminIpAccess(params: {
   if (
     canonicalSessionIp &&
     !isLoopbackAdminIp(canonicalSessionIp) &&
-    canonicalClientIp === canonicalSessionIp
+    isSameAdminIpOrIpv6Prefix(canonicalClientIp, canonicalSessionIp)
   ) {
     return { status: 'allowed', canonicalClientIp, reason: 'session_ip_match' };
   }

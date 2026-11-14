@@ -1,9 +1,38 @@
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
+import { eq } from 'drizzle-orm';
 import { db } from '@morphic/db';
 import * as schema from '@morphic/db/schema';
 import { captcha, twoFactor } from 'better-auth/plugins';
+import { canonicalizeAdminIp, extractTrustedAdminIp } from '@morphic/shared/admin-rbac';
 import { sendEmail } from '@morphic/shared/email';
+
+/**
+ * Ensures a `two_factor` row exists for an email-OTP user so Better Auth's
+ * account-level lockout (`failedVerificationCount` / `lockedUntil`) is active
+ * even though TOTP enrollment is not used.
+ */
+async function ensureTwoFactorRow(userId: string): Promise<void> {
+  try {
+    const [existing] = await db
+      .select({ id: schema.twoFactors.id })
+      .from(schema.twoFactors)
+      .where(eq(schema.twoFactors.userId, userId))
+      .limit(1);
+    if (!existing) {
+      await db.insert(schema.twoFactors).values({
+        userId,
+        secret: 'email-otp',
+        backupCodes: '[]',
+        verified: true,
+        failedVerificationCount: 0,
+        lockedUntil: null,
+      });
+    }
+  } catch (err) {
+    console.warn('[auth] ensureTwoFactorRow failed:', err);
+  }
+}
 
 const authSecret = process.env.BETTER_AUTH_SECRET;
 // `next build` evaluates this module to collect page data with NODE_ENV=production but
@@ -54,11 +83,18 @@ const authPlugins: any[] = [
   twoFactor({
     issuer: 'Morphic',
     allowPasswordless: true,
+    accountLockout: {
+      enabled: true,
+      maxFailedAttempts: 7,
+    },
     otpOptions: {
       period: 5,
       allowedAttempts: 5,
       storeOTP: 'hashed',
       sendOTP: async ({ user, otp }) => {
+        if ((user as { twoFactorEnabled?: boolean }).twoFactorEnabled) {
+          await ensureTwoFactorRow(user.id);
+        }
         await sendEmail({
           to: user.email,
           subject: `Kode login Morphic: ${otp}`,
@@ -151,8 +187,39 @@ export const auth = betterAuth({
   secret: resolvedSecret,
   baseURL: process.env.BETTER_AUTH_URL,
   trustedOrigins,
+  databaseHooks: {
+    session: {
+      create: {
+        before: async (session, ctx) => {
+          const reqHeaders = ctx?.headers ?? ctx?.request?.headers;
+          if (!reqHeaders) return;
+          const trustedIp = canonicalizeAdminIp(extractTrustedAdminIp(reqHeaders));
+          if (trustedIp) {
+            return { data: { ...session, ipAddress: trustedIp } };
+          }
+        },
+      },
+    },
+    user: {
+      update: {
+        after: async (user) => {
+          if ((user as { twoFactorEnabled?: boolean } | null)?.twoFactorEnabled) {
+            await ensureTwoFactorRow(user.id);
+          }
+        },
+      },
+    },
+  },
   advanced: {
     database: { generateId: false },
+    ipAddress: {
+      ipAddressHeaders: [
+        ...(process.env.TRUST_CF_CONNECTING_IP === '1' ? ['cf-connecting-ip'] : []),
+        'x-forwarded-for',
+        ...(process.env.TRUST_X_REAL_IP === '1' ? ['x-real-ip'] : []),
+      ],
+      ipv6Subnet: 128,
+    },
     defaultCookieAttributes: {
       sameSite: 'lax',
       secure: process.env.NODE_ENV === 'production',
