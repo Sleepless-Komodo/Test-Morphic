@@ -5,6 +5,7 @@ import { saveModel, deleteModel } from '@/lib/admin-actions';
 import { useTranslation } from '@/lib/i18n';
 import { indexText, useTableSearch } from '@/lib/table-search';
 import { AlertTriangle, Check, Edit3, Loader2, Search, Trash2, X } from 'lucide-react';
+import { Field, ToastBanner } from './models-forms';
 
 interface Provider { id: string; name: string; }
 interface ModelRow {
@@ -26,47 +27,35 @@ interface ModelRow {
   providerId?: string;
 }
 
-function Tip({ text }: { text: string }) {
-  return (
-    <span className="relative inline-flex items-center group ml-1.5">
-      <button
-        type="button"
-        aria-label={`Info: ${text}`}
-        tabIndex={0}
-        className="w-3.5 h-3.5 rounded-full bg-neutral-200 text-neutral-600 text-[9px] font-bold flex items-center justify-center leading-none cursor-help hover:bg-neutral-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
-      >
-        ?
-      </button>
-      <span
-        role="tooltip"
-        className="pointer-events-none absolute z-50 left-5 top-1/2 -translate-y-1/2 w-60 px-3 py-2 rounded-xl bg-neutral-950 text-white text-[11px] leading-relaxed opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-150 shadow-xl border border-neutral-800"
-      >
-        {text}
-      </span>
-    </span>
-  );
-}
-
-function Field({ label, tip, children, span }: {
-  label: string; tip?: string; children: React.ReactNode; span?: string;
-}) {
-  return (
-    <div className={`flex flex-col gap-1.5 ${span ?? ''}`}>
-      <label className="flex items-center text-[11px] font-mono font-semibold uppercase tracking-wider text-neutral-500">
-        {label}{tip && <Tip text={tip} />}
-      </label>
-      {children}
-    </div>
-  );
-}
-
 /** Inline edit row that replaces the table row when editing */
-function EditRow({ model, providers, onDone }: {
+function EditRow({ model, providers, onSaved, onCancel }: {
   model: ModelRow;
   providers: Provider[];
-  onDone: () => void;
+  onSaved: (message: string) => void;
+  onCancel: () => void;
 }) {
   const { t } = useTranslation();
+  const [isPending, startTransition] = useTransition();
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (isPending) return;
+    const fd = new FormData(e.currentTarget);
+    setErrorMsg(null);
+    startTransition(async () => {
+      try {
+        const res = await saveModel(fd);
+        if (res.ok) {
+          onSaved(res.message);
+        } else {
+          setErrorMsg(res.message);
+        }
+      } catch {
+        setErrorMsg('Gagal menghubungi server. Coba lagi atau periksa koneksi Anda. (kode: client_network)');
+      }
+    });
+  };
 
   return (
     <tr className="bg-neutral-50 border-y-2 border-neutral-950">
@@ -77,15 +66,19 @@ function EditRow({ model, providers, onDone }: {
           </div>
           <button
             type="button"
-            onClick={onDone}
-            className="p-1 rounded-lg text-neutral-500 hover:text-neutral-950 hover:bg-neutral-200 transition-colors cursor-pointer"
+            onClick={onCancel}
+            disabled={isPending}
+            className="p-1 rounded-lg text-neutral-500 hover:text-neutral-950 hover:bg-neutral-200 transition-colors cursor-pointer disabled:opacity-50"
             aria-label="Cancel editing"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
+        {errorMsg && (
+          <ToastBanner toast={{ type: 'error', text: errorMsg }} onClose={() => setErrorMsg(null)} />
+        )}
         <form
-          action={async (fd) => { await saveModel(fd); onDone(); }}
+          onSubmit={handleSubmit}
           className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-3"
         >
           {/* hidden id — triggers UPDATE in saveModel */}
@@ -161,7 +154,7 @@ function EditRow({ model, providers, onDone }: {
               type="number"
               defaultValue={model.contextLength}
               min={1024}
-              step={1024}
+              step={1}
               required
             />
           </Field>
@@ -228,15 +221,26 @@ function EditRow({ model, providers, onDone }: {
           <div className="col-span-full flex items-center gap-2 pt-2">
             <button
               type="submit"
-              className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-xl bg-neutral-950 text-white hover:bg-neutral-800 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 cursor-pointer shadow-xs"
+              disabled={isPending}
+              className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-xl bg-neutral-950 text-white hover:bg-neutral-800 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 cursor-pointer shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <Check className="w-3.5 h-3.5" />
-              {t.admin.models.saveBtn}
+              {isPending ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>{t.admin.models.processingBtn}</span>
+                </>
+              ) : (
+                <>
+                  <Check className="w-3.5 h-3.5" />
+                  <span>{t.admin.models.saveBtn}</span>
+                </>
+              )}
             </button>
             <button
               type="button"
-              onClick={onDone}
-              className="px-4 py-2 text-xs font-semibold rounded-xl border border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 cursor-pointer shadow-2xs"
+              onClick={onCancel}
+              disabled={isPending}
+              className="px-4 py-2 text-xs font-semibold rounded-xl border border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 cursor-pointer shadow-2xs disabled:opacity-50"
             >
               {t.admin.models.cancelBtn}
             </button>
@@ -247,9 +251,10 @@ function EditRow({ model, providers, onDone }: {
   );
 }
 
-export function ModelsTable({ models, providers }: {
+export function ModelsTable({ models, providers, canWrite = true }: {
   models: (ModelRow & { providerId: string })[];
   providers: Provider[];
+  canWrite?: boolean;
 }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [selectedModelForDelete, setSelectedModelForDelete] = useState<(ModelRow & { providerId: string }) | null>(null);
@@ -293,29 +298,7 @@ export function ModelsTable({ models, providers }: {
     <>
       {/* Toast Alert */}
       {toastMessage && (
-        <div
-          className={`p-3.5 rounded-2xl text-xs flex items-center justify-between border shadow-2xs mb-4 ${
-            toastMessage.type === 'success'
-              ? 'bg-emerald-50 text-emerald-900 border-emerald-200'
-              : 'bg-red-50 text-red-900 border-red-200'
-          }`}
-        >
-          <div className="flex items-center gap-2">
-            {toastMessage.type === 'success' ? (
-              <Check className="w-4 h-4 text-emerald-600 shrink-0" />
-            ) : (
-              <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
-            )}
-            <span>{toastMessage.text}</span>
-          </div>
-          <button
-            type="button"
-            onClick={() => setToastMessage(null)}
-            className="text-neutral-500 hover:text-neutral-900 cursor-pointer text-xs font-semibold px-2 py-1"
-          >
-            ✕
-          </button>
-        </div>
+        <ToastBanner toast={toastMessage} onClose={() => setToastMessage(null)} />
       )}
 
       <div className="flex flex-col sm:flex-row sm:items-center gap-2">
@@ -348,17 +331,23 @@ export function ModelsTable({ models, providers }: {
                 <th className="text-left font-mono font-semibold uppercase tracking-wider text-neutral-500 py-3 px-3">{t.admin.models.thRates}</th>
                 <th className="text-left font-mono font-semibold uppercase tracking-wider text-neutral-500 py-3 px-3">{t.admin.models.thCapabilities}</th>
                 <th className="text-left font-mono font-semibold uppercase tracking-wider text-neutral-500 py-3 px-3">{t.admin.models.thStatus}</th>
-                <th className="text-right font-mono font-semibold uppercase tracking-wider text-neutral-500 py-3 px-4">{t.admin.models.thAction}</th>
+                {canWrite && (
+                  <th className="text-right font-mono font-semibold uppercase tracking-wider text-neutral-500 py-3 px-4">{t.admin.models.thAction}</th>
+                )}
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-100">
               {search.filtered.map((m) =>
-                editingId === m.id ? (
+                canWrite && editingId === m.id ? (
                   <EditRow
                     key={m.id}
                     model={m}
                     providers={providers}
-                    onDone={() => setEditingId(null)}
+                    onSaved={(message) => {
+                      setToastMessage({ type: 'success', text: message });
+                      setEditingId(null);
+                    }}
+                    onCancel={() => setEditingId(null)}
                   />
                 ) : (
                   <tr key={m.id} className="hover:bg-neutral-50/60 transition-colors">
@@ -404,33 +393,35 @@ export function ModelsTable({ models, providers }: {
                         </span>
                       )}
                     </td>
-                    <td className="py-3 px-4 text-right">
-                      <div className="flex items-center justify-end gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => setEditingId(m.id)}
-                          className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border border-neutral-200 bg-white hover:bg-neutral-100 text-neutral-900 font-medium transition-colors cursor-pointer shadow-2xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
-                        >
-                          <Edit3 className="w-3 h-3" />
-                          {t.admin.models.editBtn}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setSelectedModelForDelete(m)}
-                          className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border border-red-200 bg-red-50/50 hover:bg-red-50 text-red-600 hover:text-red-700 font-medium transition-colors cursor-pointer shadow-2xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
-                          aria-label={`${t.admin.models.deleteBtn} ${m.displayName}`}
-                        >
-                          <Trash2 className="w-3 h-3" />
-                          {t.admin.models.deleteBtn}
-                        </button>
-                      </div>
-                    </td>
+                    {canWrite && (
+                      <td className="py-3 px-4 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setEditingId(m.id)}
+                            className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border border-neutral-200 bg-white hover:bg-neutral-100 text-neutral-900 font-medium transition-colors cursor-pointer shadow-2xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
+                          >
+                            <Edit3 className="w-3 h-3" />
+                            {t.admin.models.editBtn}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedModelForDelete(m)}
+                            className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border border-red-200 bg-red-50/50 hover:bg-red-50 text-red-600 hover:text-red-700 font-medium transition-colors cursor-pointer shadow-2xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
+                            aria-label={`${t.admin.models.deleteBtn} ${m.displayName}`}
+                          >
+                            <Trash2 className="w-3 h-3" />
+                            {t.admin.models.deleteBtn}
+                          </button>
+                        </div>
+                      </td>
+                    )}
                   </tr>
                 )
               )}
               {search.filtered.length === 0 && search.query.trim() && (
                 <tr>
-                  <td colSpan={8} className="py-8 text-center text-neutral-500">
+                  <td colSpan={canWrite ? 8 : 7} className="py-8 text-center text-neutral-500">
                     Tidak ada model yang cocok dengan &quot;{search.query.trim()}&quot;.
                   </td>
                 </tr>
