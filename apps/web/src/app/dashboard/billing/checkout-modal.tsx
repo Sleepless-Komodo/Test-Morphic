@@ -407,7 +407,8 @@ export function CheckoutModal({ pkg, existingPayment, provider, giftCard, onClos
         }),
       });
 
-      const data = await res.json() as {
+      // A gateway/host error page (502/504) is HTML, not JSON.
+      const data = (await res.json().catch(() => ({}))) as {
         paymentId?: string;
         paymentUrl?: string;
         expiresAt?: string;
@@ -416,7 +417,7 @@ export function CheckoutModal({ pkg, existingPayment, provider, giftCard, onClos
 
       if (!res.ok || !data.paymentUrl || !data.paymentId) {
         if (newWindow) newWindow.close();
-        throw new Error(data.error?.message ?? 'Gagal membuat transaksi');
+        throw new Error(data.error?.message ?? `Gagal membuat transaksi (HTTP ${res.status}). Coba lagi sebentar.`);
       }
 
       setPaymentId(data.paymentId);

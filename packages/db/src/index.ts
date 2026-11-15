@@ -31,8 +31,26 @@ if (typeof globalThis !== 'undefined') {
 // Neon Pool driver — interactive transactions (db.transaction / withTransaction)
 // ---------------------------------------------------------------------------
 
+// Tests create users, providers and models. Refuse a non-local DATABASE_URL under the node test
+// runner here, not only in apps/api's test-guard, which a test run outside `pnpm test` (IDE runner,
+// `tsx --test` with the root .env) skips and then writes fixtures into production.
+function assertNotTestAgainstRemote(url: string): void {
+  const underTestRunner = !!process.env.NODE_TEST_CONTEXT || process.execArgv.some((a) => a.startsWith('--test'));
+  if (!underTestRunner) return;
+  let host = '';
+  try {
+    host = new URL(url).hostname.replace(/^\[|\]$/g, '');
+  } catch {}
+  const allowed = ['localhost', '127.0.0.1', '::1', ...(process.env.TEST_DB_HOST_ALLOWLIST ?? '').split(',').map((h) => h.trim())];
+  if (!host || host.endsWith('.neon.tech') || !allowed.includes(host)) {
+    throw new Error(`[db] Refusing to connect to '${host || 'invalid url'}' from a test run; use a local *_test database`);
+  }
+}
+
 function getConnectionString(): string {
-  return process.env.DATABASE_URL ?? 'postgresql://unset:unset@localhost:5432/unset';
+  const url = process.env.DATABASE_URL ?? 'postgresql://unset:unset@localhost:5432/unset';
+  assertNotTestAgainstRemote(url);
+  return url;
 }
 
 /**
