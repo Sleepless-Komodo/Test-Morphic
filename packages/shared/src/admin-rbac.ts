@@ -278,6 +278,17 @@ export function canonicalizeAdminIp(rawIp: string | null | undefined): string | 
  *   (`2001:0db8:...:0000`) and SLAAC temporary privacy addresses on the same Wi-Fi/ISP
  *   router do not trigger false-positive Step-Up OTP prompts.
  */
+/**
+ * Network key for remembering a verified admin IP: the full address for IPv4, the /64 prefix
+ * (as `a:b:c:d::`) for IPv6. Matches `isSameAdminIpOrIpv6Prefix`, so rotating IPv6 privacy
+ * addresses inside one /64 do not trigger a new step-up.
+ */
+export function adminIpNetworkKey(rawIp: string | null | undefined): string | null {
+  const canonical = canonicalizeAdminIp(rawIp);
+  if (!canonical || !canonical.includes(':')) return canonical;
+  return `${canonical.split(':').slice(0, 4).join(':')}::`;
+}
+
 export function isSameAdminIpOrIpv6Prefix(
   rawA: string | null | undefined,
   rawB: string | null | undefined,

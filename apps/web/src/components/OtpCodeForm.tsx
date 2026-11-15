@@ -6,6 +6,7 @@ import { authClient } from '@/lib/auth-client';
 import { useTranslation } from '@/lib/i18n';
 
 const RESEND_COOLDOWN_S = 60;
+const OTP_SENT_AT_KEY = 'morphic:otp-sent-at';
 
 interface OtpCodeFormProps {
   /** Called after the code is accepted. Sign-in: session is set. Settings: OTP is now on. */
@@ -53,6 +54,9 @@ export function OtpCodeForm({ onVerified, onSessionLost, submitLabel }: OtpCodeF
       }
       return false;
     }
+    try {
+      sessionStorage.setItem(OTP_SENT_AT_KEY, String(Date.now()));
+    } catch {}
     return true;
   }, [t, onSessionLost]);
 
@@ -60,8 +64,19 @@ export function OtpCodeForm({ onVerified, onSessionLost, submitLabel }: OtpCodeF
     // Strict mode runs effects twice in dev; one email per mount is enough.
     if (sentOnce.current) return;
     sentOnce.current = true;
-    send();
     inputRef.current?.focus();
+    // A reload or remount inside the cooldown must not mail a new code: that kills the one
+    // the user is already reading.
+    let sentAt = 0;
+    try {
+      sentAt = Number(sessionStorage.getItem(OTP_SENT_AT_KEY)) || 0;
+    } catch {}
+    const left = RESEND_COOLDOWN_S - Math.floor((Date.now() - sentAt) / 1000);
+    if (left > 0) {
+      setCooldown(left);
+      return;
+    }
+    send();
   }, [send]);
 
   useEffect(() => {
