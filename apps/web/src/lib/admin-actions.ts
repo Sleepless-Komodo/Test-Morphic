@@ -11,6 +11,7 @@ import { normalizeCatalog, type CatalogResult } from '@/lib/provider-catalog';
 import { loadAlerts } from '@/lib/admin-insights';
 import { invalidate } from '@/lib/memo';
 import { parsePackageForm } from '@/lib/package-form';
+import { isUuid, parseModelForm } from '@/lib/model-form';
 import { getServerTranslation } from '@/lib/i18n/server';
 import { multiplier, UNLIMITED_MAX_OUTPUT_MULTIPLIER } from '@morphic/shared/credits';
 import { isUserRole, type AdminPermission } from '@morphic/shared/admin-rbac';
@@ -133,37 +134,155 @@ function optionalInt(v: FormDataEntryValue | null): number | null {
   return Number.isInteger(n) && n >= 0 ? n : null;
 }
 
-export async function saveModel(formData: FormData) {
-  const admin = await requireAdminPerm('catalog:write');
-  const id = String(formData.get('id') || '');
-  const values = {
-    providerId: String(formData.get('providerId')),
-    publicModelId: String(formData.get('publicModelId')),
-    providerModelId: String(formData.get('providerModelId')),
-    displayName: String(formData.get('displayName')),
-    description: String(formData.get('description') || ''),
-    contextLength: Number(formData.get('contextLength')),
-    capabilities: String(formData.get('capabilities') || '')
-      .split(',')
-      .map((c) => c.trim())
-      .filter(Boolean),
-    inputCreditsPer1m: Number(formData.get('inputCreditsPer1m')),
-    outputCreditsPer1m: Number(formData.get('outputCreditsPer1m')),
-    status: String(formData.get('status') || 'active') as 'active' | 'inactive',
-    // Upstream cost (credits / 1M) for margin tracking; blank clears it, absent field leaves it alone.
-    ...(formData.has('providerCostInputPer1m') && {
-      providerCostInputPer1m: optionalInt(formData.get('providerCostInputPer1m')),
-      providerCostOutputPer1m: optionalInt(formData.get('providerCostOutputPer1m')),
-    }),
-  };
-  if (id) {
-    await db.update(s.models).set(values).where(eq(s.models.id, id));
-    await audit(admin.id, 'update', 'model', id, values);
-  } else {
-    const [m] = await db.insert(s.models).values(values).returning();
-    await audit(admin.id, 'create', 'model', m!.id, values);
+export type ModelActionResult = { ok: boolean; message: string };
+
+function extractPgCode(err: unknown): string | undefined {
+  const rec = err as { cause?: { code?: unknown }; code?: unknown } | null | undefined;
+  if (typeof rec?.cause?.code === 'string') return rec.cause.code;
+  if (typeof rec?.code === 'string') return rec.code;
+  return undefined;
+}
+
+async function checkCatalogWriteAdmin(en: boolean) {
+  try {
+    const admin = await requireAdminPerm('catalog:write');
+    return { ok: true as const, admin };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : '';
+    const code = msg.startsWith('Unauthorized')
+      ? 'unauthorized'
+      : msg.includes('login OTP') || msg.includes('MFA')
+        ? 'mfa_required'
+        : msg.includes('new admin IP')
+          ? 'ip_verification_required'
+          : 'forbidden';
+    console.warn('[admin-actions] catalog:write denied:', { code, msg });
+
+    const messages: Record<typeof code, { en: string; id: string }> = {
+      unauthorized: {
+        en: 'Your session expired. Please sign in again.',
+        id: 'Sesi Anda berakhir. Silakan masuk kembali.',
+      },
+      mfa_required: {
+        en: 'Enable Login OTP (MFA) in dashboard settings before editing models.',
+        id: 'Aktifkan Login OTP (MFA) di pengaturan sebelum mengubah model.',
+      },
+      ip_verification_required: {
+        en: 'Verify your current admin IP via email OTP in dashboard settings first.',
+        id: 'Verifikasi IP admin Anda lewat OTP email di pengaturan terlebih dahulu.',
+      },
+      forbidden: {
+        en: 'Your account does not have permission to edit the model catalog.',
+        id: 'Akun Anda tidak memiliki izin untuk mengubah katalog model.',
+      },
+    };
+    const localized = en ? messages[code].en : messages[code].id;
+    return { ok: false as const, message: `${localized} (kode: ${code})` };
   }
+}
+
+function formatCatalogDbError(
+  pgCode: string | undefined,
+  en: boolean,
+  options?: { publicModelId?: string; duplicateFallbackEn?: string; duplicateFallbackId?: string },
+): string {
+  const codeTag = pgCode || 'unexpected';
+  if (pgCode === '23505') {
+    if (options?.publicModelId) {
+      return en
+        ? `A model with Public ID "${options.publicModelId}" already exists. (kode: 23505)`
+        : `Model dengan Public ID "${options.publicModelId}" sudah ada. (kode: 23505)`;
+    }
+    const dupMsg = en
+      ? (options?.duplicateFallbackEn ?? 'Duplicate record already exists.')
+      : (options?.duplicateFallbackId ?? 'Data duplikat sudah ada.');
+    return `${dupMsg} (kode: 23505)`;
+  }
+  if (pgCode === '23503') {
+    return en
+      ? 'Referenced provider or model was not found in the database. (kode: 23503)'
+      : 'Provider atau model rujukan tidak ditemukan di database. (kode: 23503)';
+  }
+  if (pgCode === '22P02' || pgCode === '22003') {
+    return en
+      ? `Input format or number range is invalid. (kode: ${pgCode})`
+      : `Format input atau rentang angka tidak valid. (kode: ${pgCode})`;
+  }
+  return en
+    ? `Failed to save changes. Check server logs for details. (kode: ${codeTag})`
+    : `Gagal menyimpan perubahan. Periksa log server untuk detail. (kode: ${codeTag})`;
+}
+
+export async function saveModel(formData: FormData): Promise<ModelActionResult> {
+  const en = (await getServerTranslation()).locale === 'en';
+  const authCheck = await checkCatalogWriteAdmin(en);
+  if (!authCheck.ok) return { ok: false, message: authCheck.message };
+
+  const id = String(formData.get('id') || '').trim();
+  if (id && !isUuid(id)) {
+    return {
+      ok: false,
+      message: en ? 'Invalid model ID. (kode: invalid_id)' : 'ID model tidak valid. (kode: invalid_id)',
+    };
+  }
+
+  const parsed = parseModelForm(formData, en);
+  if ('error' in parsed) return { ok: false, message: parsed.error };
+  const { values } = parsed;
+
+  try {
+    const [provider] = await db
+      .select({ id: s.providers.id })
+      .from(s.providers)
+      .where(eq(s.providers.id, values.providerId))
+      .limit(1);
+    if (!provider) {
+      return {
+        ok: false,
+        message: en
+          ? 'Selected provider was not found. (kode: provider_not_found)'
+          : 'Provider yang dipilih tidak ditemukan. (kode: provider_not_found)',
+      };
+    }
+
+    if (id) {
+      const [updated] = await db
+        .update(s.models)
+        .set({ ...values, updatedAt: new Date() })
+        .where(eq(s.models.id, id))
+        .returning({ id: s.models.id });
+      if (!updated) {
+        return {
+          ok: false,
+          message: en ? 'Model not found. (kode: model_not_found)' : 'Model tidak ditemukan. (kode: model_not_found)',
+        };
+      }
+      await audit(authCheck.admin.id, 'update', 'model', id, values);
+    } else {
+      const [created] = await db.insert(s.models).values(values).returning({ id: s.models.id });
+      await audit(authCheck.admin.id, 'create', 'model', created!.id, values);
+    }
+  } catch (err) {
+    const pgCode = extractPgCode(err);
+    console.error('[saveModel] failed:', { pgCode, id: id || null, publicModelId: values.publicModelId, err });
+    return {
+      ok: false,
+      message: formatCatalogDbError(pgCode, en, { publicModelId: values.publicModelId }),
+    };
+  }
+
   revalidatePath('/admin/models');
+  revalidatePath('/dashboard/models');
+  return {
+    ok: true,
+    message: id
+      ? en
+        ? `Model "${values.publicModelId}" updated.`
+        : `Model "${values.publicModelId}" berhasil diperbarui.`
+      : en
+        ? `Model "${values.publicModelId}" created.`
+        : `Model "${values.publicModelId}" berhasil dibuat.`,
+  };
 }
 
 export async function deleteModel(formData: FormData): Promise<{ deleted: boolean; message: string }> {
@@ -218,76 +337,118 @@ function positiveIntOrNull(v: FormDataEntryValue | null): number | null {
  * Create or update a `model_provider_pool` entry (FIX-P1-03).
  * Enforces D9 (`contextLength >= model.contextLength`) and writes an audit trail row.
  */
-export async function saveModelPoolEntry(formData: FormData) {
-  const admin = await requireAdminPerm('catalog:write');
+export async function saveModelPoolEntry(formData: FormData): Promise<ModelActionResult> {
+  const en = (await getServerTranslation()).locale === 'en';
+  const authCheck = await checkCatalogWriteAdmin(en);
+  if (!authCheck.ok) return { ok: false, message: authCheck.message };
+
   const id = String(formData.get('id') || '').trim();
   const modelId = String(formData.get('modelId') || '').trim();
   const providerId = String(formData.get('providerId') || '').trim();
   const providerModelId = String(formData.get('providerModelId') || '').trim();
-  if (!modelId || !providerId || !providerModelId) {
-    throw new Error('Model, Provider, dan Provider Model ID wajib diisi.');
+  if ((id && !isUuid(id)) || !isUuid(modelId) || !isUuid(providerId) || !providerModelId) {
+    return {
+      ok: false,
+      message: en
+        ? 'Model, Provider, and Provider Model ID are required. (kode: invalid_input)'
+        : 'Model, Provider, dan Provider Model ID wajib diisi. (kode: invalid_input)',
+    };
   }
 
-  const [model] = await db
-    .select({ id: s.models.id, contextLength: s.models.contextLength, publicModelId: s.models.publicModelId })
-    .from(s.models)
-    .where(eq(s.models.id, modelId))
-    .limit(1);
-  if (!model) throw new Error('Model tidak ditemukan.');
-
-  const priority = Math.max(1, Number(formData.get('priority') || 1) || 1);
-  const weight = Math.max(1, Number(formData.get('weight') || 100) || 100);
-  const rawContext = Number(formData.get('contextLength') || model.contextLength);
-  const contextLength = Number.isInteger(rawContext) && rawContext > 0 ? rawContext : model.contextLength;
-  if (contextLength < model.contextLength) {
-    throw new Error(
-      `Context length pool entry (${contextLength}) tidak boleh di bawah context length model (${model.contextLength}).`,
-    );
-  }
-
-  const values = {
-    modelId,
-    providerId,
-    providerModelId,
-    priority,
-    weight,
-    contextLength,
-    maxOutputTokens: positiveIntOrNull(formData.get('maxOutputTokens')),
-    costInputPer1m: optionalInt(formData.get('costInputPer1m')),
-    costOutputPer1m: optionalInt(formData.get('costOutputPer1m')),
-    ttfbTimeoutMs: positiveIntOrNull(formData.get('ttfbTimeoutMs')),
-    supportsTools: formData.get('supportsTools') === 'on' || formData.get('supportsTools') === 'true',
-    supportsParallelTools:
-      formData.get('supportsParallelTools') === 'on' || formData.get('supportsParallelTools') === 'true',
-    supportsReasoning: formData.get('supportsReasoning') === 'on' || formData.get('supportsReasoning') === 'true',
-    reasoningEchoRequired:
-      formData.get('reasoningEchoRequired') === 'on' || formData.get('reasoningEchoRequired') === 'true',
-    supportsVision: formData.get('supportsVision') === 'on' || formData.get('supportsVision') === 'true',
-    usageInStream: formData.get('usageInStream') === 'on' || formData.get('usageInStream') === 'true',
-    isEnabled: formData.has('isEnabled')
-      ? formData.get('isEnabled') === 'on' || formData.get('isEnabled') === 'true'
-      : true,
-    updatedAt: new Date(),
-  };
-
-  if (id) {
-    await db.update(s.modelProviderPool).set(values).where(eq(s.modelProviderPool.id, id));
-    await audit(admin.id, 'update', 'model_provider_pool', id, values);
-  } else {
-    const [existing] = await db
-      .select({ id: s.modelProviderPool.id })
-      .from(s.modelProviderPool)
-      .where(and(eq(s.modelProviderPool.modelId, modelId), eq(s.modelProviderPool.providerId, providerId)))
+  try {
+    const [model] = await db
+      .select({ id: s.models.id, contextLength: s.models.contextLength, publicModelId: s.models.publicModelId })
+      .from(s.models)
+      .where(eq(s.models.id, modelId))
       .limit(1);
-    if (existing) {
-      await db.update(s.modelProviderPool).set(values).where(eq(s.modelProviderPool.id, existing.id));
-      await audit(admin.id, 'update', 'model_provider_pool', existing.id, values);
-    } else {
-      const [created] = await db.insert(s.modelProviderPool).values(values).returning({ id: s.modelProviderPool.id });
-      await audit(admin.id, 'create', 'model_provider_pool', created!.id, values);
+    if (!model) {
+      return {
+        ok: false,
+        message: en ? 'Model not found. (kode: model_not_found)' : 'Model tidak ditemukan. (kode: model_not_found)',
+      };
     }
+
+    const priority = Math.max(1, Number(formData.get('priority') || 1) || 1);
+    const weight = Math.max(1, Number(formData.get('weight') || 100) || 100);
+    const rawContextStr = String(formData.get('contextLength') || '').trim();
+    const rawContext = rawContextStr === '' ? model.contextLength : Number(rawContextStr);
+    if (!Number.isSafeInteger(rawContext) || rawContext <= 0) {
+      return {
+        ok: false,
+        message: en
+          ? 'Context length must be a positive whole number. (kode: invalid_input)'
+          : 'Context length harus bilangan bulat positif. (kode: invalid_input)',
+      };
+    }
+    const contextLength = rawContext;
+    if (contextLength < model.contextLength) {
+      return {
+        ok: false,
+        message: en
+          ? `Pool entry context length (${contextLength}) cannot be lower than model context length (${model.contextLength}). (kode: context_too_low)`
+          : `Context length pool entry (${contextLength}) tidak boleh di bawah context length model (${model.contextLength}). (kode: context_too_low)`,
+      };
+    }
+
+    const values = {
+      modelId,
+      providerId,
+      providerModelId,
+      priority: Number.isSafeInteger(priority) ? priority : 1,
+      weight: Number.isSafeInteger(weight) ? weight : 100,
+      contextLength,
+      maxOutputTokens: positiveIntOrNull(formData.get('maxOutputTokens')),
+      costInputPer1m: optionalInt(formData.get('costInputPer1m')),
+      costOutputPer1m: optionalInt(formData.get('costOutputPer1m')),
+      ttfbTimeoutMs: positiveIntOrNull(formData.get('ttfbTimeoutMs')),
+      supportsTools: formData.get('supportsTools') === 'on' || formData.get('supportsTools') === 'true',
+      supportsParallelTools:
+        formData.get('supportsParallelTools') === 'on' || formData.get('supportsParallelTools') === 'true',
+      supportsReasoning: formData.get('supportsReasoning') === 'on' || formData.get('supportsReasoning') === 'true',
+      reasoningEchoRequired:
+        formData.get('reasoningEchoRequired') === 'on' || formData.get('reasoningEchoRequired') === 'true',
+      supportsVision: formData.get('supportsVision') === 'on' || formData.get('supportsVision') === 'true',
+      usageInStream: formData.get('usageInStream') === 'on' || formData.get('usageInStream') === 'true',
+      isEnabled: formData.has('isEnabled')
+        ? formData.get('isEnabled') === 'on' || formData.get('isEnabled') === 'true'
+        : true,
+      updatedAt: new Date(),
+    };
+
+    if (id) {
+      await db.update(s.modelProviderPool).set(values).where(eq(s.modelProviderPool.id, id));
+      await audit(authCheck.admin.id, 'update', 'model_provider_pool', id, values);
+    } else {
+      const [existing] = await db
+        .select({ id: s.modelProviderPool.id })
+        .from(s.modelProviderPool)
+        .where(and(eq(s.modelProviderPool.modelId, modelId), eq(s.modelProviderPool.providerId, providerId)))
+        .limit(1);
+      if (existing) {
+        await db.update(s.modelProviderPool).set(values).where(eq(s.modelProviderPool.id, existing.id));
+        await audit(authCheck.admin.id, 'update', 'model_provider_pool', existing.id, values);
+      } else {
+        const [created] = await db.insert(s.modelProviderPool).values(values).returning({ id: s.modelProviderPool.id });
+        await audit(authCheck.admin.id, 'create', 'model_provider_pool', created!.id, values);
+      }
+    }
+  } catch (err) {
+    const pgCode = extractPgCode(err);
+    console.error('[saveModelPoolEntry] failed:', { pgCode, id: id || null, modelId, providerId, err });
+    return {
+      ok: false,
+      message: formatCatalogDbError(pgCode, en, {
+        duplicateFallbackEn: 'This provider is already registered in the pool for this model.',
+        duplicateFallbackId: 'Provider ini sudah terdaftar di pool untuk model tersebut.',
+      }),
+    };
   }
+
   revalidatePath('/admin/models');
+  return {
+    ok: true,
+    message: en ? 'Pool entry saved.' : 'Pool entry berhasil disimpan.',
+  };
 }
 
 export async function toggleModelPoolEntry(formData: FormData) {

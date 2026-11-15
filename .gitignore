@@ -75,4 +75,5 @@ audit-out/
 apps/api/audit-folder/
 docs/artifact/
 .skills/
+.agent
 context-duitku-payment.md
