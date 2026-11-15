@@ -6,7 +6,7 @@
 import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
-import { eq, and, desc, sql, gt, gte, lte, ne, isNotNull } from 'drizzle-orm';
+import { eq, and, desc, sql, gt, gte, lte, ne, isNotNull, inArray } from 'drizzle-orm';
 import { createHash, randomInt, timingSafeEqual } from 'node:crypto';
 import { db, schema as s } from '@morphic/db';
 import { generateApiKey, maskedKey, hashApiKey } from '@morphic/shared/keys';
@@ -68,6 +68,9 @@ async function requireUser() {
 const adminTrustedIpId = (userId: string, ip: string) =>
   `admin-trusted-ip:${userId}:${adminIpNetworkKey(ip) ?? ip}`;
 const adminIpOtpId = (userId: string) => `admin-ip-otp:${userId}`;
+// One step-up per sign-in: once a session passed the email code it stays trusted until it
+// ends (logout or expiry), whatever IP it moves to.
+const adminVerifiedSessionId = (sessionId: string) => `admin-verified-session:${sessionId}`;
 
 /**
  * The signed-in admin, or null for guests, non-admins, strictly-blocked IPs, suspended admins and API-key sessions.
@@ -83,6 +86,7 @@ const adminCheck = cache(
   async (): Promise<{
     user: typeof s.users.$inferSelect;
     sessionId: string;
+    sessionExpiresAt: Date;
     mfaMissing: boolean;
     ipVerificationRequired: boolean;
     clientIp: string | null;
@@ -99,6 +103,7 @@ const adminCheck = cache(
         authMethod: s.sessions.authMethod,
         sessionIp: s.sessions.ipAddress,
         sessionId: s.sessions.id,
+        sessionExpiresAt: s.sessions.expiresAt,
       })
       .from(s.users)
       .innerJoin(s.sessions, eq(s.sessions.userId, s.users.id))
@@ -115,22 +120,26 @@ const adminCheck = cache(
 
     // Only query s.verifications for a trusted-IP badge if the client IP is non-local and differs from the session IP.
     const trustedIps: string[] = [];
+    let sessionVerified = false;
     if (
       canonicalClientIp &&
       !isLoopbackAdminIp(canonicalClientIp) &&
-      !isSameAdminIpOrIpv6Prefix(canonicalClientIp, canonicalSessionIp)
+      // With an allowlist, a session IP match alone does not admit, so the trust rows matter too.
+      (!isSameAdminIpOrIpv6Prefix(canonicalClientIp, canonicalSessionIp) || process.env.ADMIN_ALLOWED_IPS?.trim())
     ) {
-      const [trustedRow] = await db
-        .select({ id: s.verifications.id })
+      const trustedIpId = adminTrustedIpId(row.user.id, canonicalClientIp);
+      const verifiedSessionId = adminVerifiedSessionId(row.sessionId);
+      const trustedRows = await db
+        .select({ identifier: s.verifications.identifier })
         .from(s.verifications)
         .where(
           and(
-            eq(s.verifications.identifier, adminTrustedIpId(row.user.id, canonicalClientIp)),
+            inArray(s.verifications.identifier, [trustedIpId, verifiedSessionId]),
             gt(s.verifications.expiresAt, new Date()),
           ),
-        )
-        .limit(1);
-      if (trustedRow) {
+        );
+      sessionVerified = trustedRows.some((r) => r.identifier === verifiedSessionId);
+      if (trustedRows.some((r) => r.identifier === trustedIpId)) {
         trustedIps.push(adminIpNetworkKey(canonicalClientIp) ?? canonicalClientIp);
       }
     }
@@ -155,8 +164,9 @@ const adminCheck = cache(
     return {
       user: row.user,
       sessionId: row.sessionId,
+      sessionExpiresAt: row.sessionExpiresAt,
       mfaMissing,
-      ipVerificationRequired: ipEval.status === 'step_up_required',
+      ipVerificationRequired: ipEval.status === 'step_up_required' && !sessionVerified,
       clientIp: ipEval.canonicalClientIp,
     };
   },
@@ -949,6 +959,14 @@ export async function verifyAdminIpCode(formData: FormData) {
     identifier: trustedId,
     value: 'verified',
     expiresAt: trustedExpiresAt,
+  });
+
+  const verifiedSessionId = adminVerifiedSessionId(check.sessionId);
+  await db.delete(s.verifications).where(eq(s.verifications.identifier, verifiedSessionId));
+  await db.insert(s.verifications).values({
+    identifier: verifiedSessionId,
+    value: 'verified',
+    expiresAt: check.sessionExpiresAt,
   });
 
   // Update the active session IP so subsequent checks on this session are fast-pathed without extra DB queries.
