@@ -18,6 +18,7 @@ import {
   isAdminRole,
   isLoopbackAdminIp,
   isSameAdminIpOrIpv6Prefix,
+  adminIpNetworkKey,
   type AdminPermission,
 } from '@morphic/shared/admin-rbac';
 import { sendEmail } from '@morphic/shared/email';
@@ -61,10 +62,12 @@ async function requireUser() {
   return session.user;
 }
 
-const adminTrustedIpId = (userId: string, canonicalIp: string) =>
-  `admin-trusted-ip:${userId}:${canonicalIp}`;
-const adminIpOtpId = (userId: string, canonicalIp: string) =>
-  `admin-ip-otp:${userId}:${canonicalIp}`;
+// Trusted IPs are remembered per network (IPv6 /64), and the step-up code is per user: the client
+// IP can change between "send code" and "verify" (IPv6 privacy addresses, IPv4/IPv6 switching),
+// which used to make a fresh code read as expired.
+const adminTrustedIpId = (userId: string, ip: string) =>
+  `admin-trusted-ip:${userId}:${adminIpNetworkKey(ip) ?? ip}`;
+const adminIpOtpId = (userId: string) => `admin-ip-otp:${userId}`;
 
 /**
  * The signed-in admin, or null for guests, non-admins, strictly-blocked IPs, suspended admins and API-key sessions.
@@ -128,7 +131,7 @@ const adminCheck = cache(
         )
         .limit(1);
       if (trustedRow) {
-        trustedIps.push(canonicalClientIp);
+        trustedIps.push(adminIpNetworkKey(canonicalClientIp) ?? canonicalClientIp);
       }
     }
 
@@ -866,7 +869,7 @@ export async function requestAdminIpVerificationCode() {
     return { ok: false as const, error: 'Alamat IP tidak terdeteksi.' };
   }
 
-  const otpId = adminIpOtpId(check.user.id, canonicalIp);
+  const otpId = adminIpOtpId(check.user.id);
   const [existing] = await db
     .select({ createdAt: s.verifications.createdAt })
     .from(s.verifications)
@@ -909,7 +912,7 @@ export async function verifyAdminIpCode(formData: FormData) {
   }
 
   const code = String(formData.get('code') || '').trim();
-  const otpId = adminIpOtpId(check.user.id, canonicalIp);
+  const otpId = adminIpOtpId(check.user.id);
   const [row] = await db
     .select()
     .from(s.verifications)

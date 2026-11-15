@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   ALL_ADMIN_PERMISSIONS,
+  adminIpNetworkKey,
   canonicalizeAdminIp,
   evaluateAdminIpAccess,
   extractTrustedAdminIp,
@@ -160,4 +161,17 @@ test('Step-Up OTP IP evaluation (Opsi 1): allows login IP & trusted IPs, challen
     }).status,
     'step_up_required',
   );
+});
+
+test('Admin IP: trusted-IP key covers the whole IPv6 /64', () => {
+  assert.equal(adminIpNetworkKey('203.0.113.7'), '203.0.113.7');
+  assert.equal(adminIpNetworkKey('::ffff:203.0.113.7'), '203.0.113.7');
+  assert.equal(adminIpNetworkKey('unknown'), null);
+  const key = adminIpNetworkKey('2001:db8:abcd:1:9999:8888:7777:6666');
+  assert.equal(key, adminIpNetworkKey('2001:0db8:abcd:0001::42'));
+  // A rotated privacy address on the same /64 is trusted; another /64 is not.
+  const evalWith = (clientIp: string) =>
+    evaluateAdminIpAccess({ clientIp, sessionIp: '198.51.100.1', trustedIps: [key!] }).status;
+  assert.equal(evalWith('2001:db8:abcd:1::beef'), 'allowed');
+  assert.equal(evalWith('2001:db8:abcd:2::beef'), 'step_up_required');
 });

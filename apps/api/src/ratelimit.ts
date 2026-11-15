@@ -164,9 +164,10 @@ export async function checkSessionRateLimitDetailed(
   const bucket = Math.floor(now / windowMs);
   const userKey = `srl:${scope}:u:${userId}:${bucket}`;
   const ipKey = `srl:${scope}:ip:${ip}:${bucket}`;
+  // No resolvable IP would put every such caller in one shared bucket; count the user only.
   const [u, i] = await Promise.all([
     rateLimitStore.increment(userKey, windowSeconds * 2),
-    rateLimitStore.increment(ipKey, windowSeconds * 2),
+    ip === 'unknown' ? 0 : rateLimitStore.increment(ipKey, windowSeconds * 2),
   ]);
   const used = Math.max(u, i);
   return {
