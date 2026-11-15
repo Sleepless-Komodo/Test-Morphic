@@ -72,7 +72,7 @@ export default async function AdminApiKeys({ searchParams }: { searchParams: Pro
     created: [desc(s.apiKeys.createdAt)],
   }[sort];
 
-  const [rows, [count], [summary], [activity]] = await memo(`admin:apikeys:${period.key}:${sort}:${status}:${page}:${q}`, 20_000, () => Promise.all([
+  const [pageRows, [summary], [activity]] = await memo(`admin:apikeys:${period.key}:${sort}:${status}:${page}:${q}`, 20_000, () => Promise.all([
     db
       .select({
         id: s.apiKeys.id,
@@ -92,6 +92,7 @@ export default async function AdminApiKeys({ searchParams }: { searchParams: Pro
         completionTokens: stats.completionTokens,
         credits: stats.credits,
         models: stats.models,
+        totalMatches: sql<number>`count(*) over ()::int`,
       })
       .from(s.apiKeys)
       .innerJoin(s.users, eq(s.users.id, s.apiKeys.userId))
@@ -100,26 +101,29 @@ export default async function AdminApiKeys({ searchParams }: { searchParams: Pro
       .orderBy(...orderBy, asc(s.apiKeys.id))
       .limit(PAGE_SIZE)
       .offset((page - 1) * PAGE_SIZE),
-    db
-      .select({ n: sql<number>`count(*)::int` })
-      .from(s.apiKeys)
-      .innerJoin(s.users, eq(s.users.id, s.apiKeys.userId))
-      .where(where),
-    db
-      .select({
-        total: sql<number>`count(*)::int`,
-        active: sql<number>`count(*) filter (where ${s.apiKeys.status} = 'active')::int`,
-      })
-      .from(s.apiKeys),
-    db
-      .select({
-        requests: sql<number>`count(*)::int`,
-        keys: sql<number>`count(distinct ${s.requestLogs.apiKeyId})::int`,
-        tokens: sql<number>`coalesce(sum(coalesce(${s.requestLogs.promptTokens}, 0) + coalesce(${s.requestLogs.completionTokens}, 0)), 0)::float8`,
-      })
-      .from(s.requestLogs)
-      .where(logWhere),
+    memo('admin:apikeys:summary', 30_000, () =>
+      db
+        .select({
+          total: sql<number>`count(*)::int`,
+          active: sql<number>`count(*) filter (where ${s.apiKeys.status} = 'active')::int`,
+        })
+        .from(s.apiKeys),
+    ),
+    memo(`admin:apikeys:activity:${period.key}`, 30_000, () =>
+      db
+        .select({
+          requests: sql<number>`count(*)::int`,
+          keys: sql<number>`count(distinct ${s.requestLogs.apiKeyId})::int`,
+          tokens: sql<number>`coalesce(sum(coalesce(${s.requestLogs.promptTokens}, 0) + coalesce(${s.requestLogs.completionTokens}, 0)), 0)::float8`,
+        })
+        .from(s.requestLogs)
+        .where(logWhere),
+    ),
   ]));
+
+  const rows = pageRows;
+  const totalCount = pageRows[0]?.totalMatches ?? (page === 1 ? 0 : (await db.select({ n: sql<number>`count(*)::int` }).from(s.apiKeys).innerJoin(s.users, eq(s.users.id, s.apiKeys.userId)).where(where))[0]?.n ?? 0);
+  const count = { n: totalCount };
 
   const pages = Math.max(1, Math.ceil((count?.n ?? 0) / PAGE_SIZE));
   const href = (patch: Partial<Params>) => {

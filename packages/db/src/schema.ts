@@ -440,7 +440,11 @@ export const usageRecords = pgTable(
   },
   // (user_id, created_at): the dashboard's Logs/Cost/Usage reads filter by user and a time range
   // and sort newest first; it also serves plain user_id lookups, so it replaces usage_user_idx.
-  (t) => [index('usage_user_created_idx').on(t.userId, t.createdAt), index('usage_model_idx').on(t.modelId)],
+  (t) => [
+    index('usage_user_created_idx').on(t.userId, t.createdAt),
+    index('usage_model_idx').on(t.modelId),
+    index('usage_created_idx').on(t.createdAt),
+  ],
 );
 
 // ── Payments ──────────────────────────────────────────
@@ -586,7 +590,7 @@ export const adminAuditLog = pgTable(
     detail: jsonb('detail'),
     createdAt: now(),
   },
-  (t) => [index('audit_admin_idx').on(t.adminId)],
+  (t) => [index('audit_admin_idx').on(t.adminId), index('audit_created_idx').on(t.createdAt)],
 );
 
 // ── Background job leases (Pooling Phase 2A) ──────────

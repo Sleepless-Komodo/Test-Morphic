@@ -9,7 +9,7 @@ import { softDeleteUser } from '@/lib/account-deletion';
 import { randomInt } from 'node:crypto';
 import { normalizeCatalog, type CatalogResult } from '@/lib/provider-catalog';
 import { loadAlerts } from '@/lib/admin-insights';
-import { invalidate } from '@/lib/memo';
+import { invalidate, memo } from '@/lib/memo';
 import { parsePackageForm } from '@/lib/package-form';
 import { isUuid, parseModelForm } from '@/lib/model-form';
 import { getServerTranslation } from '@/lib/i18n/server';
@@ -606,7 +606,15 @@ function refreshCatalog(key: string, baseUrl: string, credential: string | null)
 export async function fetchAllProviderCatalogs(fresh = false): Promise<Record<string, CatalogResult>> {
   await requireAdminPerm('catalog:read');
   const { resolveProviderCredential } = await import('@morphic/shared/provider-crypto');
-  const providers = await db.select().from(s.providers);
+  const providers = await db
+    .select({
+      id: s.providers.id,
+      name: s.providers.name,
+      baseUrl: s.providers.baseUrl,
+      encryptedCredentials: s.providers.encryptedCredentials,
+      credentialReference: s.providers.credentialReference,
+    })
+    .from(s.providers);
   const entries = await Promise.all(
     providers.map(async (p) => {
       const key = `${p.id}|${p.baseUrl}|${p.encryptedCredentials ?? p.credentialReference ?? ''}`;
@@ -640,7 +648,15 @@ export async function fetchProviderCatalog(input: {
   let baseUrl = input.baseUrl?.trim() ?? '';
   let credential = input.credential?.trim() || null;
   if (input.providerId) {
-    const [p] = await db.select().from(s.providers).where(eq(s.providers.id, input.providerId)).limit(1);
+    const [p] = await db
+      .select({
+        baseUrl: s.providers.baseUrl,
+        encryptedCredentials: s.providers.encryptedCredentials,
+        credentialReference: s.providers.credentialReference,
+      })
+      .from(s.providers)
+      .where(eq(s.providers.id, input.providerId))
+      .limit(1);
     if (p) {
       baseUrl ||= p.baseUrl;
       if (!credential && baseUrl.replace(/\/$/, '') === p.baseUrl.replace(/\/$/, '')) {
@@ -981,7 +997,7 @@ const VALID_ABUSE_STATUSES = new Set(['open', 'investigating', 'resolved', 'dism
  */
 export async function syncAbuseCasesFromSignals() {
   const admin = await requireAdminPerm('security:write');
-  const a = await loadAlerts();
+  const a = await memo('admin:alerts', 20_000, () => loadAlerts());
 
   type Candidate = {
     userId: string | null;
@@ -1165,7 +1181,12 @@ export async function updateAbuseCaseStatus(formData: FormData) {
   const status = rawStatus as 'open' | 'investigating' | 'resolved' | 'dismissed';
 
   const [caseRow] = await db
-    .select()
+    .select({
+      id: s.abuseCases.id,
+      status: s.abuseCases.status,
+      userId: s.abuseCases.userId,
+      apiKeyId: s.abuseCases.apiKeyId,
+    })
     .from(s.abuseCases)
     .where(eq(s.abuseCases.id, id))
     .limit(1);

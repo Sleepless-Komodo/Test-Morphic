@@ -5,6 +5,7 @@ import { sql, gte } from 'drizzle-orm';
 import { Server } from 'lucide-react';
 import { Suspense } from 'react';
 import { fetchAllProviderCatalogs } from '@/lib/admin-actions';
+import { memo } from '@/lib/memo';
 import { ProvidersClient, type ProviderRow, type ProviderStat } from './providers-client';
 import { ProviderCatalog, ProviderCatalogSkeleton } from './provider-catalog';
 
@@ -22,34 +23,45 @@ export default async function AdminProviders() {
   await requireAdmin('catalog:read');
   const { t } = await getServerTranslation();
 
-  const providers = await db.select().from(s.providers);
-
   // 5-minute live health monitoring for Observability Alerts (§5.7)
   const fiveMinCutoff = new Date(Date.now() - 5 * 60_000);
-  const liveStats = await db
-    .select({
-      providerName: s.requestLogs.providerName,
-      totalRequests: sql<number>`count(*)::int`,
-      errorRequests: sql<number>`count(case when ${s.requestLogs.status} = 'error' then 1 end)::int`,
-    })
-    .from(s.requestLogs)
-    .where(gte(s.requestLogs.createdAt, fiveMinCutoff))
-    .groupBy(s.requestLogs.providerName);
+  const [providers, liveStats] = await Promise.all([
+    db
+      .select({
+        id: s.providers.id,
+        name: s.providers.name,
+        baseUrl: s.providers.baseUrl,
+        hasEncryptedCredential: sql<boolean>`${s.providers.encryptedCredentials} is not null`,
+        credentialReference: s.providers.credentialReference,
+        status: s.providers.status,
+      })
+      .from(s.providers),
+    memo('admin:overview:alerts', 15_000, () =>
+      db
+        .select({
+          providerName: s.requestLogs.providerName,
+          total: sql<number>`count(*)::int`,
+          errors: sql<number>`count(case when ${s.requestLogs.status} = 'error' then 1 end)::int`,
+        })
+        .from(s.requestLogs)
+        .where(gte(s.requestLogs.createdAt, fiveMinCutoff))
+        .groupBy(s.requestLogs.providerName),
+    ),
+  ]);
 
   const stats: ProviderStat[] = liveStats
     .filter((s): s is typeof s & { providerName: string } => Boolean(s.providerName))
     .map((s) => ({
       providerName: s.providerName,
-      totalRequests: s.totalRequests,
-      errorRequests: s.errorRequests,
+      totalRequests: s.total,
+      errorRequests: s.errors,
     }));
 
   const formattedProviders: ProviderRow[] = providers.map((p) => ({
     id: p.id,
     name: p.name,
     baseUrl: p.baseUrl,
-    // Ciphertext stays on the server; the table only needs to know a key is stored.
-    hasEncryptedCredential: Boolean(p.encryptedCredentials),
+    hasEncryptedCredential: Boolean(p.hasEncryptedCredential),
     credentialReference: p.credentialReference,
     status: p.status as 'active' | 'disabled',
   }));

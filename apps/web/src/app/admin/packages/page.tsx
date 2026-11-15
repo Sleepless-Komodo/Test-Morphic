@@ -13,7 +13,21 @@ export default async function AdminPackages() {
 
   const count = sql<number>`count(*)::int`;
   const [packages, models, holders, pending, codes] = await Promise.all([
-    db.select().from(s.packages).orderBy(asc(s.packages.createdAt)),
+    db
+      .select({
+        id: s.packages.id,
+        name: s.packages.name,
+        description: s.packages.description,
+        kind: s.packages.kind,
+        creditAllowance: s.packages.creditAllowance,
+        modelId: s.packages.modelId,
+        durationHours: s.packages.durationHours,
+        priceCents: s.packages.priceCents,
+        currency: s.packages.currency,
+        status: s.packages.status,
+      })
+      .from(s.packages)
+      .orderBy(asc(s.packages.createdAt)),
     db.select({ id: s.models.id, displayName: s.models.displayName }).from(s.models).orderBy(asc(s.models.displayName)),
     db
       .select({ packageId: s.entitlements.packageId, n: sql<number>`count(distinct ${s.entitlements.userId})::int` })

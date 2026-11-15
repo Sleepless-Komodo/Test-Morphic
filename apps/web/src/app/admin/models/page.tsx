@@ -35,7 +35,15 @@ export default async function AdminModels() {
       })
       .from(s.models)
       .innerJoin(s.providers, eq(s.models.providerId, s.providers.id)),
-    db.select().from(s.providers),
+    db
+      .select({
+        id: s.providers.id,
+        name: s.providers.name,
+        status: s.providers.status,
+        encryptedCredentials: s.providers.encryptedCredentials,
+        credentialReference: s.providers.credentialReference,
+      })
+      .from(s.providers),
     db
       .select({
         id: s.modelProviderPool.id,

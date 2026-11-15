@@ -44,6 +44,37 @@ export default async function AdminLeaderboard({ searchParams }: { searchParams:
   const reqWhere = since ? gt(s.requestLogs.createdAt, since) : undefined;
   const requests = sql<number>`count(*)::int`;
 
+  const topSpendersSub = db
+    .select({
+      userId: s.payments.userId,
+      spendIdr: spendIdr.as('spend_idr'),
+      idr: sql<number>`coalesce(sum(${s.payments.amountCents}) filter (where ${s.payments.currency} <> 'USD'), 0)::float8`.as('spend_raw_idr'),
+      usdCents: sql<number>`coalesce(sum(${s.payments.amountCents}) filter (where ${s.payments.currency} = 'USD'), 0)::float8`.as('spend_usd_cents'),
+      credits: sql<number>`coalesce(sum(${s.payments.credits}), 0)::float8`.as('spend_credits'),
+      orders: sql<number>`count(*)::int`.as('spend_orders'),
+    })
+    .from(s.payments)
+    .where(paidWhere)
+    .groupBy(s.payments.userId)
+    .orderBy(desc(spendIdr))
+    .limit(10)
+    .as('top_spenders');
+
+  const topRequestersSub = db
+    .select({
+      userId: s.requestLogs.userId,
+      requests: requests.as('req_count'),
+      errors: sql<number>`count(*) filter (where ${s.requestLogs.status} <> 'success')::int`.as('req_errors'),
+      tokens: sql<number>`coalesce(sum(coalesce(${s.requestLogs.promptTokens}, 0) + coalesce(${s.requestLogs.completionTokens}, 0)), 0)::float8`.as('req_tokens'),
+      credits: sql<number>`coalesce(sum(${s.requestLogs.creditsConsumed}), 0)::float8`.as('req_credits'),
+    })
+    .from(s.requestLogs)
+    .where(reqWhere)
+    .groupBy(s.requestLogs.userId)
+    .orderBy(desc(requests))
+    .limit(10)
+    .as('top_requesters');
+
   // All four reads run in parallel: one round trip of latency for the whole page.
   const [spenders, requesters, [revenue], [traffic]] = await memo(`admin:leaderboard:${period.key}`, 30_000, () => Promise.all([
     db
@@ -53,18 +84,15 @@ export default async function AdminLeaderboard({ searchParams }: { searchParams:
         email: s.users.email,
         image: s.users.image,
         role: s.users.role,
-        spendIdr,
-        idr: sql<number>`coalesce(sum(${s.payments.amountCents}) filter (where ${s.payments.currency} <> 'USD'), 0)::float8`,
-        usdCents: sql<number>`coalesce(sum(${s.payments.amountCents}) filter (where ${s.payments.currency} = 'USD'), 0)::float8`,
-        credits: sql<number>`coalesce(sum(${s.payments.credits}), 0)::float8`,
-        orders: sql<number>`count(*)::int`,
+        spendIdr: topSpendersSub.spendIdr,
+        idr: topSpendersSub.idr,
+        usdCents: topSpendersSub.usdCents,
+        credits: topSpendersSub.credits,
+        orders: topSpendersSub.orders,
       })
-      .from(s.payments)
-      .innerJoin(s.users, eq(s.users.id, s.payments.userId))
-      .where(paidWhere)
-      .groupBy(s.users.id)
-      .orderBy(desc(spendIdr))
-      .limit(10),
+      .from(topSpendersSub)
+      .innerJoin(s.users, eq(s.users.id, topSpendersSub.userId))
+      .orderBy(desc(topSpendersSub.spendIdr)),
     db
       .select({
         userId: s.users.id,
@@ -72,17 +100,14 @@ export default async function AdminLeaderboard({ searchParams }: { searchParams:
         email: s.users.email,
         image: s.users.image,
         role: s.users.role,
-        requests,
-        errors: sql<number>`count(*) filter (where ${s.requestLogs.status} <> 'success')::int`,
-        tokens: sql<number>`coalesce(sum(coalesce(${s.requestLogs.promptTokens}, 0) + coalesce(${s.requestLogs.completionTokens}, 0)), 0)::float8`,
-        credits: sql<number>`coalesce(sum(${s.requestLogs.creditsConsumed}), 0)::float8`,
+        requests: topRequestersSub.requests,
+        errors: topRequestersSub.errors,
+        tokens: topRequestersSub.tokens,
+        credits: topRequestersSub.credits,
       })
-      .from(s.requestLogs)
-      .innerJoin(s.users, eq(s.users.id, s.requestLogs.userId))
-      .where(reqWhere)
-      .groupBy(s.users.id)
-      .orderBy(desc(requests))
-      .limit(10),
+      .from(topRequestersSub)
+      .innerJoin(s.users, eq(s.users.id, topRequestersSub.userId))
+      .orderBy(desc(topRequestersSub.requests)),
     db.select({ total: spendIdr, buyers: sql<number>`count(distinct ${s.payments.userId})::int` }).from(s.payments).where(paidWhere),
     db
       .select({ total: requests, users: sql<number>`count(distinct ${s.requestLogs.userId})::int` })

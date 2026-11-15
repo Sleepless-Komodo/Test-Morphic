@@ -3,42 +3,70 @@ import { db, schema as s } from '@morphic/db';
 import { requireAdmin } from '@/lib/actions';
 import { getServerTranslation } from '@/lib/i18n/server';
 import { formatCredits } from '@/lib/utils';
+import { memo } from '@/lib/memo';
 import { Activity } from 'lucide-react';
 
 export default async function AdminUsage() {
   await requireAdmin('finance:read');
   const { t } = await getServerTranslation();
 
-  const [byModel, recent] = await Promise.all([
+  const usageByModel = db
+    .select({
+      modelId: s.usageRecords.modelId,
+      requests: sql<number>`count(*)::int`.as('u_requests'),
+      tokens: sql<number>`coalesce(sum(${s.usageRecords.totalTokens}),0)::bigint`.as('u_tokens'),
+      credits: sql<number>`coalesce(sum(${s.usageRecords.creditsConsumed}),0)::bigint`.as('u_credits'),
+      errors: sql<number>`count(*) filter (where ${s.usageRecords.status} = 'error')::int`.as('u_errors'),
+    })
+    .from(s.usageRecords)
+    .groupBy(s.usageRecords.modelId)
+    .as('usage_by_model');
+
+  const recentSub = db
+    .select({
+      id: s.usageRecords.id,
+      userId: s.usageRecords.userId,
+      modelId: s.usageRecords.modelId,
+      totalTokens: s.usageRecords.totalTokens,
+      credits: s.usageRecords.creditsConsumed,
+      status: s.usageRecords.status,
+      latencyMs: s.usageRecords.latencyMs,
+      createdAt: s.usageRecords.createdAt,
+    })
+    .from(s.usageRecords)
+    .orderBy(desc(s.usageRecords.createdAt))
+    .limit(50)
+    .as('recent_usage');
+
+  const [byModel, recent] = await memo('admin:usage', 20_000, () => Promise.all([
     db
       .select({
         model: s.models.publicModelId,
-        requests: sql<number>`count(*)::int`,
-        tokens: sql<number>`coalesce(sum(${s.usageRecords.totalTokens}),0)::bigint`,
-        credits: sql<number>`coalesce(sum(${s.usageRecords.creditsConsumed}),0)::bigint`,
-        errors: sql<number>`count(*) filter (where ${s.usageRecords.status} = 'error')::int`,
+        requests: sql<number>`sum(${usageByModel.requests})::int`,
+        tokens: sql<number>`coalesce(sum(${usageByModel.tokens}),0)::bigint`,
+        credits: sql<number>`coalesce(sum(${usageByModel.credits}),0)::bigint`,
+        errors: sql<number>`sum(${usageByModel.errors})::int`,
       })
-      .from(s.usageRecords)
-      .leftJoin(s.models, eq(s.usageRecords.modelId, s.models.id))
+      .from(usageByModel)
+      .leftJoin(s.models, eq(usageByModel.modelId, s.models.id))
       .groupBy(s.models.publicModelId)
-      .orderBy(desc(sql`count(*)`)),
+      .orderBy(desc(sql`sum(${usageByModel.requests})`)),
     db
       .select({
-        id: s.usageRecords.id,
+        id: recentSub.id,
         userEmail: s.users.email,
         model: s.models.publicModelId,
-        totalTokens: s.usageRecords.totalTokens,
-        credits: s.usageRecords.creditsConsumed,
-        status: s.usageRecords.status,
-        latencyMs: s.usageRecords.latencyMs,
-        createdAt: s.usageRecords.createdAt,
+        totalTokens: recentSub.totalTokens,
+        credits: recentSub.credits,
+        status: recentSub.status,
+        latencyMs: recentSub.latencyMs,
+        createdAt: recentSub.createdAt,
       })
-      .from(s.usageRecords)
-      .leftJoin(s.users, eq(s.usageRecords.userId, s.users.id))
-      .leftJoin(s.models, eq(s.usageRecords.modelId, s.models.id))
-      .orderBy(desc(s.usageRecords.createdAt))
-      .limit(50),
-  ]);
+      .from(recentSub)
+      .leftJoin(s.users, eq(recentSub.userId, s.users.id))
+      .leftJoin(s.models, eq(recentSub.modelId, s.models.id))
+      .orderBy(desc(recentSub.createdAt)),
+  ]));
 
   return (
     <div className="space-y-6 w-full">

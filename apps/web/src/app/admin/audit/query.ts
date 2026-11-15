@@ -1,5 +1,6 @@
 import { and, desc, eq, gte, ilike, lte, or, type SQL } from 'drizzle-orm';
 import { db, schema as s } from '@morphic/db';
+import { memo } from '@/lib/memo';
 
 export interface AuditFilters {
   q?: string;
@@ -47,6 +48,8 @@ export function queryAuditLog(f: AuditFilters, limit: number) {
 }
 
 export async function listAuditActions(): Promise<string[]> {
-  const rows = await db.selectDistinct({ action: s.adminAuditLog.action }).from(s.adminAuditLog).orderBy(s.adminAuditLog.action);
-  return rows.map((r) => r.action);
+  return memo('admin:audit:actions', 60_000, async () => {
+    const rows = await db.selectDistinct({ action: s.adminAuditLog.action }).from(s.adminAuditLog).orderBy(s.adminAuditLog.action);
+    return rows.map((r) => r.action);
+  });
 }

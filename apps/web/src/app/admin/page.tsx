@@ -93,29 +93,30 @@ async function AlertBannerSection({ t }: { t: any }) {
 }
 
 async function CoreStatsCardsSection({ t }: { t: any }) {
-  let users: { count: number } | undefined;
-  let models: { count: number } | undefined;
-  let payments: { count: number; total: number } | undefined;
-  let usage: { requests: number; credits: number } | undefined;
+  let stats:
+    | {
+        usersCount: number;
+        modelsCount: number;
+        paymentsCount: number;
+        paymentsTotal: number;
+        usageRequests: number;
+        usageCredits: number;
+      }
+    | undefined;
 
   try {
-    [[users], [models], [payments], [usage]] = await memo('admin:overview:core', 20_000, () => Promise.all([
-      db.select({ count: sql<number>`count(*)::int` }).from(s.users),
-      db.select({ count: sql<number>`count(*)::int` }).from(s.models).where(eq(s.models.status, 'active')),
+    [stats] = await memo('admin:overview:core', 20_000, () =>
       db
         .select({
-          count: sql<number>`count(*)::int`,
-          total: sql<number>`coalesce(sum(case when ${s.payments.currency} = 'USD' then ${s.payments.amountCents}::numeric / 100 * ${IDR_PER_USD} else ${s.payments.amountCents} end),0)::float8`,
+          usersCount: sql<number>`(select count(*)::int from ${s.users})`,
+          modelsCount: sql<number>`(select count(*)::int from ${s.models} where ${s.models.status} = 'active')`,
+          paymentsCount: sql<number>`(select count(*)::int from ${s.payments} where ${s.payments.status} = 'paid')`,
+          paymentsTotal: sql<number>`(select coalesce(sum(case when ${s.payments.currency} = 'USD' then ${s.payments.amountCents}::numeric / 100 * ${IDR_PER_USD} else ${s.payments.amountCents} end), 0)::float8 from ${s.payments} where ${s.payments.status} = 'paid')`,
+          usageRequests: sql<number>`(select count(*)::int from ${s.usageRecords})`,
+          usageCredits: sql<number>`(select coalesce(sum(${s.usageRecords.creditsConsumed}), 0)::bigint from ${s.usageRecords})`,
         })
-        .from(s.payments)
-        .where(eq(s.payments.status, 'paid')),
-      db
-        .select({
-          requests: sql<number>`count(*)::int`,
-          credits: sql<number>`coalesce(sum(${s.usageRecords.creditsConsumed}),0)::bigint`,
-        })
-        .from(s.usageRecords),
-    ]));
+        .from(sql`(select 1) as _core`),
+    );
   } catch {
     // DB timeout — render cards with zero values so page still loads
   }
@@ -123,26 +124,26 @@ async function CoreStatsCardsSection({ t }: { t: any }) {
   const cards = [
     {
       title: t.admin.overview.totalUsers,
-      value: formatCredits(users?.count ?? 0),
+      value: formatCredits(stats?.usersCount ?? 0),
       detail: t.admin.overview.registeredUsers,
       icon: Users,
     },
     {
       title: t.admin.overview.activeModels,
-      value: formatCredits(models?.count ?? 0),
+      value: formatCredits(stats?.modelsCount ?? 0),
       detail: t.admin.overview.configuredModels,
       icon: Cpu,
     },
     {
       title: t.admin.overview.revenuePaid,
-      value: `Rp${formatCredits(Math.round(payments?.total ?? 0))}`,
-      detail: `${formatCredits(payments?.count ?? 0)} ${t.admin.overview.successfulTxs}`,
+      value: `Rp${formatCredits(Math.round(stats?.paymentsTotal ?? 0))}`,
+      detail: `${formatCredits(stats?.paymentsCount ?? 0)} ${t.admin.overview.successfulTxs}`,
       icon: DollarSign,
     },
     {
       title: t.admin.overview.totalUsage,
-      value: `${formatCredits(usage?.requests ?? 0)} reqs`,
-      detail: `${formatCredits(Number(usage?.credits ?? 0))} ${t.admin.overview.creditsBurned}`,
+      value: `${formatCredits(stats?.usageRequests ?? 0)} reqs`,
+      detail: `${formatCredits(Number(stats?.usageCredits ?? 0))} ${t.admin.overview.creditsBurned}`,
       icon: Zap,
     },
   ];

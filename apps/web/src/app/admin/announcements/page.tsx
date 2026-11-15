@@ -10,7 +10,17 @@ export default async function AdminAnnouncements() {
   await requireAdmin('announcements:read');
   const { locale } = await getServerTranslation();
   const en = locale === 'en';
-  const rows = await db.select().from(s.announcements).orderBy(desc(s.announcements.publishedAt)).limit(100);
+  const rows = await db
+    .select({
+      id: s.announcements.id,
+      title: s.announcements.title,
+      body: s.announcements.body,
+      linkUrl: s.announcements.linkUrl,
+      publishedAt: s.announcements.publishedAt,
+    })
+    .from(s.announcements)
+    .orderBy(desc(s.announcements.publishedAt))
+    .limit(100);
 
   const input = 'w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-950 placeholder:text-neutral-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950';
 
