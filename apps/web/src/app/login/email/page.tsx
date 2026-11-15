@@ -133,6 +133,8 @@ export default function EmailAuthPage() {
         const res = await signIn.email({
           email: trimmedEmail,
           password,
+          // Used by the fresh verification link sent on EMAIL_NOT_VERIFIED.
+          callbackURL: '/dashboard',
           fetchOptions: {
             headers: fetchHeaders,
           },

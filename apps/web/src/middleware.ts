@@ -50,6 +50,20 @@ export function middleware(req: NextRequest) {
     return new NextResponse('Not Found', { status: 404 });
   }
 
+  // A verification link that lost its /api/auth/verify-email path (seen in prod as
+  // `/?token=…&callbackURL=…`) would leave the token in the address bar and never verify.
+  // Hand it to Better Auth, which verifies and redirects to callbackURL without the token.
+  if (
+    pathname === '/' &&
+    req.method === 'GET' &&
+    req.nextUrl.searchParams.has('token') &&
+    req.nextUrl.searchParams.has('callbackURL')
+  ) {
+    const verifyUrl = req.nextUrl.clone();
+    verifyUrl.pathname = '/api/auth/verify-email';
+    return NextResponse.redirect(verifyUrl, 307);
+  }
+
   // 2. Extract Client IP
   const forwardedFor = req.headers.get('x-forwarded-for');
   const clientIp = forwardedFor ? forwardedFor.split(',')[0].trim() : (req.headers.get('x-real-ip') || 'unknown');
