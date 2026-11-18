@@ -1,18 +1,19 @@
 import Link from 'next/link';
-import { and, asc, desc, eq, gt, ilike, isNotNull, or, sql, type SQL } from 'drizzle-orm';
+import { and, eq, gt, isNotNull, sql } from 'drizzle-orm';
 import { db, schema as s } from '@morphic/db';
 import { requireAdmin } from '@/lib/actions';
 import { getServerTranslation } from '@/lib/i18n/server';
 import { formatCredits, formatTokenEstimate, timeAgo } from '@/lib/utils';
 import { AutoRefresh } from '@/components/AutoRefresh';
 import { memo } from '@/lib/memo';
+import { LIVE_TTL_MS } from '@/lib/refresh';
 import { KeyRound, Search } from 'lucide-react';
 import { UserCell } from '../user-cell';
 import { PERIODS, parsePeriod, keyStatus } from './period';
+import { PAGE_SIZE } from '@/lib/pagination';
 
 export const dynamic = 'force-dynamic';
 
-const PAGE_SIZE = 50;
 const SORTS = ['requests', 'tokens', 'credits', 'errors', 'last_used', 'created'] as const;
 type Sort = (typeof SORTS)[number];
 
@@ -29,103 +30,87 @@ export default async function AdminApiKeys({ searchParams }: { searchParams: Pro
   const q = (params.q ?? '').trim();
   const page = Math.max(1, Number(params.page) || 1);
 
-  const logWhere = and(isNotNull(s.requestLogs.apiKeyId), since ? gt(s.requestLogs.createdAt, since) : undefined);
-
-  // Per-key aggregates for the period; joined onto every key so unused keys still show.
-  const stats = db
-    .select({
-      apiKeyId: s.requestLogs.apiKeyId,
-      requests: sql<number>`count(*)::int`.as('requests'),
-      errors: sql<number>`count(*) filter (where ${s.requestLogs.status} <> 'success')::int`.as('errors'),
-      promptTokens: sql<number>`coalesce(sum(${s.requestLogs.promptTokens}), 0)::float8`.as('prompt_tokens'),
-      completionTokens: sql<number>`coalesce(sum(${s.requestLogs.completionTokens}), 0)::float8`.as('completion_tokens'),
-      credits: sql<number>`coalesce(sum(${s.requestLogs.creditsConsumed}), 0)::float8`.as('credits'),
-      models: sql<number>`count(distinct ${s.requestLogs.modelAlias})::int`.as('models'),
-    })
-    .from(s.requestLogs)
-    .where(logWhere)
-    .groupBy(s.requestLogs.apiKeyId)
-    .as('st');
-
-  // Escape LIKE wildcards so a typed % or _ matches literally.
-  const like = `%${q.replace(/[\\%_]/g, '\\$&')}%`;
-  const filters: (SQL | undefined)[] = [
-    status === 'all' ? undefined : eq(s.apiKeys.status, status as 'active' | 'revoked'),
-    q
-      ? or(
-          ilike(s.apiKeys.name, like),
-          ilike(s.apiKeys.keyPrefix, like),
-          ilike(s.users.email, like),
-          ilike(s.users.name, like),
-        )
-      : undefined,
-  ];
-  const where = and(...filters);
-
-  const tokens = sql`coalesce(${stats.promptTokens}, 0) + coalesce(${stats.completionTokens}, 0)`;
-  const orderBy = {
-    requests: [desc(sql`coalesce(${stats.requests}, 0)`)],
-    tokens: [desc(tokens)],
-    credits: [desc(sql`coalesce(${stats.credits}, 0)`)],
-    errors: [desc(sql`coalesce(${stats.errors}, 0)`)],
-    last_used: [sql`${s.apiKeys.lastUsedAt} desc nulls last`],
-    created: [desc(s.apiKeys.createdAt)],
-  }[sort];
-
-  const [pageRows, [summary], [activity]] = await memo(`admin:apikeys:${period.key}:${sort}:${status}:${page}:${q}`, 20_000, () => Promise.all([
-    db
-      .select({
-        id: s.apiKeys.id,
-        name: s.apiKeys.name,
-        keyPrefix: s.apiKeys.keyPrefix,
-        status: s.apiKeys.status,
-        expiresAt: s.apiKeys.expiresAt,
-        lastUsedAt: s.apiKeys.lastUsedAt,
-        createdAt: s.apiKeys.createdAt,
-        userName: s.users.name,
-        userEmail: s.users.email,
-        userImage: s.users.image,
-        userRole: s.users.role,
-        requests: stats.requests,
-        errors: stats.errors,
-        promptTokens: stats.promptTokens,
-        completionTokens: stats.completionTokens,
-        credits: stats.credits,
-        models: stats.models,
-        totalMatches: sql<number>`count(*) over ()::int`,
-      })
-      .from(s.apiKeys)
-      .innerJoin(s.users, eq(s.users.id, s.apiKeys.userId))
-      .leftJoin(stats, eq(stats.apiKeyId, s.apiKeys.id))
-      .where(where)
-      .orderBy(...orderBy, asc(s.apiKeys.id))
-      .limit(PAGE_SIZE)
-      .offset((page - 1) * PAGE_SIZE),
-    memo('admin:apikeys:summary', 30_000, () =>
+  // Both reads are independent of q/sort/status/page: per-key stats are cached once per period and
+  // the key list once, then filtered, sorted and paged in memory (bounded by the number of keys).
+  const [keys, stats] = await Promise.all([
+    memo('admin:apikeys:keys', LIVE_TTL_MS, () =>
       db
         .select({
-          total: sql<number>`count(*)::int`,
-          active: sql<number>`count(*) filter (where ${s.apiKeys.status} = 'active')::int`,
+          id: s.apiKeys.id,
+          name: s.apiKeys.name,
+          keyPrefix: s.apiKeys.keyPrefix,
+          status: s.apiKeys.status,
+          expiresAt: s.apiKeys.expiresAt,
+          lastUsedAt: s.apiKeys.lastUsedAt,
+          createdAt: s.apiKeys.createdAt,
+          userName: s.users.name,
+          userEmail: s.users.email,
+          userImage: s.users.image,
+          userRole: s.users.role,
         })
-        .from(s.apiKeys),
+        .from(s.apiKeys)
+        .innerJoin(s.users, eq(s.users.id, s.apiKeys.userId)),
     ),
-    memo(`admin:apikeys:activity:${period.key}`, 30_000, () =>
+    memo(`admin:apikeys:stats:${period.key}`, LIVE_TTL_MS, () =>
       db
         .select({
+          apiKeyId: s.requestLogs.apiKeyId,
           requests: sql<number>`count(*)::int`,
-          keys: sql<number>`count(distinct ${s.requestLogs.apiKeyId})::int`,
-          tokens: sql<number>`coalesce(sum(coalesce(${s.requestLogs.promptTokens}, 0) + coalesce(${s.requestLogs.completionTokens}, 0)), 0)::float8`,
+          errors: sql<number>`count(*) filter (where ${s.requestLogs.status} <> 'success')::int`,
+          promptTokens: sql<number>`coalesce(sum(${s.requestLogs.promptTokens}), 0)::float8`,
+          completionTokens: sql<number>`coalesce(sum(${s.requestLogs.completionTokens}), 0)::float8`,
+          credits: sql<number>`coalesce(sum(${s.requestLogs.creditsConsumed}), 0)::float8`,
         })
         .from(s.requestLogs)
-        .where(logWhere),
+        .where(and(isNotNull(s.requestLogs.apiKeyId), since ? gt(s.requestLogs.createdAt, since) : undefined))
+        .groupBy(s.requestLogs.apiKeyId),
     ),
-  ]));
+  ]);
 
-  const rows = pageRows;
-  const totalCount = pageRows[0]?.totalMatches ?? (page === 1 ? 0 : (await db.select({ n: sql<number>`count(*)::int` }).from(s.apiKeys).innerJoin(s.users, eq(s.users.id, s.apiKeys.userId)).where(where))[0]?.n ?? 0);
-  const count = { n: totalCount };
+  // Groups include keys deleted since, exactly like the old count(distinct api_key_id).
+  const activity = { keys: stats.length, requests: 0, tokens: 0 };
+  const statsByKey = new Map<string, (typeof stats)[number]>();
+  for (const r of stats) {
+    activity.requests += r.requests;
+    activity.tokens += r.promptTokens + r.completionTokens;
+    if (r.apiKeyId) statsByKey.set(r.apiKeyId, r);
+  }
+  const summary = { total: keys.length, active: keys.filter((k) => k.status === 'active').length };
 
-  const pages = Math.max(1, Math.ceil((count?.n ?? 0) / PAGE_SIZE));
+  const needle = q.toLowerCase();
+  const matched = keys
+    .filter((k) => status === 'all' || k.status === status)
+    .filter(
+      (k) =>
+        !needle ||
+        [k.name, k.keyPrefix, k.userEmail, k.userName].some((v) => v?.toLowerCase().includes(needle)),
+    )
+    .map((k) => {
+      const st = statsByKey.get(k.id);
+      return {
+        ...k,
+        requests: st?.requests ?? 0,
+        errors: st?.errors ?? 0,
+        promptTokens: st?.promptTokens ?? 0,
+        completionTokens: st?.completionTokens ?? 0,
+        credits: st?.credits ?? 0,
+      };
+    });
+  type Row = (typeof matched)[number];
+  const time = (d: Date | null) => d?.getTime() ?? -Infinity;
+  const metric: Record<Sort, (r: Row) => number> = {
+    requests: (r) => r.requests,
+    tokens: (r) => r.promptTokens + r.completionTokens,
+    credits: (r) => r.credits,
+    errors: (r) => r.errors,
+    last_used: (r) => time(r.lastUsedAt),
+    created: (r) => r.createdAt.getTime(),
+  };
+  const by = metric[sort];
+  matched.sort((a, b) => by(b) - by(a) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const rows = matched.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  const pages = Math.max(1, Math.ceil(matched.length / PAGE_SIZE));
   const href = (patch: Partial<Params>) => {
     const n = { period: period.key, q, sort, status, page: String(page), ...patch };
     const sp = new URLSearchParams({ period: n.period });
@@ -185,22 +170,22 @@ export default async function AdminApiKeys({ searchParams }: { searchParams: Pro
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div className={tile}>
           <div className={label}>{en ? 'Keys' : 'Total key'}</div>
-          <div className="mt-1 text-2xl font-extrabold tabular-nums text-neutral-950">{formatCredits(summary?.total ?? 0)}</div>
-          <div className="mt-0.5 text-[11px] text-neutral-500">{formatCredits(summary?.active ?? 0)} {en ? 'active' : 'aktif'}</div>
+          <div className="mt-1 text-2xl font-extrabold tabular-nums text-neutral-950">{formatCredits(summary.total)}</div>
+          <div className="mt-0.5 text-[11px] text-neutral-500">{formatCredits(summary.active)} {en ? 'active' : 'aktif'}</div>
         </div>
         <div className={tile}>
           <div className={label}>{en ? 'Keys used' : 'Key terpakai'}</div>
-          <div className="mt-1 text-2xl font-extrabold tabular-nums text-neutral-950">{formatCredits(activity?.keys ?? 0)}</div>
+          <div className="mt-1 text-2xl font-extrabold tabular-nums text-neutral-950">{formatCredits(activity.keys)}</div>
           <div className="mt-0.5 text-[11px] text-neutral-500">{en ? period.en : period.id}</div>
         </div>
         <div className={tile}>
           <div className={label}>{en ? 'Requests' : 'Request'}</div>
-          <div className="mt-1 text-2xl font-extrabold tabular-nums text-neutral-950">{formatCredits(activity?.requests ?? 0)}</div>
+          <div className="mt-1 text-2xl font-extrabold tabular-nums text-neutral-950">{formatCredits(activity.requests)}</div>
           <div className="mt-0.5 text-[11px] text-neutral-500">{en ? period.en : period.id}</div>
         </div>
         <div className={tile}>
           <div className={label}>Token</div>
-          <div className="mt-1 text-2xl font-extrabold tabular-nums text-neutral-950">{formatTokenEstimate(activity?.tokens ?? 0)}</div>
+          <div className="mt-1 text-2xl font-extrabold tabular-nums text-neutral-950">{formatTokenEstimate(activity.tokens)}</div>
           <div className="mt-0.5 text-[11px] text-neutral-500">input + output</div>
         </div>
       </div>
@@ -297,7 +282,7 @@ export default async function AdminApiKeys({ searchParams }: { searchParams: Pro
       {pages > 1 && (
         <nav aria-label={en ? 'Pages' : 'Halaman'} className="flex items-center justify-between text-xs">
           <span className="text-neutral-500">
-            {en ? 'Page' : 'Halaman'} {page} / {pages} · {formatCredits(count?.n ?? 0)} key
+            {en ? 'Page' : 'Halaman'} {page} / {pages} · {formatCredits(matched.length)} key
           </span>
           <div className="flex gap-2">
             {page > 1 && (

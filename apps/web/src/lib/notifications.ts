@@ -16,6 +16,8 @@ export type NotificationItem = { id: string; at: string } & (
 const WINDOW_MS = 90 * 86_400_000;
 const GLOBAL_TTL_MS = 60_000;
 const USER_TTL_MS = 15_000;
+/** Per-user rows in the drawer; it is a recent-activity list, not a history. */
+const ACCOUNT_LIMIT = 10;
 
 async function loadGlobalNotifications(): Promise<NotificationItem[]> {
   return memo('notifications:global', GLOBAL_TTL_MS, async () => {
@@ -102,13 +104,15 @@ export async function loadNotifications(userId: string): Promise<NotificationIte
           ),
         )
         .orderBy(desc(s.payments.paidAt))
-        .limit(30),
+        .limit(ACCOUNT_LIMIT),
       db
         .select({ id: s.redemptions.id, credits: s.payments.credits, at: s.redemptions.createdAt })
         .from(s.redemptions)
         .innerJoin(s.giftCards, eq(s.giftCards.redeemCodeId, s.redemptions.codeId))
         .innerJoin(s.payments, eq(s.payments.id, s.giftCards.paymentId))
-        .where(and(eq(s.giftCards.purchaserId, userId), ne(s.redemptions.userId, userId), gt(s.redemptions.createdAt, since))),
+        .where(and(eq(s.giftCards.purchaserId, userId), ne(s.redemptions.userId, userId), gt(s.redemptions.createdAt, since)))
+        .orderBy(desc(s.redemptions.createdAt))
+        .limit(ACCOUNT_LIMIT),
     ]);
 
     const items: NotificationItem[] = [

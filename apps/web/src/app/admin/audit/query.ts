@@ -1,6 +1,8 @@
-import { and, desc, eq, gte, ilike, lte, or, type SQL } from 'drizzle-orm';
+import { and, eq, gte, ilike, lte, or, type SQL } from 'drizzle-orm';
 import { db, schema as s } from '@morphic/db';
 import { memo } from '@/lib/memo';
+import { SLOW_TTL_MS } from '@/lib/refresh';
+import { cursorAt, keyset, type PageRequest } from '@/lib/pagination';
 
 export interface AuditFilters {
   q?: string;
@@ -18,8 +20,8 @@ export function readAuditFilters(params: Record<string, string | string[] | unde
   return { q: first(params.q), action: first(params.action), from: first(params.from), to: first(params.to) };
 }
 
-/** Shared by the audit page and its CSV export so both apply identical filters. */
-export function queryAuditLog(f: AuditFilters, limit: number) {
+/** Shared by the audit page and its CSV export so both apply identical filters. The export reads the newest rows. */
+export function queryAuditLog(f: AuditFilters, limit: number, req: PageRequest = { cursor: null, dir: 'older' }) {
   const where: SQL[] = [];
   if (f.q) {
     const like = `%${f.q.replace(/[%_\\]/g, '\\$&')}%`;
@@ -29,6 +31,8 @@ export function queryAuditLog(f: AuditFilters, limit: number) {
   // Dates come from <input type="date"> and are read as whole days in WIB, the team's timezone.
   if (f.from && /^\d{4}-\d{2}-\d{2}$/.test(f.from)) where.push(gte(s.adminAuditLog.createdAt, new Date(`${f.from}T00:00:00+07:00`)));
   if (f.to && /^\d{4}-\d{2}-\d{2}$/.test(f.to)) where.push(lte(s.adminAuditLog.createdAt, new Date(`${f.to}T23:59:59.999+07:00`)));
+  const ks = keyset(s.adminAuditLog.createdAt, s.adminAuditLog.id, req);
+  if (ks.where) where.push(ks.where);
 
   return db
     .select({
@@ -39,16 +43,17 @@ export function queryAuditLog(f: AuditFilters, limit: number) {
       detail: s.adminAuditLog.detail,
       createdAt: s.adminAuditLog.createdAt,
       adminEmail: s.users.email,
+      cursorAt: cursorAt(s.adminAuditLog.createdAt),
     })
     .from(s.adminAuditLog)
     .leftJoin(s.users, eq(s.adminAuditLog.adminId, s.users.id))
     .where(where.length ? and(...where) : undefined)
-    .orderBy(desc(s.adminAuditLog.createdAt))
+    .orderBy(...ks.orderBy)
     .limit(limit);
 }
 
 export async function listAuditActions(): Promise<string[]> {
-  return memo('admin:audit:actions', 60_000, async () => {
+  return memo('admin:audit:actions', SLOW_TTL_MS, async () => {
     const rows = await db.selectDistinct({ action: s.adminAuditLog.action }).from(s.adminAuditLog).orderBy(s.adminAuditLog.action);
     return rows.map((r) => r.action);
   });

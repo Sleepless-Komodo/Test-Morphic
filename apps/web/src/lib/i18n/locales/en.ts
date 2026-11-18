@@ -21,7 +21,8 @@ export const en = {
       headline: 'One Single API Key',
       headlineSub: 'for the Best AI Models.',
       subheadline:
-        'DeepSeek V4, Qwen, Kimi and MiniMax behind one OpenAI-compatible key. Change the base URL and your existing SDK code keeps working. Top up with QRIS or PayPal.',
+        '{makers} behind one OpenAI-compatible key. Change the base URL and your existing SDK code keeps working. Top up with QRIS or PayPal.',
+      subheadlineFallback: 'Many AI models',
       primaryCta: 'Get API Key',
       secondaryCta: 'Explore Models',
       manageKeys: 'Manage API Keys',

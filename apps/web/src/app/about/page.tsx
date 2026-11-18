@@ -1,13 +1,9 @@
 export const dynamic = 'force-dynamic';
 
 import { headers } from 'next/headers';
-import { eq, sql } from 'drizzle-orm';
-import { db, schema as s } from '@morphic/db';
 import { getSessionSafe } from '@/lib/auth';
 import { getServerTranslation } from '@/lib/i18n/server';
-import { memo } from '@/lib/memo';
-import type { SnapshotModel } from '@/lib/model-catalog';
-import snapshot from '@/data/model-catalog.json';
+import { loadPublicModels, makersOf } from '@/lib/models-data';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import AboutView, { type AboutCopy } from './about-view';
@@ -21,39 +17,33 @@ export const metadata = {
 const LINKEDIN_URL = 'https://www.linkedin.com/company/143706990/';
 const GITHUB_URL = 'https://github.com/Mirracle-labs';
 
-const catalog = snapshot.models as SnapshotModel[];
-
-/** Active models we route right now; null when the DB is unreachable, so the cell is left out rather than guessed. */
-const liveCount = () =>
-  memo('about:live-models', 60_000, async () => {
-    const [row] = await db.select({ n: sql<number>`count(*)::int` }).from(s.models).where(eq(s.models.status, 'active'));
-    return Number(row?.n ?? 0);
-  }).catch((err) => {
-    console.warn('[AboutPage] Live model count failed:', err);
+/** Null when the DB is unreachable, so the counts are left out rather than guessed. */
+const loadCounts = () =>
+  loadPublicModels().catch((err) => {
+    console.warn('[AboutPage] Model list failed:', err);
     return null;
   });
 
 export default async function AboutPage() {
-  const [session, live, { locale }] = await Promise.all([
+  const [session, list, { locale }] = await Promise.all([
     headers()
       .then((h) => getSessionSafe(h))
       .catch((err) => {
         console.warn('[AboutPage] Session check failed, rendering as guest:', err);
         return null;
       }),
-    liveCount(),
+    loadCounts(),
     getServerTranslation(),
   ]);
   const en = locale === 'en';
 
-  const makers = new Set(catalog.map((m) => m.maker)).size;
-  const providers = new Set(catalog.flatMap((m) => m.providers.map((p) => p.name))).size;
-  const facts: [string, string][] = [
-    [String(catalog.length), en ? 'models in the public catalog' : 'model di katalog publik'],
-    ...(live === null ? [] : [[String(live), en ? 'live on Morphic today' : 'aktif di Morphic hari ini'] as [string, string]]),
-    [String(makers), en ? 'model makers listed' : 'pembuat model terdaftar'],
-    [String(providers), en ? 'upstream providers tracked' : 'provider upstream dipantau'],
-  ];
+  const facts: [string, string][] = list
+    ? [
+        [String(list.models.length), en ? 'models live on Morphic' : 'model aktif di Morphic'],
+        [String(makersOf(list.models).length), en ? 'model makers' : 'pembuat model'],
+        [String(list.providerCount), en ? 'upstream providers serving them' : 'provider upstream yang melayani'],
+      ]
+    : [];
 
   const cta = session ? '/dashboard' : '/login';
   const ctaLabel = session ? (en ? 'Open your dashboard' : 'Buka dashboard') : en ? 'Create your API key' : 'Buat API key kamu';

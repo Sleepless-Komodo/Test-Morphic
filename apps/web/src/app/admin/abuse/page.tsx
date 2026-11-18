@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { db, schema as s } from '@morphic/db';
 import { requireAdmin } from '@/lib/actions';
 import { hasAdminPermission } from '@morphic/shared/admin-rbac';
@@ -10,6 +10,10 @@ import {
 } from '@/lib/admin-actions';
 import { getServerTranslation } from '@/lib/i18n/server';
 import { timeAgo } from '@/lib/utils';
+import { memo } from '@/lib/memo';
+import { LIVE_TTL_MS } from '@/lib/refresh';
+import { PAGE_SIZE, cursorAt, keyset, readPageRequest, toPageBoth } from '@/lib/pagination';
+import { Pager } from '@/components/Pager';
 import { ShieldAlert, RefreshCw, Plus } from 'lucide-react';
 import { UserCell } from '../user-cell';
 
@@ -20,7 +24,7 @@ const STATUS_OPTS = ['all', 'open', 'investigating', 'resolved', 'dismissed'] as
 export default async function AdminAbuseQueuePage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string }>;
+  searchParams: Promise<{ status?: string; before?: string; after?: string }>;
 }) {
   const admin = await requireAdmin('security:read');
   const canWrite = hasAdminPermission(admin.role, 'security:write');
@@ -30,13 +34,17 @@ export default async function AdminAbuseQueuePage({
   const activeStatus = STATUS_OPTS.includes(params.status as any)
     ? (params.status as (typeof STATUS_OPTS)[number])
     : 'all';
+  const req = readPageRequest(params);
+  const ks = keyset(s.abuseCases.createdAt, s.abuseCases.id, req);
 
-  const whereClause =
+  const whereClause = and(
     activeStatus !== 'all'
       ? eq(s.abuseCases.status, activeStatus as 'open' | 'investigating' | 'resolved' | 'dismissed')
-      : undefined;
+      : undefined,
+    ks.where,
+  );
 
-  const [rows, statusCounts] = await Promise.all([
+  const [caseRows, statusCounts] = await Promise.all([
     db
       .select({
         id: s.abuseCases.id,
@@ -45,13 +53,11 @@ export default async function AdminAbuseQueuePage({
         signalType: s.abuseCases.signalType,
         severity: s.abuseCases.severity,
         status: s.abuseCases.status,
-        fingerprint: s.abuseCases.fingerprint,
         summary: s.abuseCases.summary,
         metadata: s.abuseCases.metadata,
         resolutionNote: s.abuseCases.resolutionNote,
         createdAt: s.abuseCases.createdAt,
-        updatedAt: s.abuseCases.updatedAt,
-        resolvedAt: s.abuseCases.resolvedAt,
+        cursorAt: cursorAt(s.abuseCases.createdAt),
         userName: s.users.name,
         userEmail: s.users.email,
         userImage: s.users.image,
@@ -65,16 +71,19 @@ export default async function AdminAbuseQueuePage({
       .leftJoin(s.users, eq(s.users.id, s.abuseCases.userId))
       .leftJoin(s.apiKeys, eq(s.apiKeys.id, s.abuseCases.apiKeyId))
       .where(whereClause)
-      .orderBy(desc(s.abuseCases.createdAt))
-      .limit(200),
-    db
+      .orderBy(...ks.orderBy)
+      .limit(PAGE_SIZE + 1),
+    // Counts every status regardless of filter or page, so one key serves every click.
+    memo('admin:abuse:status-counts', LIVE_TTL_MS, () => db
       .select({
         status: s.abuseCases.status,
         count: sql<number>`count(*)::int`,
       })
       .from(s.abuseCases)
-      .groupBy(s.abuseCases.status),
+      .groupBy(s.abuseCases.status)),
   ]);
+  const page = toPageBoth(caseRows, req);
+  const rows = page.items;
 
   const counts: Record<string, number> = {
     open: 0,
@@ -452,6 +461,13 @@ export default async function AdminAbuseQueuePage({
           })}
         </div>
       )}
+      <Pager
+        path="/admin/abuse"
+        params={{ status: activeStatus === 'all' ? undefined : activeStatus }}
+        prevCursor={page.prevCursor}
+        nextCursor={page.nextCursor}
+        en={en}
+      />
     </div>
   );
 }

@@ -13,7 +13,7 @@ export default async function CostPage(props: { searchParams?: Promise<{ range?:
   return (
     <>
       <CostView data={data} days={days} />
-      <AutoRefresh intervalMs={60_000} />
+      <AutoRefresh />
     </>
   );
 }

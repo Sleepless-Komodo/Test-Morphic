@@ -1,5 +1,6 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import { useState, useEffect } from 'react';
 import { downloadCsv } from '@/lib/csv';
 import { useTranslation } from '@/lib/i18n';
@@ -9,18 +10,29 @@ import { Download, Loader2, FileText } from 'lucide-react';
 import { TOKEN_PACK_HOURS, multiplier, packagePriceIdr, packagePriceUsdCents } from '@morphic/shared/credits';
 import { fmtBalance, fmtCompact, fmtDuration, fmtMultiplier, fmtPrice, fmtTokens, type BillingPackage, type PackageKind } from '@/lib/billing-format';
 import { ModelProviderLogo } from '@/components/ProviderLogos';
-import { CheckoutModal } from './checkout-modal';
+import { getLedgerExportPageAction, getLedgerPageAction, getPaymentsExportPageAction, getPaymentsPageAction } from '@/lib/actions';
+import { LoadMoreButton, useLoadMore } from '../load-more';
+
+// Only needed once a package is picked; keeps the payment UI (and PayPal's SDK) out of the page load.
+const CheckoutModal = dynamic(() => import('./checkout-modal').then((m) => m.CheckoutModal), { ssr: false });
+
 
 interface BillingViewProps {
   balance: number;
   packages: any[];
   entitlements: any[];
-  payments: any[];
-  ledger: any[];
+  /** Newest page of each list; older pages are appended in place by "Load more". */
+  payments: Awaited<ReturnType<typeof getPaymentsPageAction>>;
+  ledger: Awaited<ReturnType<typeof getLedgerPageAction>>;
   /** Real output multipliers of a few popular models, cheap to expensive. */
   showcase: { id: string; name: string; out: number }[];
+  /** An active model from the database, for the setup snippets shown after payment. */
+  sampleModelId?: string | null;
   initialTab?: 'packages' | 'payments' | 'ledger';
 }
+
+const EXPORT_BATCH = 500;
+const EXPORT_CAP = 10_000;
 
 const LEDGER_TYPE_LABELS: Record<string, { en: string; id: string }> = {
   purchase: { en: 'Top-up', id: 'Top up' },
@@ -38,16 +50,20 @@ export function BillingView({
   balance: initialBalance,
   packages: initialPackages,
   entitlements,
-  payments,
-  ledger,
+  payments: initialPayments,
+  ledger: initialLedger,
   showcase,
+  sampleModelId,
   initialTab = 'packages',
 }: BillingViewProps) {
   const { t, locale } = useTranslation();
   const [balance, setBalance] = useState(initialBalance);
   const [selectedPkg, setSelectedPkg] = useState<any>(null);
   const [resumePayment, setResumePayment] = useState<any>(null);
-  const paymentsList = payments ?? [];
+  const paymentsMore = useLoadMore(initialPayments, getPaymentsPageAction);
+  const ledgerMore = useLoadMore(initialLedger, getLedgerPageAction);
+  const payments = paymentsMore.rows;
+  const ledger = ledgerMore.rows;
   const [exporting, setExporting] = useState<'payments' | 'ledger' | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'packages' | 'payments' | 'ledger'>(initialTab);
@@ -61,17 +77,19 @@ export function BillingView({
     }
   };
 
-  // The page only loads the latest rows, so exports page through the API for the full history.
-  // ponytail: capped at 10k rows per export.
-  const fetchAll = async (path: string) => {
+  // The page only loads one page of rows, so exports walk the full history in keyset batches.
+  // ponytail: capped at EXPORT_CAP rows per export.
+  const fetchAll = async (fetchPage: typeof getPaymentsExportPageAction | typeof getLedgerExportPageAction) => {
     const rows: any[] = [];
-    for (let page = 1; page <= 100; page++) {
-      const res = await fetch(`/api/backend/v1/account/${path}?page=${page}&limit=100`, { cache: 'no-store' });
-      if (!res.ok) throw new Error(String(res.status));
-      const batch: any[] = (await res.json())?.data ?? [];
-      rows.push(...batch);
-      if (batch.length < 100) break;
-    }
+    let before: string | null = null;
+    do {
+      const res: { data: any[]; nextCursor: string | null } = await fetchPage({
+        before,
+        limit: Math.min(EXPORT_BATCH, EXPORT_CAP - rows.length),
+      });
+      rows.push(...res.data);
+      before = res.nextCursor;
+    } while (before && rows.length < EXPORT_CAP);
     return rows;
   };
 
@@ -81,7 +99,7 @@ export function BillingView({
     const day = new Date().toISOString().slice(0, 10);
     try {
       if (kind === 'payments') {
-        const rows = await fetchAll('payments');
+        const rows = await fetchAll(getPaymentsExportPageAction);
         downloadCsv(
           `morphic-payments-${day}.csv`,
           ['created_at', 'paid_at', 'provider', 'currency', 'amount', 'credits', 'status', 'id'],
@@ -97,7 +115,7 @@ export function BillingView({
           ]),
         );
       } else {
-        const rows = await fetchAll('transactions');
+        const rows = await fetchAll(getLedgerExportPageAction);
         downloadCsv(
           `morphic-credit-ledger-${day}.csv`,
           ['created_at', 'type', 'amount', 'source', 'reference'],
@@ -152,10 +170,13 @@ export function BillingView({
     setBalance((prev) => prev + creditsAdded);
   };
 
-  const tabs: ['packages' | 'payments' | 'ledger', string, number?][] = [
+  // Rows loaded so far, "+" while older rows remain.
+  const pageCount = (rows: unknown[], next: string | null) =>
+    rows.length === 0 ? undefined : `${rows.length}${next ? '+' : ''}`;
+  const tabs: ['packages' | 'payments' | 'ledger', string, string?][] = [
     ['packages', en ? 'Plans' : 'Paket'],
-    ['payments', t.dashboard.qrisHistoryTitle, paymentsList.length],
-    ['ledger', t.dashboard.ledgerHistoryTitle, ledger.length],
+    ['payments', t.dashboard.qrisHistoryTitle, pageCount(payments, paymentsMore.nextCursor)],
+    ['ledger', t.dashboard.ledgerHistoryTitle, pageCount(ledger, ledgerMore.nextCursor)],
   ];
   const segment = (active: boolean) =>
     cn(
@@ -388,7 +409,7 @@ export function BillingView({
                   : 'Pantau status pembayaran invoice, penyelesaian QRIS, dan unduh kuitansi resmi.'}
               </p>
             </div>
-            {paymentsList.length > 0 && exportButton('payments')}
+            {payments.length > 0 && exportButton('payments')}
           </div>
 
           {exportError && exporting === null && (
@@ -396,7 +417,7 @@ export function BillingView({
           )}
 
           <div className="rounded-xl bg-white border border-neutral-200 overflow-hidden">
-            {paymentsList.length === 0 ? (
+            {payments.length === 0 ? (
               <div suppressHydrationWarning className="px-6 py-10 text-center text-sm text-neutral-600">
                 {t.dashboard.noPaymentsHistory}
               </div>
@@ -545,6 +566,13 @@ export function BillingView({
               </div>
             )}
           </div>
+          <LoadMoreButton
+            nextCursor={paymentsMore.nextCursor}
+            loading={paymentsMore.loading}
+            failed={paymentsMore.failed}
+            onClick={paymentsMore.loadMore}
+            en={en}
+          />
         </div>
       )}
 
@@ -616,6 +644,13 @@ export function BillingView({
               </div>
             )}
           </div>
+          <LoadMoreButton
+            nextCursor={ledgerMore.nextCursor}
+            loading={ledgerMore.loading}
+            failed={ledgerMore.failed}
+            onClick={ledgerMore.loadMore}
+            en={en}
+          />
         </div>
       )}
 
@@ -625,6 +660,7 @@ export function BillingView({
           pkg={selectedPkg}
           existingPayment={resumePayment}
           provider={usd ? 'paypal' : 'duitku'}
+          sampleModelId={sampleModelId}
           onClose={() => {
             setSelectedPkg(null);
             setResumePayment(null);

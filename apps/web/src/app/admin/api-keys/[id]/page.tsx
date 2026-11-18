@@ -1,12 +1,15 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { and, desc, eq, gt, ne, sql } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import { db, schema as s } from '@morphic/db';
 import { requireAdmin } from '@/lib/actions';
 import { getServerTranslation } from '@/lib/i18n/server';
 import { formatCredits, formatTokenEstimate, timeAgo } from '@/lib/utils';
 import { AutoRefresh } from '@/components/AutoRefresh';
 import { memo } from '@/lib/memo';
+import { LIVE_TTL_MS } from '@/lib/refresh';
+import { PAGE_SIZE } from '@/lib/pagination';
 import { ArrowLeft } from 'lucide-react';
 import { UserCell } from '../../user-cell';
 import { PERIODS, parsePeriod, keyStatus } from '../period';
@@ -31,28 +34,6 @@ export default async function AdminApiKeyDetail({
   if (!UUID.test(id)) notFound();
   const { period, since } = parsePeriod((await searchParams).period);
 
-  const [key] = await db
-    .select({
-      id: s.apiKeys.id,
-      name: s.apiKeys.name,
-      keyPrefix: s.apiKeys.keyPrefix,
-      status: s.apiKeys.status,
-      expiresAt: s.apiKeys.expiresAt,
-      lastUsedAt: s.apiKeys.lastUsedAt,
-      createdAt: s.apiKeys.createdAt,
-      revokedAt: s.apiKeys.revokedAt,
-      userId: s.users.id,
-      userName: s.users.name,
-      userEmail: s.users.email,
-      userImage: s.users.image,
-      userRole: s.users.role,
-    })
-    .from(s.apiKeys)
-    .innerJoin(s.users, eq(s.users.id, s.apiKeys.userId))
-    .where(eq(s.apiKeys.id, id))
-    .limit(1);
-  if (!key) notFound();
-
   const L = s.requestLogs;
   const where = and(eq(L.apiKeyId, id), since ? gt(L.createdAt, since) : undefined);
   const requests = sql<number>`count(*)::int`;
@@ -64,72 +45,100 @@ export default async function AdminApiKeyDetail({
   // TZ inlined as a literal: a bound param gets a new $n per use, and Postgres then
   // rejects GROUP BY because the select and group expressions no longer match.
   const day = sql<string>`to_char(date_trunc('day', ${L.createdAt} at time zone ${sql.raw(`'${TZ}'`)}), 'YYYY-MM-DD')`;
+  const otherKey = alias(s.apiKeys, 'other_key');
 
-  const [[totals], byModel, byDay, byError, recent] = await memo(`admin:apikey:${id}:${period.key}`, 20_000, () => Promise.all([
+  // Key lookup, stats and the owner's other keys don't depend on each other: one round trip.
+  const [[key], [groups, byDay, recent], otherKeys] = await Promise.all([
     db
       .select({
-        requests,
-        errors,
-        prompt,
-        completion,
-        credits,
-        avgLatency,
-        p95Latency: sql<number | null>`percentile_cont(0.95) within group (order by ${L.latencyMs})::int`,
-        streamed: sql<number>`count(*) filter (where ${L.streamed})::int`,
-        first: sql<string | null>`min(${L.createdAt})`,
-        last: sql<string | null>`max(${L.createdAt})`,
+        id: s.apiKeys.id,
+        name: s.apiKeys.name,
+        keyPrefix: s.apiKeys.keyPrefix,
+        status: s.apiKeys.status,
+        expiresAt: s.apiKeys.expiresAt,
+        lastUsedAt: s.apiKeys.lastUsedAt,
+        createdAt: s.apiKeys.createdAt,
+        revokedAt: s.apiKeys.revokedAt,
+        userName: s.users.name,
+        userEmail: s.users.email,
+        userImage: s.users.image,
+        userRole: s.users.role,
       })
-      .from(L)
-      .where(where),
-    db
-      .select({ model: L.modelAlias, provider: L.providerName, requests, errors, prompt, completion, credits, avgLatency })
-      .from(L)
-      .where(where)
-      .groupBy(L.modelAlias, L.providerName)
-      .orderBy(desc(requests)),
-    db
-      .select({ day, requests, errors, tokens: sql<number>`coalesce(sum(coalesce(${L.promptTokens}, 0) + coalesce(${L.completionTokens}, 0)), 0)::float8`, credits })
-      .from(L)
-      .where(where)
-      .groupBy(day)
-      .orderBy(desc(day))
-      .limit(60),
-    db
-      .select({ type: L.errorType, n: requests })
-      .from(L)
-      .where(and(where, sql`${L.status} <> 'success'`))
-      .groupBy(L.errorType)
-      .orderBy(desc(requests)),
-    db
-      .select({
-        id: L.id,
-        requestId: L.requestId,
-        createdAt: L.createdAt,
-        model: L.modelAlias,
-        provider: L.providerName,
-        status: L.status,
-        errorType: L.errorType,
-        promptTokens: L.promptTokens,
-        completionTokens: L.completionTokens,
-        credits: L.creditsConsumed,
-        latencyMs: L.latencyMs,
-        streamed: L.streamed,
-      })
-      .from(L)
-      .where(where)
-      .orderBy(desc(L.createdAt))
-      .limit(100),
-  ]));
+      .from(s.apiKeys)
+      .innerJoin(s.users, eq(s.users.id, s.apiKeys.userId))
+      .where(eq(s.apiKeys.id, id))
+      .limit(1),
+    memo(`admin:apikey:${id}:${period.key}`, LIVE_TTL_MS, () => Promise.all([
+      // One scan for the totals row, the per-model rows and the per-error rows. grouping() tells
+      // the sets apart: 1 = model/provider row, 6 = error-type row, 7 = totals row.
+      db
+        .select({
+          set: sql<number>`grouping(${L.modelAlias}, ${L.providerName}, ${L.errorType})`,
+          model: L.modelAlias,
+          provider: L.providerName,
+          errorType: L.errorType,
+          requests,
+          errors,
+          prompt,
+          completion,
+          credits,
+          avgLatency,
+          p95Latency: sql<number | null>`percentile_cont(0.95) within group (order by ${L.latencyMs})::int`,
+          streamed: sql<number>`count(*) filter (where ${L.streamed})::int`,
+          first: sql<string | null>`min(${L.createdAt})`,
+          last: sql<string | null>`max(${L.createdAt})`,
+        })
+        .from(L)
+        .where(where)
+        .groupBy(sql`grouping sets ((${L.modelAlias}, ${L.providerName}), (${L.errorType}), ())`)
+        .orderBy(desc(requests)),
+      db
+        .select({ day, requests, errors, tokens: sql<number>`coalesce(sum(coalesce(${L.promptTokens}, 0) + coalesce(${L.completionTokens}, 0)), 0)::float8`, credits })
+        .from(L)
+        .where(where)
+        .groupBy(day)
+        .orderBy(desc(day))
+        .limit(60),
+      db
+        .select({
+          id: L.id,
+          requestId: L.requestId,
+          createdAt: L.createdAt,
+          model: L.modelAlias,
+          provider: L.providerName,
+          status: L.status,
+          errorType: L.errorType,
+          promptTokens: L.promptTokens,
+          completionTokens: L.completionTokens,
+          credits: L.creditsConsumed,
+          latencyMs: L.latencyMs,
+          streamed: L.streamed,
+        })
+        .from(L)
+        .where(where)
+        .orderBy(desc(L.createdAt))
+        .limit(PAGE_SIZE),
+    ])),
+    // Owner's other keys, so you can see whether usage is spread across keys.
+    memo(`admin:apikey-others:${id}`, LIVE_TTL_MS, () => db
+      .select({ id: s.apiKeys.id, name: s.apiKeys.name, keyPrefix: s.apiKeys.keyPrefix, status: s.apiKeys.status, expiresAt: s.apiKeys.expiresAt })
+      .from(s.apiKeys)
+      .innerJoin(otherKey, and(eq(otherKey.userId, s.apiKeys.userId), eq(otherKey.id, id)))
+      .where(ne(s.apiKeys.id, id))
+      .orderBy(desc(s.apiKeys.createdAt))),
+  ]);
+  if (!key) notFound();
 
-  // Owner's other keys, so you can see whether usage is spread across keys.
-  const otherKeys = await memo(`admin:apikey-others:${key.userId}:${id}`, 60_000, () => db
-    .select({ id: s.apiKeys.id, name: s.apiKeys.name, keyPrefix: s.apiKeys.keyPrefix, status: s.apiKeys.status, expiresAt: s.apiKeys.expiresAt })
-    .from(s.apiKeys)
-    .where(and(eq(s.apiKeys.userId, key.userId), ne(s.apiKeys.id, id)))
-    .orderBy(desc(s.apiKeys.createdAt)));
+  const byModel = groups.filter((g) => g.set === 1);
+  const byError = groups
+    .filter((g) => g.set === 6 && g.errors > 0)
+    .map((g) => ({ type: g.errorType, n: g.errors }))
+    .sort((a, b) => b.n - a.n);
+  const empty = { requests: 0, errors: 0, prompt: 0, completion: 0, credits: 0, avgLatency: null, p95Latency: null, streamed: 0, first: null, last: null };
+  const totals = groups.find((g) => g.set === 7) ?? empty;
 
   const st = keyStatus(key);
-  const t = totals!;
+  const t = totals;
   const successRate = t.requests > 0 ? ((t.requests - t.errors) / t.requests) * 100 : null;
   const dt = (d: Date | string) =>
     new Date(d).toLocaleString(en ? 'en-GB' : 'id-ID', { timeZone: TZ, dateStyle: 'medium', timeStyle: 'medium' });
@@ -345,7 +354,7 @@ export default async function AdminApiKeyDetail({
 
       <section className={card}>
         <h2 className="border-b border-neutral-100 px-5 py-4 text-sm font-bold text-neutral-950">
-          {en ? 'Latest 100 requests' : '100 request terakhir'}
+          {en ? `Latest ${PAGE_SIZE} requests` : `${PAGE_SIZE} request terakhir`}
         </h2>
         <div className="overflow-x-auto">
           <table className="w-full text-xs">

@@ -5,6 +5,7 @@ import { db, schema as s } from '@morphic/db';
 import { providerBrand, type ProviderBrand } from './gateway-providers';
 import type { SnapshotModel } from './model-catalog';
 import { providerUsable } from '@morphic/shared/model-readiness';
+import { hasStoredCredentials } from './models-data';
 
 export interface ProviderBucket {
   /** ISO start of the hour (1D/72H) or WIB day (1W/30D) */
@@ -40,7 +41,6 @@ export interface ModelDetail {
     capabilities: string[];
     inputCreditsPer1m: number;
     outputCreditsPer1m: number;
-    /** 'soon' = listed in the catalog snapshot, not routed by us yet */
     status: string;
     replacementModelAlias: string | null;
     createdAt: string;
@@ -128,7 +128,7 @@ export async function loadModelDetail(publicModelId: string): Promise<(ModelDeta
         name: s.providers.name,
         baseUrl: s.providers.baseUrl,
         status: s.providers.status,
-        encryptedCredentials: s.providers.encryptedCredentials,
+        encryptedCredentials: hasStoredCredentials,
         credentialReference: s.providers.credentialReference,
       })
       .from(s.providers),

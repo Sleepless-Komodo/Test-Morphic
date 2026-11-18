@@ -1,12 +1,15 @@
-import { eq, asc, desc, and, gt, sql } from 'drizzle-orm';
+import { eq, asc, and, gt } from 'drizzle-orm';
 import { db, schema as s } from '@morphic/db';
-import { requireUser } from '@/lib/actions';
-import { getBalance } from '@morphic/db/billing';
+import { getLedgerPageAction, getOwnBalance, getPaymentsPageAction, requireUser } from '@/lib/actions';
 import { readyModelIds } from '@morphic/shared/model-readiness';
 import { BillingView } from './billing-view';
+import { hasStoredCredentials, loadPublicModels } from '@/lib/models-data';
+import { memo } from '@/lib/memo';
+import { LIVE_TTL_MS } from '@/lib/refresh';
 
-/** Four routable models spread from cheapest to dearest output, for the "how far do N tokens go" strip. */
-async function loadShowcase() {
+/** Four routable models spread from cheapest to dearest output, for the "how far do N tokens go" strip.
+ *  The same for every user, so one read serves all billing pages for a while. */
+const loadShowcase = () => memo('dashboard:model-showcase', LIVE_TTL_MS, async () => {
   const [models, providers, pool] = await Promise.all([
     db
       .select({
@@ -24,7 +27,7 @@ async function loadShowcase() {
       .select({
         id: s.providers.id,
         status: s.providers.status,
-        encryptedCredentials: s.providers.encryptedCredentials,
+        encryptedCredentials: hasStoredCredentials,
         credentialReference: s.providers.credentialReference,
       })
       .from(s.providers),
@@ -37,7 +40,7 @@ async function loadShowcase() {
   const ready = models.filter((m) => ids.has(m.id) && m.out >= 1_000_000).sort((a, b) => a.out - b.out);
   const picks = ready.length <= 4 ? ready : [0, 1, 2, 3].map((i) => ready[Math.round((i * (ready.length - 1)) / 3)]!);
   return picks.map((m) => ({ id: m.publicModelId, name: m.name, out: m.out }));
-}
+});
 
 export default async function BillingPage(props: {
   searchParams?: Promise<{ tab?: string }>;
@@ -49,12 +52,12 @@ export default async function BillingPage(props: {
       : 'packages';
   const user = await requireUser();
 
-  // Read straight from Postgres. These five reads used to go through the gateway, whose
+  // Read straight from Postgres. These reads used to go through the gateway, whose
   // matching endpoints run exactly these queries against the same rows, so each one cost an
   // HTTPS round trip to another region for data this process can already reach. The gateway
   // still owns every write (minting keys, redeeming codes, creating payments).
-  const [balance, packages, entitlements, payments, ledger, showcase] = await Promise.all([
-    getBalance(user.id).catch((err) => {
+  const [balance, packages, entitlements, payments, ledger, showcase, sampleModelId] = await Promise.all([
+    getOwnBalance().then((b) => b.credits).catch((err) => {
       console.warn('[BillingPage] Balance read failed:', err);
       return 0;
     }),
@@ -106,55 +109,21 @@ export default async function BillingPage(props: {
         console.warn('[BillingPage] Entitlement read failed:', err);
         return [] as any[];
       }),
-    // Explicit columns: capture ids, reconcile timestamps and refund amounts stay on the server.
-    db
-      .select({
-        id: s.payments.id,
-        provider: s.payments.provider,
-        externalId: s.payments.externalId,
-        packageId: s.payments.packageId,
-        packageName: s.packages.name,
-        amountCents: s.payments.amountCents,
-        currency: s.payments.currency,
-        credits: s.payments.credits,
-        status: s.payments.status,
-        paidAt: s.payments.paidAt,
-        createdAt: s.payments.createdAt,
-      })
-      .from(s.payments)
-      .leftJoin(s.packages, eq(s.payments.packageId, s.packages.id))
-      .where(eq(s.payments.userId, user.id))
-      .orderBy(desc(s.payments.createdAt))
-      .limit(20)
-      .catch((err) => {
-        console.warn('[BillingPage] Payment history read failed:', err);
-        return [] as any[];
-      }),
-    db
-      .select({
-        id: s.creditLedger.id,
-        entryType: s.creditLedger.entryType,
-        amount: s.creditLedger.amount,
-        sourceType: s.creditLedger.sourceType,
-        reference: s.creditLedger.reference,
-        createdAt: s.creditLedger.createdAt,
-        // Human-readable source, resolved in the same query: the redeem code or the package bought.
-        redeemCode: s.redeemCodes.code,
-        packageName: s.packages.name,
-      })
-      .from(s.creditLedger)
-      .leftJoin(s.redeemCodes, sql`${s.creditLedger.reference} = 'code:' || ${s.redeemCodes.id}::text`)
-      .leftJoin(s.payments, sql`${s.creditLedger.reference} = 'payment:' || ${s.payments.id}::text`)
-      .leftJoin(s.packages, eq(s.payments.packageId, s.packages.id))
-      .where(eq(s.creditLedger.userId, user.id))
-      .orderBy(desc(s.creditLedger.createdAt))
-      .limit(50)
-      .catch((err) => {
-        console.warn('[BillingPage] Credit ledger read failed:', err);
-        return [] as any[];
-      }),
+    // Older rows load in the view through the same actions, one list at a time.
+    getPaymentsPageAction().catch((err) => {
+      console.warn('[BillingPage] Payment history read failed:', err);
+      return { data: [], nextCursor: null };
+    }),
+    getLedgerPageAction().catch((err) => {
+      console.warn('[BillingPage] Credit ledger read failed:', err);
+      return { data: [], nextCursor: null };
+    }),
     // Real multipliers for the "how far do 10M tokens go" strip, cheap to expensive.
     loadShowcase().catch(() => [] as { id: string; name: string; out: number }[]),
+    // Setup snippets after a top-up name a model we really serve.
+    loadPublicModels()
+      .then((l) => l.models[0]?.id ?? null)
+      .catch(() => null),
   ]);
 
   return (
@@ -165,6 +134,7 @@ export default async function BillingPage(props: {
       payments={payments}
       ledger={ledger}
       showcase={showcase}
+      sampleModelId={sampleModelId}
       initialTab={initialTab}
     />
   );

@@ -1,5 +1,6 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import { useRef, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -9,8 +10,14 @@ import { useTranslation } from '@/lib/i18n';
 import { useCurrency } from '@/lib/currency';
 import { CurrencyToggle } from '@/components/CurrencyToggle';
 import { formatCredits, formatTokenEstimate } from '@/lib/utils';
-import { redeemCodeDirect } from '@/lib/actions';
-import { CheckoutModal } from '../billing/checkout-modal';
+import { getGiftHistoryPageAction, redeemCodeDirect } from '@/lib/actions';
+import { LoadMoreButton, useLoadMore } from '../load-more';
+
+// Only needed once a package is picked; keeps the payment UI (and PayPal's SDK) out of the page load.
+const CheckoutModal = dynamic(() => import('../billing/checkout-modal').then((m) => m.CheckoutModal), { ssr: false });
+
+
+const COUPON_PREVIEW = 5;
 
 type CouponSource = 'purchase' | 'redeem' | 'admin' | 'promotion';
 
@@ -87,15 +94,17 @@ const isAvailable = (c: Coupon) => c.status === 'active' && c.remaining > 0 && n
 export function RedeemView({
   coupons,
   giftPackages,
-  transactions,
+  transactions: initialTransactions,
 }: {
   coupons: Coupon[];
   giftPackages: GiftPackage[];
-  transactions: GiftTransaction[];
+  /** Newest gift card page; older ones are appended by "Load more". */
+  transactions: { data: GiftTransaction[]; nextCursor: string | null };
 }) {
   const { t, locale } = useTranslation();
   const en = locale === 'en';
   const [code, setCode] = useState('');
+  const [showAllCoupons, setShowAllCoupons] = useState(false);
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [reward, setReward] = useState<any>(null);
@@ -119,6 +128,8 @@ export function RedeemView({
   const [giftPaid, setGiftPaid] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const router = useRouter();
+  const history = useLoadMore(initialTransactions, getGiftHistoryPageAction);
+  const transactions = history.rows;
   const giftPkg = displayedGiftPackages.find((p) => p.id === activeGiftPkgId);
 
   const openGift = () => {
@@ -163,6 +174,8 @@ export function RedeemView({
       (typeFilter === 'all' || c.source === typeFilter) &&
       (stateFilter === 'all' || (stateFilter === 'available') === isAvailable(c)),
   );
+  // Five at a time; the filters above still see every coupon.
+  const shownCoupons = showAllCoupons ? visibleCoupons : visibleCoupons.slice(0, COUPON_PREVIEW);
 
   const errorText = (code: string | undefined, fallback: string, retryInMinutes?: number) => {
     switch (code) {
@@ -344,7 +357,7 @@ export function RedeemView({
           </div>
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            {visibleCoupons.map((c) => {
+            {shownCoupons.map((c) => {
               const available = isAvailable(c);
               const allowance = c.allowance || 1;
               const usedPct = Math.min(100, Math.max(0, ((allowance - Math.max(0, c.remaining)) / allowance) * 100));
@@ -402,11 +415,24 @@ export function RedeemView({
             })}
           </div>
         )}
+        {visibleCoupons.length > COUPON_PREVIEW && (
+          <div className="mt-4 text-center">
+            <button
+              type="button"
+              onClick={() => setShowAllCoupons((v) => !v)}
+              className="h-9 rounded-full border border-neutral-300 bg-white px-4 text-sm font-semibold text-neutral-950 hover:border-neutral-950 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 focus-visible:ring-offset-2"
+            >
+              {showAllCoupons
+                ? en ? 'Show fewer' : 'Tampilkan lebih sedikit'
+                : en ? `Show all ${visibleCoupons.length}` : `Lihat semua ${visibleCoupons.length}`}
+            </button>
+          </div>
+        )}
       </section>
 
       {/* Gift card transactions */}
       <section className="pt-10">
-        <h2 className="text-lg font-semibold text-neutral-950 mb-5">{en ? 'Transactions' : 'Transaksi'}</h2>
+        <h2 className="text-lg font-semibold text-neutral-950 mb-5">{en ? 'Latest transactions' : 'Transaksi terakhir'}</h2>
         <div className="overflow-x-auto rounded-xl border border-neutral-200">
           <table className="w-full min-w-[760px] text-sm">
             <thead className="bg-neutral-50 text-left text-neutral-950">
@@ -470,6 +496,13 @@ export function RedeemView({
             </tbody>
           </table>
         </div>
+        <LoadMoreButton
+          nextCursor={history.nextCursor}
+          loading={history.loading}
+          failed={history.failed}
+          onClick={history.loadMore}
+          en={en}
+        />
       </section>
 
       {/* Buy gift card dialog */}

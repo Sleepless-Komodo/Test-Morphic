@@ -1,14 +1,17 @@
 'use client';
 
 import React, { useState } from 'react';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { motion, useScroll, useMotionValueEvent } from 'framer-motion';
 import { useTranslation } from '@/lib/i18n';
 import { Menu, X, LayoutDashboard, Globe } from 'lucide-react';
-import CommandPalette from './CommandPalette';
 import NavMenu, { analyticsItems } from './NavMenu';
+
+// Every public page renders the navbar; the palette is only needed after Ctrl+K.
+const CommandPalette = dynamic(() => import('./CommandPalette'), { ssr: false });
 
 interface NavbarProps {
   session?: any;
@@ -30,6 +33,7 @@ export default function Navbar({ session }: NavbarProps) {
   const { locale, setLocale, t } = useTranslation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [paletteLoaded, setPaletteLoaded] = useState(false);
   const [activeSection, setActiveSection] = useState<string>('');
   const [hoveredHref, setHoveredHref] = useState<string | null>(null);
   const [scrolled, setScrolled] = useState(false);
@@ -51,6 +55,7 @@ export default function Navbar({ session }: NavbarProps) {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
+        setPaletteLoaded(true);
         setCommandPaletteOpen((prev) => !prev);
       }
     };
@@ -312,10 +317,7 @@ export default function Navbar({ session }: NavbarProps) {
       )}
 
       {/* Global Command Palette */}
-      <CommandPalette
-        isOpen={commandPaletteOpen}
-        onClose={() => setCommandPaletteOpen(false)}
-      />
+      {paletteLoaded && <CommandPalette isOpen={commandPaletteOpen} onClose={() => setCommandPaletteOpen(false)} />}
     </motion.header>
   );
 }

@@ -20,10 +20,12 @@ import {
 } from 'lucide-react';
 import { useTranslation } from '@/lib/i18n';
 import { formatCredits, API_BASE_URL, cn } from '@/lib/utils';
-import { PayPalButton } from '@/components/PayPalButton';
+import dynamic from 'next/dynamic';
 import { provisionPostPaymentKey } from '@/lib/actions';
 import { packageSummary, type BillingPackage } from '@/lib/billing-format';
 import { packagePriceIdr, packagePriceUsdCents } from '@morphic/shared/credits';
+
+const PayPalButton = dynamic(() => import('@/components/PayPalButton').then((m) => m.PayPalButton), { ssr: false });
 
 const API_URL = '/api/backend';
 const POLL_INTERVAL_MS = 3000;
@@ -142,11 +144,13 @@ interface CheckoutModalProps {
   provider?: 'duitku' | 'paypal';
   /** Set when buying a gift card: the payment mints a code instead of crediting this account. */
   giftCard?: { design: string; recipientEmail: string | null } | null;
+  /** Active model from the database for the setup snippets; the package's own model wins. */
+  sampleModelId?: string | null;
   onClose: () => void;
   onSuccess: (creditsAdded: number) => void;
 }
 
-export function CheckoutModal({ pkg, existingPayment, provider, giftCard, onClose, onSuccess }: CheckoutModalProps) {
+export function CheckoutModal({ pkg, existingPayment, provider, giftCard, sampleModelId, onClose, onSuccess }: CheckoutModalProps) {
   const { t, locale } = useTranslation();
   const [status, setStatus] = useState<PaymentStatus>('idle');
   const [paymentId, setPaymentId] = useState<string | null>(existingPayment?.id ?? null);
@@ -492,14 +496,15 @@ export function CheckoutModal({ pkg, existingPayment, provider, giftCard, onClos
   const resolving = status === 'waiting' || status === 'pending_paypal' || status === 'creating';
   const focusRing = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 focus-visible:ring-offset-2';
   const sampleKey = provisionedToken || 'mp-live-...';
+  const sampleModel = pkg.modelPublicId || sampleModelId || 'MODEL_ID';
   const snippets: Record<IdeTab, { hint: string; code: string }> = {
     cursor: {
       hint: en ? 'Cursor: Settings › Models › OpenAI API Key, then override the base URL.' : 'Cursor: Settings › Models › OpenAI API Key, lalu ganti base URL.',
-      code: `Base URL  ${API_BASE_URL}\nAPI key   ${sampleKey}\nModel     deepseek-v4`,
+      code: `Base URL  ${API_BASE_URL}\nAPI key   ${sampleKey}\nModel     ${sampleModel}`,
     },
     cline: {
       hint: en ? 'Cline / Roo Code: pick "OpenAI Compatible" as the API provider.' : 'Cline / Roo Code: pilih "OpenAI Compatible" sebagai API provider.',
-      code: `Base URL  ${API_BASE_URL}\nAPI key   ${sampleKey}\nModel ID  deepseek-v4`,
+      code: `Base URL  ${API_BASE_URL}\nAPI key   ${sampleKey}\nModel ID  ${sampleModel}`,
     },
     claudecode: {
       hint: en ? 'Claude Code: export these before running claude.' : 'Claude Code: export ini sebelum menjalankan claude.',
@@ -507,7 +512,7 @@ export function CheckoutModal({ pkg, existingPayment, provider, giftCard, onClos
     },
     curl: {
       hint: en ? 'Send one request to check the key works.' : 'Kirim satu request untuk memastikan key jalan.',
-      code: `curl ${API_BASE_URL}/chat/completions \\\n  -H "Authorization: Bearer ${sampleKey}" \\\n  -H "Content-Type: application/json" \\\n  -d '{"model": "deepseek-v4", "messages": [{"role": "user", "content": "Hello"}]}'`,
+      code: `curl ${API_BASE_URL}/chat/completions \\\n  -H "Authorization: Bearer ${sampleKey}" \\\n  -H "Content-Type: application/json" \\\n  -d '{"model": "${sampleModel}", "messages": [{"role": "user", "content": "Hello"}]}'`,
     },
   };
 

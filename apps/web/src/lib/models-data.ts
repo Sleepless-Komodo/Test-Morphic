@@ -1,150 +1,88 @@
-export type CapabilityTag = 'Code' | 'Reasoning' | 'Chat' | 'Vision' | 'Long Context';
+// The active models a visitor can call, read from the database. Pages that name models in copy,
+// metadata or code samples use this instead of a hardcoded list, so they never advertise a model
+// we do not route.
+import { eq, sql } from 'drizzle-orm';
+import { db, schema as s } from '@morphic/db';
+import { memo } from './memo';
+import { SLOW_TTL_MS } from './refresh';
+import { makerByPrefix, makerFromId } from './model-maker';
+import { matchSnapshot, type SnapshotModel } from './model-catalog';
+import snapshot from '@/data/model-catalog.json';
 
-export interface ModelItem {
+export interface PublicModel {
   id: string;
   name: string;
-  provider: string;
-  category: 'Coding' | 'Reasoning' | 'Chat' | 'Multimodal';
-  capabilities: CapabilityTag[];
-  contextWindow: string;
-  // Marketing fields that only the static landing catalogue carries. Rows coming from the
-  // database leave them out rather than inventing a speed, a latency or a daily price.
-  dailyRate?: string;
-  dailyRateEn?: string;
-  speed?: 'Ultra Fast' | 'Fast' | 'Balanced';
-  estimatedLatency?: string;
-  inputCreditsPer1m?: number;
-  outputCreditsPer1m?: number;
-  description: {
-    id: string;
-    en: string;
-  };
-  badge?: string;
-  badgeEn?: string;
-  badgeType?: 'popular' | 'flagship' | 'pro' | 'hemat';
+  maker: string;
+  makerLogo: string | null;
+  contextLength: number;
 }
 
-export const ALL_MODELS: ModelItem[] = [
-  {
-    id: 'deepseek-v4',
-    name: 'DeepSeek V4',
-    provider: 'DeepSeek',
-    category: 'Coding',
-    capabilities: ['Code', 'Chat', 'Reasoning'],
-    contextWindow: '64K Tokens',
-    dailyRate: 'Mulai Rp 2.500 / hari',
-    dailyRateEn: 'From Rp 2,500 / day',
-    speed: 'Ultra Fast',
-    estimatedLatency: '~110ms',
-    badge: 'POPULER',
-    badgeEn: 'POPULAR',
-    badgeType: 'popular',
-    description: {
-      id: 'Model coding dan penalaran flagship dari DeepSeek. Sangat responsif dan presisi untuk Cursor, Windsurf, dan Cline.',
-      en: 'Flagship coding and reasoning model from DeepSeek. Ultra-fast, precise, and cost-effective for Cursor, Windsurf, and Cline.',
-    },
-  },
-  {
-    id: 'qwen-max',
-    name: 'Qwen Max',
-    provider: 'Alibaba Cloud',
-    category: 'Reasoning',
-    capabilities: ['Reasoning', 'Chat', 'Long Context'],
-    contextWindow: '32K Tokens',
-    dailyRate: 'Mulai Rp 3.500 / hari',
-    dailyRateEn: 'From Rp 3,500 / day',
-    speed: 'Fast',
-    estimatedLatency: '~160ms',
-    badge: 'FLAGSHIP',
-    badgeEn: 'FLAGSHIP',
-    badgeType: 'flagship',
-    description: {
-      id: 'Model flagship serba bisa dengan penalaran tingkat lanjut dan pemahaman bahasa Indonesia alami tinggi.',
-      en: 'Flagship all-round model with advanced reasoning and exceptional natural multilingual understanding.',
-    },
-  },
-  {
-    id: 'kimi-coding',
-    name: 'Kimi Coding',
-    provider: 'Moonshot AI',
-    category: 'Coding',
-    capabilities: ['Code', 'Long Context'],
-    contextWindow: '256K Tokens',
-    dailyRate: 'Mulai Rp 4.000 / hari',
-    dailyRateEn: 'From Rp 4,000 / day',
-    speed: 'Fast',
-    estimatedLatency: '~190ms',
-    badge: '256K CONTEXT',
-    badgeEn: '256K CONTEXT',
-    badgeType: 'pro',
-    description: {
-      id: 'Context window masif 256K tokens untuk membaca dan merancang seluruh repositori kode besar tanpa terpotong.',
-      en: 'Massive 256K token context window capable of ingesting entire code repositories without truncation.',
-    },
-  },
-  {
-    id: 'MiniMaxAI/MiniMax-M2.7',
-    name: 'MiniMax M2.7',
-    provider: 'MiniMax',
-    category: 'Coding',
-    capabilities: ['Code', 'Chat'],
-    contextWindow: '128K Tokens',
-    dailyRate: 'Mulai Rp 3.000 / hari',
-    dailyRateEn: 'From Rp 3,000 / day',
-    speed: 'Ultra Fast',
-    estimatedLatency: '~120ms',
-    badge: 'HEMAT',
-    badgeEn: 'BUDGET',
-    badgeType: 'hemat',
-    description: {
-      id: 'Model inferensi kode dan teks berkecepatan tinggi dengan efisiensi biaya luar biasa.',
-      en: 'High-speed code and text generation model with outstanding cost-efficiency.',
-    },
-  },
-  {
-    id: 'DeepSeek-V4-Flash-0731',
-    name: 'DeepSeek V4 Flash',
-    provider: 'DeepSeek',
-    category: 'Coding',
-    capabilities: ['Code', 'Chat'],
-    contextWindow: '64K Tokens',
-    dailyRate: 'Mulai Rp 2.000 / hari',
-    dailyRateEn: 'From Rp 2,000 / day',
-    speed: 'Ultra Fast',
-    estimatedLatency: '~95ms',
-    badge: 'TERHEMAT',
-    badgeEn: 'BEST VALUE',
-    badgeType: 'hemat',
-    description: {
-      id: 'Varian ringan DeepSeek V4 dengan latensi kilat dan konsumsi token paling hemat untuk auto-completion.',
-      en: 'Lightweight DeepSeek V4 variant with ultra-low latency and maximum token efficiency for auto-completion.',
-    },
-  },
-];
-
-/** Alias used by DeveloperGateway as static fallback when no DB models are available. */
-export const INFERENCE_MODELS = ALL_MODELS;
-
-export function getModelDailyRate(model: ModelItem, locale: string): string {
-  if (locale === 'en') {
-    return model.dailyRateEn || (model.dailyRate ?? '').replace('/ hari', '/ day').replace(/\./g, ',');
-  }
-  return model.dailyRate ?? '';
+export interface PublicModelList {
+  /** By name. No traffic ordering: that would read request_logs on every page that lists models. */
+  models: PublicModel[];
+  /** Active providers that serve at least one active model (primary, enabled pool entry or fallback). */
+  providerCount: number;
 }
 
-export function getModelBadge(model: ModelItem, locale: string): string | undefined {
-  if (!model.badge) return undefined;
-  if (locale === 'en') {
-    return (
-      model.badgeEn ||
-      (model.badge === 'POPULER'
-        ? 'POPULAR'
-        : model.badge === 'HEMAT'
-        ? 'BUDGET'
-        : model.badge === 'TERHEMAT'
-        ? 'BEST VALUE'
-        : model.badge)
+const catalog = snapshot.models as SnapshotModel[];
+
+/** Readiness only needs to know a key is stored. This returns a marker instead of shipping the encrypted blob
+ *  over the wire; '' stays falsy, matching providerUsable's Boolean() check. */
+export const hasStoredCredentials = sql<string | null>`case when nullif(${s.providers.encryptedCredentials}, '') is not null then 'set' end`;
+const logoByMaker = new Map(catalog.map((m) => [m.maker.toLowerCase(), m.makerLogo]));
+
+export const loadPublicModels = () =>
+  memo('public:model-list', SLOW_TTL_MS, async (): Promise<PublicModelList> => {
+    const [rows, pool, providers] = await Promise.all([
+      db
+        .select({
+          id: s.models.publicModelId,
+          providerModelId: s.models.providerModelId,
+          name: s.models.displayName,
+          contextLength: s.models.contextLength,
+          modelId: s.models.id,
+          providerId: s.models.providerId,
+          fallbackProviderId: s.models.fallbackProviderId,
+        })
+        .from(s.models)
+        .where(eq(s.models.status, 'active')),
+      db
+        .select({ modelId: s.modelProviderPool.modelId, providerId: s.modelProviderPool.providerId })
+        .from(s.modelProviderPool)
+        .where(eq(s.modelProviderPool.isEnabled, true)),
+      db.select({ id: s.providers.id }).from(s.providers).where(eq(s.providers.status, 'active')),
+    ]);
+
+    const activeModelIds = new Set(rows.map((r) => r.modelId));
+    const activeProviders = new Set(providers.map((p) => p.id));
+    const serving = new Set(
+      [
+        ...rows.flatMap((r) => [r.providerId, r.fallbackProviderId]),
+        ...pool.filter((p) => activeModelIds.has(p.modelId)).map((p) => p.providerId),
+      ].filter((id): id is string => !!id && activeProviders.has(id)),
     );
-  }
-  return model.badge;
+
+    const models = rows
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((r) => {
+        const snap = matchSnapshot({ publicModelId: r.id, providerModelId: r.providerModelId }, catalog);
+        const maker = snap?.maker ?? makerFromId(r.id);
+        return {
+          id: r.id,
+          name: r.name,
+          maker,
+          makerLogo: snap?.makerLogo ?? makerByPrefix(r.id)?.logo ?? logoByMaker.get(maker.toLowerCase()) ?? null,
+          contextLength: r.contextLength,
+        };
+      });
+    return { models, providerCount: serving.size };
+  });
+
+/** Distinct makers in list order, without the catch-all bucket. */
+export const makersOf = (models: PublicModel[]) => [...new Set(models.map((m) => m.maker))].filter((m) => m !== 'Other');
+
+/** "A, B, and C" / "A, B, dan C". */
+export function joinNames(names: string[], en: boolean): string {
+  if (names.length <= 1) return names[0] ?? '';
+  return `${names.slice(0, -1).join(', ')} ${en ? 'and' : 'dan'} ${names.at(-1)}`;
 }

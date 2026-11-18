@@ -39,7 +39,7 @@ function CopyButton({ text, locale }: { text: string; locale: string }) {
   );
 }
 
-export default function QuickstartHub() {
+export default function QuickstartHub({ modelId }: { modelId: string }) {
   const { t, locale } = useTranslation();
   const [activeTab, setActiveTab] = useState<TabId>('ide');
   const [sdkLang, setSdkLang] = useState<'node' | 'python'>('node');
@@ -53,7 +53,7 @@ export default function QuickstartHub() {
   const curlSnippet = `curl ${BASE_URL}/chat/completions \\
   -H "Authorization: Bearer $MORPHIC_API_KEY" \\
   -H "Content-Type: application/json" \\
-  -d '{"model": "deepseek-v4", "messages": [{"role": "user", "content": "Hello Morphic"}]}'`;
+  -d '{"model": "${modelId}", "messages": [{"role": "user", "content": "Hello Morphic"}]}'`;
 
   const nodeSnippet = `import OpenAI from "openai";
 
@@ -63,7 +63,7 @@ const client = new OpenAI({
 });
 
 const res = await client.chat.completions.create({
-  model: "deepseek-v4",
+  model: "${modelId}",
   messages: [{ role: "user", content: "Hello Morphic" }],
 });`;
 
@@ -76,7 +76,7 @@ client = OpenAI(
 )
 
 res = client.chat.completions.create(
-    model="deepseek-v4",
+    model="${modelId}",
     messages=[{"role": "user", "content": "Hello Morphic"}],
 )`;
 
@@ -121,7 +121,7 @@ res = client.chat.completions.create(
                 {t.dashboard.quickstartIdeInstructions}
               </span>
               <CopyButton
-                text={`Base URL: ${BASE_URL}\nModel: deepseek-v4\nAPI Key: mp-live-xxxxxxxx`}
+                text={`Base URL: ${BASE_URL}\nModel: ${modelId}\nAPI Key: mp-live-xxxxxxxx`}
                 locale={locale}
               />
             </div>
@@ -132,7 +132,7 @@ res = client.chat.completions.create(
               </div>
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 rounded-lg bg-neutral-900 border border-neutral-800 px-3 py-2">
                 <span className="text-neutral-500">Model</span>
-                <span className="text-emerald-400">deepseek-v4</span>
+                <span className="text-emerald-400">{modelId}</span>
               </div>
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 rounded-lg bg-neutral-900 border border-neutral-800 px-3 py-2">
                 <span className="text-neutral-500">API Key</span>

@@ -15,16 +15,13 @@ import {
 } from 'framer-motion';
 import { Check } from 'lucide-react';
 import { useTranslation } from '@/lib/i18n';
-import { API_BASE_URL } from '@/lib/utils';
+import { API_BASE_URL, formatContext } from '@/lib/utils';
+import landing from '@/data/landing.json';
 
 const EASE = [0.16, 1, 0.3, 1] as const;
 
-const ROUTER_MODELS = [
-  { id: 'deepseek-v4', provider: 'DeepSeek', costId: '64K konteks', costEn: '64K context' },
-  { id: 'kimi-coding', provider: 'Moonshot', costId: '256K konteks', costEn: '256K context' },
-  { id: 'qwen-max', provider: 'Alibaba', costId: '32K konteks', costEn: '32K context' },
-  { id: 'DeepSeek-V4-Flash-0731', provider: 'DeepSeek', costId: '64K konteks', costEn: '64K context' },
-];
+// Demo content lives in src/data/landing.json: edit it there, no code change and no DB read.
+type StepModel = (typeof landing.routerModels)[number];
 
 // The two checkout paths the API accepts: QRIS via Duitku, and PayPal.
 const PAY_METHODS = ['QRIS', 'PayPal'];
@@ -211,12 +208,12 @@ function Code({ text }: { text: string }) {
   );
 }
 
-function ConnectPreview() {
+function ConnectPreview({ modelId }: { modelId: string }) {
   const [tab, setTab] = useState<'python' | 'ide'>('python');
   const source =
     tab === 'python'
       ? `from openai import OpenAI\n\nclient = OpenAI(\n  base_url="${API_BASE_URL}",\n  api_key="mp-…",\n)`
-      : `{\n  "override_base_url": "${API_BASE_URL}",\n  "api_key": "mp-…",\n  "model": "deepseek-v4"\n}`;
+      : `{\n  "override_base_url": "${API_BASE_URL}",\n  "api_key": "mp-…",\n  "model": "${modelId}"\n}`;
   const typed = useTyped(source, 110);
   const typing = typed.length < source.length;
 
@@ -251,10 +248,10 @@ function ConnectPreview() {
 
 const STREAM = ['def', ' binary_search', '(arr,', ' target):', '\n    lo, hi', ' = 0,', ' len(arr)', ' - 1'];
 
-function RoutePreview({ locale }: { locale: string }) {
+function RoutePreview({ locale, models }: { locale: string; models: StepModel[] }) {
   const [idx, setIdx] = useState(0);
   const [count, setCount] = useState(0);
-  const cur = ROUTER_MODELS[idx];
+  const cur = models[idx] ?? models[0];
 
   // Restart the token stream whenever the model changes.
   useEffect(() => {
@@ -272,10 +269,12 @@ function RoutePreview({ locale }: { locale: string }) {
     setIdx(i);
   };
 
+  if (!cur) return null; // landing.json lists no router models
+
   return (
     <div>
       <div className="mb-4 flex flex-wrap gap-1.5">
-        {ROUTER_MODELS.map((m, i) => (
+        {models.map((m, i) => (
           <button
             key={m.id}
             type="button"
@@ -292,8 +291,12 @@ function RoutePreview({ locale }: { locale: string }) {
       <div className="flex items-center gap-2 font-mono text-[12px] text-neutral-500">
         <span>model={cur.id}</span>
         <span>→</span>
-        <span className="text-white">{cur.provider}</span>
-        <span className="ml-auto">{locale === 'en' ? cur.costEn : cur.costId}</span>
+        <span className="text-white">{cur.maker === 'Other' ? '—' : cur.maker}</span>
+        {cur.contextLength > 0 && (
+          <span className="ml-auto">
+            {formatContext(cur.contextLength)} {locale === 'en' ? 'context' : 'konteks'}
+          </span>
+        )}
       </div>
       <pre className="mt-3 min-h-[92px] rounded-xl border border-white/10 bg-black/40 p-4 font-mono text-[13px] leading-6 text-white whitespace-pre-wrap">
         {STREAM.slice(0, count).map((tok, i) => (
@@ -438,13 +441,13 @@ export default function HowItWorksSteps() {
       title: t.steps.step3Title,
       desc: t.steps.step3Desc,
       note: `Base URL: ${API_BASE_URL}`,
-      preview: <ConnectPreview />,
+      preview: <ConnectPreview modelId={landing.sampleModelId} />,
     },
     {
       num: t.steps.step4Num,
       title: t.steps.step4Title,
       desc: t.steps.step4Desc,
-      preview: <RoutePreview locale={locale} />,
+      preview: <RoutePreview locale={locale} models={landing.routerModels} />,
     },
   ];
   const frames = steps.length + 1;

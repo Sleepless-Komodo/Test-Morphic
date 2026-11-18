@@ -5,11 +5,14 @@ import { LanguageProvider, Locale } from '@/lib/i18n';
 import { CurrencyProvider, type Currency } from '@/lib/currency';
 import './globals.css';
 
+// No model names here: this runs for every route, and the models we serve change with the database.
+// /models builds its own description from the live list.
+const description = 'Akses berbagai model AI melalui satu endpoint OpenAI-compatible dengan pembayaran QRIS lokal.';
+
 export const metadata: Metadata = {
   metadataBase: new URL('https://morphic.cloud'),
   title: 'Morphic: Satu API untuk Berbagai Model AI',
-  description:
-    'Akses API Claude 3.5, DeepSeek V4, Qwen Max, dan Kimi melalui satu endpoint OpenAI-compatible dengan pembayaran QRIS lokal.',
+  description,
   icons: {
     icon: [
       { url: '/favicon.svg', type: 'image/svg+xml' },
@@ -21,8 +24,7 @@ export const metadata: Metadata = {
   },
   openGraph: {
     title: 'Morphic: Satu API untuk Berbagai Model AI',
-    description:
-      'Akses API Claude 3.5, DeepSeek V4, Qwen Max, dan Kimi melalui satu endpoint OpenAI-compatible dengan pembayaran QRIS lokal.',
+    description,
     url: 'https://morphic.cloud',
     siteName: 'Morphic AI Gateway',
     images: [
@@ -39,8 +41,7 @@ export const metadata: Metadata = {
   twitter: {
     card: 'summary',
     title: 'Morphic: Satu API untuk Berbagai Model AI',
-    description:
-      'Akses API Claude 3.5, DeepSeek V4, Qwen Max, dan Kimi melalui satu endpoint OpenAI-compatible dengan pembayaran QRIS lokal.',
+    description,
     images: ['/morphic-symbol.jpg'],
   },
 };

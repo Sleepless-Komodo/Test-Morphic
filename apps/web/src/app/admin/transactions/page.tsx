@@ -1,17 +1,26 @@
-import { desc, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { db, schema as s } from '@morphic/db';
 import { requireAdmin } from '@/lib/actions';
 import { formatCredits } from '@/lib/utils';
 import { getServerTranslation } from '@/lib/i18n/server';
 import { AutoRefresh } from '@/components/AutoRefresh';
 import { memo } from '@/lib/memo';
+import { LIVE_TTL_MS } from '@/lib/refresh';
+import { PAGE_SIZE, cursorAt, keyset, readPageRequest, toPageBoth } from '@/lib/pagination';
+import { Pager } from '@/components/Pager';
 import { CreditCard } from 'lucide-react';
 
-export default async function AdminTransactions() {
+export default async function AdminTransactions({
+  searchParams,
+}: {
+  searchParams: Promise<{ before?: string; after?: string }>;
+}) {
   await requireAdmin('finance:read');
-  const { t } = await getServerTranslation();
+  const { t, locale } = await getServerTranslation();
+  const req = readPageRequest(await searchParams);
+  const ks = keyset(s.payments.createdAt, s.payments.id, req);
 
-  const payments = await memo('admin:transactions', 10_000, () => db
+  const page = await memo(`admin:transactions:${req.dir}:${req.cursor?.at ?? ''}:${req.cursor?.id ?? ''}`, LIVE_TTL_MS, async () => toPageBoth(await db
     .select({
       id: s.payments.id,
       userEmail: s.users.email,
@@ -21,12 +30,14 @@ export default async function AdminTransactions() {
       credits: s.payments.credits,
       status: s.payments.status,
       createdAt: s.payments.createdAt,
-      paidAt: s.payments.paidAt,
+      cursorAt: cursorAt(s.payments.createdAt),
     })
     .from(s.payments)
     .leftJoin(s.users, eq(s.payments.userId, s.users.id))
-    .orderBy(desc(s.payments.createdAt))
-    .limit(100));
+    .where(ks.where)
+    .orderBy(...ks.orderBy)
+    .limit(PAGE_SIZE + 1), req));
+  const payments = page.items;
 
   return (
     <div className="space-y-6 w-full">
@@ -104,6 +115,7 @@ export default async function AdminTransactions() {
           </div>
         )}
       </div>
+      <Pager path="/admin/transactions" prevCursor={page.prevCursor} nextCursor={page.nextCursor} en={locale === 'en'} />
     </div>
   );
 }

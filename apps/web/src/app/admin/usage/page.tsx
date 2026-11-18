@@ -1,14 +1,26 @@
-import { desc, eq, sql } from 'drizzle-orm';
+import { desc, eq, gt, sql } from 'drizzle-orm';
 import { db, schema as s } from '@morphic/db';
 import { requireAdmin } from '@/lib/actions';
 import { getServerTranslation } from '@/lib/i18n/server';
 import { formatCredits } from '@/lib/utils';
 import { memo } from '@/lib/memo';
+import { LIVE_TTL_MS, SLOW_TTL_MS } from '@/lib/refresh';
+import { PAGE_SIZE, cursorAt, keyset, readPageRequest, toPageBoth } from '@/lib/pagination';
+import { Pager } from '@/components/Pager';
 import { Activity } from 'lucide-react';
 
-export default async function AdminUsage() {
+const BY_MODEL_DAYS = 30;
+
+export default async function AdminUsage({
+  searchParams,
+}: {
+  searchParams: Promise<{ before?: string; after?: string }>;
+}) {
   await requireAdmin('finance:read');
-  const { t } = await getServerTranslation();
+  const { t, locale } = await getServerTranslation();
+  const en = locale === 'en';
+  const req = readPageRequest(await searchParams);
+  const ks = keyset(s.usageRecords.createdAt, s.usageRecords.id, req);
 
   const usageByModel = db
     .select({
@@ -19,6 +31,7 @@ export default async function AdminUsage() {
       errors: sql<number>`count(*) filter (where ${s.usageRecords.status} = 'error')::int`.as('u_errors'),
     })
     .from(s.usageRecords)
+    .where(gt(s.usageRecords.createdAt, new Date(Date.now() - BY_MODEL_DAYS * 86_400_000)))
     .groupBy(s.usageRecords.modelId)
     .as('usage_by_model');
 
@@ -32,14 +45,18 @@ export default async function AdminUsage() {
       status: s.usageRecords.status,
       latencyMs: s.usageRecords.latencyMs,
       createdAt: s.usageRecords.createdAt,
+      cursorAt: cursorAt(s.usageRecords.createdAt).as('cursor_at'),
     })
     .from(s.usageRecords)
-    .orderBy(desc(s.usageRecords.createdAt))
-    .limit(50)
+    .where(ks.where)
+    .orderBy(...ks.orderBy)
+    .limit(PAGE_SIZE + 1)
     .as('recent_usage');
+  // The outer join query must keep the inner direction: toPageBoth reads 'newer' pages ascending.
+  const recentOrder = keyset(recentSub.createdAt, recentSub.id, req).orderBy;
 
-  const [byModel, recent] = await memo('admin:usage', 20_000, () => Promise.all([
-    db
+  const [byModel, page] = await Promise.all([
+    memo('admin:usage:by-model', SLOW_TTL_MS, () => db
       .select({
         model: s.models.publicModelId,
         requests: sql<number>`sum(${usageByModel.requests})::int`,
@@ -50,8 +67,8 @@ export default async function AdminUsage() {
       .from(usageByModel)
       .leftJoin(s.models, eq(usageByModel.modelId, s.models.id))
       .groupBy(s.models.publicModelId)
-      .orderBy(desc(sql`sum(${usageByModel.requests})`)),
-    db
+      .orderBy(desc(sql`sum(${usageByModel.requests})`))),
+    memo(`admin:usage:recent:${req.dir}:${req.cursor?.at ?? ''}:${req.cursor?.id ?? ''}`, LIVE_TTL_MS, async () => toPageBoth(await db
       .select({
         id: recentSub.id,
         userEmail: s.users.email,
@@ -61,12 +78,14 @@ export default async function AdminUsage() {
         status: recentSub.status,
         latencyMs: recentSub.latencyMs,
         createdAt: recentSub.createdAt,
+        cursorAt: recentSub.cursorAt,
       })
       .from(recentSub)
       .leftJoin(s.users, eq(recentSub.userId, s.users.id))
       .leftJoin(s.models, eq(recentSub.modelId, s.models.id))
-      .orderBy(desc(recentSub.createdAt)),
-  ]));
+      .orderBy(...recentOrder), req)),
+  ]);
+  const recent = page.items;
 
   return (
     <div className="space-y-6 w-full">
@@ -78,7 +97,9 @@ export default async function AdminUsage() {
             {t.admin.usage.title}
           </h1>
           <p className="text-xs sm:text-sm text-neutral-500 mt-0.5">
-            {t.admin.usage.desc}
+            {en
+              ? 'Token and credit use by model over the last 30 days, plus every API request, newest first.'
+              : 'Pemakaian token dan kredit per model selama 30 hari terakhir, plus semua request API, terbaru dulu.'}
           </p>
         </div>
       </div>
@@ -86,7 +107,7 @@ export default async function AdminUsage() {
       {/* Aggregate by Model Card */}
       <div className="bg-white p-6 rounded-2xl border border-neutral-200/90 shadow-xs">
         <h2 className="text-xs font-mono uppercase tracking-wider text-neutral-500 mb-4 font-semibold">
-          {t.admin.usage.byModelTitle}
+          {en ? 'By model, last 30 days' : 'Per model, 30 hari terakhir'}
         </h2>
         {byModel.length === 0 ? (
           <div className="text-xs text-neutral-500 py-4 text-center">{t.admin.usage.noModelUsage}</div>
@@ -126,7 +147,7 @@ export default async function AdminUsage() {
       <div className="bg-white rounded-2xl border border-neutral-200/90 shadow-xs overflow-hidden">
         <div className="p-4 sm:p-5 border-b border-neutral-200/80 bg-neutral-50/50 flex items-center justify-between">
           <h2 className="text-xs font-mono uppercase tracking-wider text-neutral-500 font-semibold">
-            {t.admin.usage.recentTitle}
+            {en ? 'Recent requests' : 'Request terbaru'}
           </h2>
         </div>
         {recent.length === 0 ? (
@@ -169,6 +190,7 @@ export default async function AdminUsage() {
           </div>
         )}
       </div>
+      <Pager path="/admin/usage" prevCursor={page.prevCursor} nextCursor={page.nextCursor} en={en} />
     </div>
   );
 }

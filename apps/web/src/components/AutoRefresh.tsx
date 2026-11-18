@@ -2,13 +2,14 @@
 
 import { useEffect, useRef, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
+import { REFRESH_MS } from '@/lib/refresh';
 
 // Re-runs the server component's queries on an interval, politely:
 // - only while the tab is visible and the browser is online
 // - never while the previous refresh is still rendering (no pile-up on a slow DB)
 // - coming back to the tab refreshes once, and only if the data is older than the interval
 // - small jitter so many open tabs don't hit the server in lockstep
-export function AutoRefresh({ intervalMs = 30_000 }: { intervalMs?: number }) {
+export function AutoRefresh({ intervalMs = REFRESH_MS }: { intervalMs?: number }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const pendingRef = useRef(pending);

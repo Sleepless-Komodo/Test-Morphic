@@ -38,9 +38,14 @@ interface RecentRecord {
 }
 
 interface LogsViewProps {
-  total: { requests: number };
   recent: RecentRecord[];
+  initialNextCursor: string | null;
 }
+
+type StatusFilter = 'all' | 'success' | 'error';
+
+const EXPORT_BATCH = 500;
+const EXPORT_CAP = 10_000;
 
 function CopyTraceId({ id }: { id: string }) {
   const [copied, setCopied] = useState(false);
@@ -85,38 +90,42 @@ const toRecord = (u: any): RecentRecord => ({
   createdAt: new Date(u.createdAt),
 });
 
-export function LogsView({ total, recent }: LogsViewProps) {
+export function LogsView({ recent, initialNextCursor }: LogsViewProps) {
   const { t, locale } = useTranslation();
   const isId = locale === 'id';
 
   const [items, setItems] = useState<RecentRecord[]>(recent);
-  const [page, setPage] = useState(1);
+  // Keyset paging: `cursor` loaded the current page (null = newest), `nextCursor` loads the older one,
+  // and `prevCursors` is the way back for "Newer".
+  const [cursor, setCursor] = useState<string | null>(null);
+  const [nextCursor, setNextCursor] = useState<string | null>(initialNextCursor);
+  const [prevCursors, setPrevCursors] = useState<(string | null)[]>([]);
   const [dateFilter, setDateFilter] = useState<DateRangePreset>('all');
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
   const [isLoadingPage, setIsLoadingPage] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'success' | 'error'>('all');
-  const [totalCount, setTotalCount] = useState(total?.requests ?? items.length);
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [isExporting, setIsExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
 
-  const totalPages = Math.max(1, Math.ceil(totalCount / 50));
-
   const fetchUsage = async (
-    targetPage: number,
+    before: string | null,
+    stack: (string | null)[],
     range: DateRangePreset,
+    status: StatusFilter,
     rangeFrom?: string,
     rangeTo?: string
   ) => {
     setIsLoadingPage(true);
     try {
       const { from, to } = rangeBounds(range, rangeFrom, rangeTo);
-      const res = await getUsageLogsAction({ page: targetPage, limit: 50, from, to });
+      const res = await getUsageLogsAction({ before, from, to, status });
       if (res?.data && Array.isArray(res.data)) {
         setItems(res.data.map(toRecord));
-        setPage(res.page || targetPage);
-        setTotalCount(res.total);
+        setCursor(before);
+        setNextCursor(res.nextCursor ?? null);
+        setPrevCursors(stack);
       }
     } catch {
       // Keep the rows already on screen; the next page change retries.
@@ -155,15 +164,20 @@ export function LogsView({ total, recent }: LogsViewProps) {
     return { from, to };
   };
 
-  const handlePageChange = (newPage: number) => {
-    if (newPage < 1 || newPage > totalPages || isLoadingPage) return;
-    fetchUsage(newPage, dateFilter, customFrom, customTo);
+  const handleOlder = () => {
+    if (!nextCursor || isLoadingPage) return;
+    fetchUsage(nextCursor, [...prevCursors, cursor], dateFilter, statusFilter);
+  };
+
+  const handleNewer = () => {
+    if (prevCursors.length === 0 || isLoadingPage) return;
+    fetchUsage(prevCursors[prevCursors.length - 1], prevCursors.slice(0, -1), dateFilter, statusFilter);
   };
 
   const handleDateFilterChange = (range: DateRangePreset) => {
     setDateFilter(range);
     if (range !== 'custom') {
-      fetchUsage(1, range);
+      fetchUsage(null, [], range, statusFilter);
     }
   };
 
@@ -171,52 +185,61 @@ export function LogsView({ total, recent }: LogsViewProps) {
     if (e) e.preventDefault();
     if (!customFrom && !customTo) return;
     setDateFilter('custom');
-    fetchUsage(1, 'custom', customFrom, customTo);
+    fetchUsage(null, [], 'custom', statusFilter, customFrom, customTo);
   };
 
   const handleResetCustomDates = () => {
     setCustomFrom('');
     setCustomTo('');
     setDateFilter('all');
-    fetchUsage(1, 'all');
+    fetchUsage(null, [], 'all', statusFilter);
   };
 
-  const matchesFilters = (r: RecentRecord) => {
-    const matchesSearch =
-      searchTerm === '' ||
-      (r.model && r.model.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (r.publicModelId && r.publicModelId.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (r.requestId && r.requestId.toLowerCase().includes(searchTerm.toLowerCase()));
-
-    const matchesStatus =
-      statusFilter === 'all' ||
-      (statusFilter === 'success' && r.status === 'success') ||
-      (statusFilter === 'error' && r.status !== 'success');
-
-    return matchesSearch && matchesStatus;
+  const handleStatusFilterChange = (status: StatusFilter) => {
+    if (status === statusFilter) return;
+    setStatusFilter(status);
+    fetchUsage(null, [], dateFilter, status);
   };
-  const filteredRecent = items.filter(matchesFilters);
 
-  // Exports every row in the active date range (not just the visible page), with the
-  // same search and status filters as the table. ponytail: capped at 10k rows; move to a
-  // server-side CSV stream if accounts routinely exceed that.
+  // The search box filters the rows already loaded; status and date filters run in the query.
+  const matchesSearch = (r: RecentRecord) => {
+    const q = searchTerm.toLowerCase();
+    return (
+      q === '' ||
+      (r.model && r.model.toLowerCase().includes(q)) ||
+      (r.publicModelId && r.publicModelId.toLowerCase().includes(q)) ||
+      (r.requestId && r.requestId.toLowerCase().includes(q))
+    );
+  };
+  const filteredRecent = items.filter(matchesSearch);
+  const hasPages = prevCursors.length > 0 || nextCursor !== null;
+
+  // Exports up to EXPORT_CAP rows in the active date range and status (not just the visible
+  // page), with the same search filter as the table. ponytail: move to a server-side CSV stream
+  // if accounts routinely exceed the cap.
   const handleExportCsv = async () => {
     setIsExporting(true);
     setExportError(null);
     try {
       const { from, to } = rangeBounds(dateFilter);
       const rows: RecentRecord[] = [];
-      for (let p = 1; p <= 100; p++) {
-        const res = await getUsageLogsAction({ page: p, limit: 100, from, to });
-        const batch = Array.isArray(res?.data) ? res.data.map(toRecord) : [];
-        rows.push(...batch);
-        if (batch.length < 100 || rows.length >= (res?.total ?? 0)) break;
-      }
+      let before: string | null = null;
+      do {
+        const res: Awaited<ReturnType<typeof getUsageLogsAction>> = await getUsageLogsAction({
+          before,
+          limit: Math.min(EXPORT_BATCH, EXPORT_CAP - rows.length),
+          from,
+          to,
+          status: statusFilter,
+        });
+        rows.push(...(Array.isArray(res?.data) ? res.data.map(toRecord) : []));
+        before = res?.nextCursor ?? null;
+      } while (before && rows.length < EXPORT_CAP);
       downloadCsv(
         `morphic-usage-${new Date().toISOString().slice(0, 10)}.csv`,
         ['time', 'request_id', 'model', 'status', 'prompt_tokens', 'completion_tokens', 'total_tokens', 'credits', 'latency_ms', 'streamed'],
         rows
-          .filter(matchesFilters)
+          .filter(matchesSearch)
           .map((r) => [r.createdAt, r.requestId, r.publicModelId ?? r.model, r.status, r.promptTokens, r.completionTokens, r.totalTokens, r.credits, r.latencyMs, r.streamed]),
       );
     } catch {
@@ -386,7 +409,7 @@ export function LogsView({ total, recent }: LogsViewProps) {
             <div className="flex items-center bg-neutral-100 p-1 rounded-xl text-[11px] font-semibold">
               <button
                 type="button"
-                onClick={() => setStatusFilter('all')}
+                onClick={() => handleStatusFilterChange('all')}
                 className={`px-2.5 py-1 rounded-lg cursor-pointer pointer-coarse:min-h-11 transition-all duration-150 active:scale-95 ${
                   statusFilter === 'all'
                     ? 'bg-white text-neutral-950 shadow-2xs font-bold'
@@ -397,7 +420,7 @@ export function LogsView({ total, recent }: LogsViewProps) {
               </button>
               <button
                 type="button"
-                onClick={() => setStatusFilter('success')}
+                onClick={() => handleStatusFilterChange('success')}
                 className={`px-2.5 py-1 rounded-lg cursor-pointer pointer-coarse:min-h-11 transition-all duration-150 active:scale-95 ${
                   statusFilter === 'success'
                     ? 'bg-white text-emerald-700 shadow-2xs font-bold'
@@ -408,7 +431,7 @@ export function LogsView({ total, recent }: LogsViewProps) {
               </button>
               <button
                 type="button"
-                onClick={() => setStatusFilter('error')}
+                onClick={() => handleStatusFilterChange('error')}
                 className={`px-2.5 py-1 rounded-lg cursor-pointer pointer-coarse:min-h-11 transition-all duration-150 active:scale-95 ${
                   statusFilter === 'error'
                     ? 'bg-white text-rose-700 shadow-2xs font-bold'
@@ -539,37 +562,36 @@ export function LogsView({ total, recent }: LogsViewProps) {
                 </tbody>
               </table>
             </div>
-
-            {totalPages > 1 && (
-              <div className="flex items-center justify-between px-6 py-3.5 border-t border-neutral-100 bg-neutral-50/50">
-                <div className="text-xs text-neutral-500 font-mono flex items-center gap-2">
-                  {isLoadingPage && <Loader2 className="h-3.5 w-3.5 animate-spin text-neutral-500" />}
-                  <span>{locale === 'en' ? `Page ${page} of ${totalPages}` : `Halaman ${page} dari ${totalPages}`}</span>
-                  <span className="text-neutral-500">({totalCount} {locale === 'en' ? 'total requests' : 'total request'})</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => handlePageChange(page - 1)}
-                    disabled={page <= 1 || isLoadingPage}
-                    className="p-1.5 rounded-lg border border-neutral-200 bg-white hover:bg-neutral-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-neutral-700 cursor-pointer shadow-2xs"
-                    title={locale === 'en' ? 'Previous page' : 'Halaman sebelumnya'}
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handlePageChange(page + 1)}
-                    disabled={page >= totalPages || isLoadingPage}
-                    className="p-1.5 rounded-lg border border-neutral-200 bg-white hover:bg-neutral-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-neutral-700 cursor-pointer shadow-2xs"
-                    title={locale === 'en' ? 'Next page' : 'Halaman berikutnya'}
-                  >
-                    <ChevronRight className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
-            )}
           </>
+        )}
+
+        {hasPages && (
+          <div className="flex items-center justify-between px-6 py-3.5 border-t border-neutral-100 bg-neutral-50/50">
+            <div className="text-xs text-neutral-500 font-mono flex items-center gap-2">
+              {isLoadingPage && <Loader2 className="h-3.5 w-3.5 animate-spin text-neutral-500" />}
+              <span>{prevCursors.length === 0 ? (locale === 'en' ? 'Newest' : 'Terbaru') : (locale === 'en' ? 'Older requests' : 'Request lebih lama')}</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={handleNewer}
+                disabled={prevCursors.length === 0 || isLoadingPage}
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-neutral-200 bg-white hover:bg-neutral-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-xs font-semibold text-neutral-700 cursor-pointer shadow-2xs"
+              >
+                <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+                {locale === 'en' ? 'Newer' : 'Lebih baru'}
+              </button>
+              <button
+                type="button"
+                onClick={handleOlder}
+                disabled={!nextCursor || isLoadingPage}
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-neutral-200 bg-white hover:bg-neutral-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-xs font-semibold text-neutral-700 cursor-pointer shadow-2xs"
+              >
+                {locale === 'en' ? 'Older' : 'Lebih lama'}
+                <ChevronRight className="h-4 w-4" aria-hidden="true" />
+              </button>
+            </div>
+          </div>
         )}
         </div>
       </div>

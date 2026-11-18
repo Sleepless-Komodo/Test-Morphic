@@ -1,9 +1,10 @@
 // apps/web/src/lib/usage-analytics.ts
 // TypeScript / Next.js Server Module / Node.js / Linux x86_64
-import { and, eq, gte, lt, sql } from 'drizzle-orm';
+import { and, eq, gte, sql } from 'drizzle-orm';
 import { db, schema as s } from '@morphic/db';
 import { memo } from './memo';
 import type { RangeDays } from './usage-ranges';
+import { LIVE_TTL_MS } from './refresh';
 
 export { parseRange, type RangeDays } from './usage-ranges';
 
@@ -37,7 +38,7 @@ export interface Analytics {
 }
 
 const WIB_MS = 7 * 3_600_000;
-const ANALYTICS_TTL_MS = 15_000;
+const ANALYTICS_TTL_MS = LIVE_TTL_MS;
 const dayKey = (d: Date) => new Date(d.getTime() + WIB_MS).toISOString().slice(0, 10);
 
 /** Start of the WIB day `n` days before today's WIB day, as a UTC instant. */
@@ -62,11 +63,13 @@ export async function loadAnalytics(userId: string, days: RangeDays): Promise<An
       completionTokens: sql<number>`coalesce(sum(${s.usageRecords.completionTokens}),0)::bigint`,
     };
 
-    const [dailyRows, modelRows, [prev]] = await Promise.all([
+    // The daily rollup also covers the previous period, whose days sum to prevCredits: one scan
+    // of those rows instead of a separate query over them.
+    const [dailyRows, modelRows] = await Promise.all([
       db
         .select({ day: sql<string>`to_char(${s.usageRecords.createdAt} at time zone 'Asia/Jakarta', 'YYYY-MM-DD')`, ...sums })
         .from(s.usageRecords)
-        .where(inRange)
+        .where(and(eq(s.usageRecords.userId, userId), gte(s.usageRecords.createdAt, prevFrom)))
         .groupBy(sql`1`),
       db
         .select({
@@ -79,10 +82,6 @@ export async function loadAnalytics(userId: string, days: RangeDays): Promise<An
         .leftJoin(s.models, eq(s.usageRecords.modelId, s.models.id))
         .where(inRange)
         .groupBy(s.models.displayName, s.models.publicModelId),
-      db
-        .select({ credits: sums.credits })
-        .from(s.usageRecords)
-        .where(and(eq(s.usageRecords.userId, userId), gte(s.usageRecords.createdAt, prevFrom), lt(s.usageRecords.createdAt, from))),
     ]);
 
     const num = <T extends Record<string, unknown>>(r: T) => ({
@@ -92,6 +91,7 @@ export async function loadAnalytics(userId: string, days: RangeDays): Promise<An
       promptTokens: Number(r.promptTokens),
       completionTokens: Number(r.completionTokens),
     });
+    const fromDay = dayKey(from);
     const byDay = new Map(dailyRows.map((r) => [r.day, num(r)]));
     const empty = { credits: 0, requests: 0, errors: 0, promptTokens: 0, completionTokens: 0 };
 
@@ -104,7 +104,7 @@ export async function loadAnalytics(userId: string, days: RangeDays): Promise<An
       byModel: modelRows
         .map((r) => ({ model: r.model, publicModelId: r.publicModelId, ...num(r), avgLatencyMs: r.avgLatencyMs === null ? null : Number(r.avgLatencyMs) }))
         .sort((a, b) => b.credits - a.credits),
-      prevCredits: Number(prev?.credits ?? 0),
+      prevCredits: dailyRows.reduce((sum, r) => (r.day < fromDay ? sum + Number(r.credits) : sum), 0),
     };
   });
 }

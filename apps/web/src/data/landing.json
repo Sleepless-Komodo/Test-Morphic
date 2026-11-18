@@ -1,0 +1,24 @@
+{
+  "heroMakers": ["DeepSeek V4", "Qwen", "Kimi", "MiniMax"],
+  "sampleModelId": "deepseek-v4",
+  "routerModels": [
+    { "id": "deepseek-v4", "maker": "DeepSeek", "contextLength": 64000 },
+    { "id": "kimi-coding", "maker": "Moonshot", "contextLength": 256000 },
+    { "id": "qwen-max", "maker": "Alibaba", "contextLength": 32000 },
+    { "id": "DeepSeek-V4-Flash-0731", "maker": "DeepSeek", "contextLength": 64000 }
+  ],
+  "gatewayLogos": [
+    { "label": "OpenAI", "logo": "/logos/openai.svg" },
+    { "label": "Gemini", "logo": "/logos/gemini-color.svg" },
+    { "label": "Claude", "logo": "/logos/claude-color.svg" },
+    { "label": "Grok", "logo": "/logos/grok.svg" },
+    { "label": "Llama", "logo": "/logos/meta-color.svg" },
+    { "label": "Mistral", "logo": "/logos/mistral-color.svg" },
+    { "label": "DeepSeek", "logo": "/logos/deepseek-color.svg" },
+    { "label": "Qwen", "logo": "/logos/qwen-color.svg" },
+    { "label": "Kimi", "logo": "/logos/kimi-color.svg" },
+    { "label": "GLM", "logo": "/logos/zhipu-color.svg" },
+    { "label": "MiniMax", "logo": "/logos/minimax-color.svg" },
+    { "label": "Yi", "logo": "/logos/yi.svg" }
+  ]
+}

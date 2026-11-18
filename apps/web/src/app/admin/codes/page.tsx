@@ -1,17 +1,25 @@
-import { desc, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { db, schema as s } from '@morphic/db';
 import { requireAdmin } from '@/lib/actions';
 import { toggleRedeemCode } from '@/lib/admin-actions';
 import { RedeemCodeGenerator } from '@/components/RedeemCodeGenerator';
 import { getServerTranslation } from '@/lib/i18n/server';
 import { formatCredits } from '@/lib/utils';
+import { PAGE_SIZE, cursorAt, keyset, readPageRequest, toPageBoth } from '@/lib/pagination';
+import { Pager } from '@/components/Pager';
 import { Ticket, Plus } from 'lucide-react';
 
-export default async function AdminCodes() {
+export default async function AdminCodes({
+  searchParams,
+}: {
+  searchParams: Promise<{ before?: string; after?: string }>;
+}) {
   await requireAdmin('codes:read');
-  const { t } = await getServerTranslation();
+  const { t, locale } = await getServerTranslation();
+  const req = readPageRequest(await searchParams);
+  const ks = keyset(s.redeemCodes.createdAt, s.redeemCodes.id, req);
 
-  const [codes, packages] = await Promise.all([
+  const [codeRows, packages] = await Promise.all([
     db
       .select({
         id: s.redeemCodes.id,
@@ -24,16 +32,20 @@ export default async function AdminCodes() {
         maxRedemptions: s.redeemCodes.maxRedemptions,
         expiresAt: s.redeemCodes.expiresAt,
         active: s.redeemCodes.active,
+        cursorAt: cursorAt(s.redeemCodes.createdAt),
       })
       .from(s.redeemCodes)
       .leftJoin(s.packages, eq(s.redeemCodes.packageId, s.packages.id))
-      .orderBy(desc(s.redeemCodes.createdAt))
-      .limit(100),
+      .where(ks.where)
+      .orderBy(...ks.orderBy)
+      .limit(PAGE_SIZE + 1),
     db
       .select({ id: s.packages.id, name: s.packages.name, creditAllowance: s.packages.creditAllowance })
       .from(s.packages)
       .where(eq(s.packages.status, 'active')),
   ]);
+  const page = toPageBoth(codeRows, req);
+  const codes = page.items;
 
   return (
     <div className="space-y-6 w-full">
@@ -119,6 +131,7 @@ export default async function AdminCodes() {
           </div>
         )}
       </div>
+      <Pager path="/admin/codes" prevCursor={page.prevCursor} nextCursor={page.nextCursor} en={locale === 'en'} />
     </div>
   );
 }

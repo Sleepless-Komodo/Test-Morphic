@@ -8,6 +8,7 @@ import { IDR_PER_USD, rupiah } from '@/lib/money';
 import { costIdr, findPrice, margin, rupiahPerCredit } from '@/lib/margin';
 import { loadMarginUsage, loadSales } from '@/lib/admin-insights';
 import { memo } from '@/lib/memo';
+import { SLOW_TTL_MS } from '@/lib/refresh';
 import { AutoRefresh } from '@/components/AutoRefresh';
 import { TrendingUp } from 'lucide-react';
 import { PERIODS, parsePeriod } from '../api-keys/period';
@@ -16,8 +17,8 @@ export const dynamic = 'force-dynamic';
 
 async function MarginTable({ since, periodKey, en }: { since: Date | null; periodKey: string; en: boolean }) {
   const [sales, usage, catalogs] = await Promise.all([
-    memo('admin:margin:sales', 60_000, loadSales),
-    memo(`admin:margin:usage:${periodKey}`, 60_000, () => loadMarginUsage(since)),
+    memo('admin:margin:sales', SLOW_TTL_MS, loadSales),
+    memo(`admin:margin:usage:${periodKey}`, SLOW_TTL_MS, () => loadMarginUsage(since)),
     fetchAllProviderCatalogs(),
   ]);
 
@@ -163,7 +164,7 @@ export default async function AdminMargin({ searchParams }: { searchParams: Prom
 
   return (
     <div className="w-full space-y-6">
-      <AutoRefresh intervalMs={60_000} />
+      <AutoRefresh />
       <div className="flex flex-col gap-4 border-b border-neutral-200/80 pb-5 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="flex items-center gap-2 font-heading text-xl font-extrabold tracking-tight text-neutral-950 sm:text-2xl">

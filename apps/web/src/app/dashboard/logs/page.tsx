@@ -3,10 +3,10 @@ import { LogsView } from './logs-view';
 
 export default async function LogsPage() {
   await requireUser();
-  const res = await getUsageLogsAction({ limit: 50 }).catch((err) => {
+  const res = await getUsageLogsAction().catch((err) => {
     console.warn('[LogsPage] Failed to fetch usage records:', err);
-    return { data: [] as any[], total: 0 };
+    return { data: [] as any[], nextCursor: null };
   });
   const recent = (res.data ?? []).map((u: any) => ({ ...u, createdAt: new Date(u.createdAt) }));
-  return <LogsView total={{ requests: res.total ?? recent.length }} recent={recent} />;
+  return <LogsView recent={recent} initialNextCursor={res.nextCursor ?? null} />;
 }

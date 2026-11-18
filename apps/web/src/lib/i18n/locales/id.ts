@@ -21,7 +21,8 @@ export const id = {
       headline: 'Satu Kunci API',
       headlineSub: 'untuk Semua Model AI Terbaik.',
       subheadline:
-        'DeepSeek V4, Qwen, Kimi, dan MiniMax lewat satu API key format OpenAI. Cukup ganti base URL, kode SDK yang sudah ada tetap jalan. Top up lewat QRIS atau PayPal.',
+        '{makers} lewat satu API key format OpenAI. Cukup ganti base URL, kode SDK yang sudah ada tetap jalan. Top up lewat QRIS atau PayPal.',
+      subheadlineFallback: 'Berbagai model AI',
       primaryCta: 'Dapatkan API Key',
       secondaryCta: 'Eksplorasi Model',
       manageKeys: 'Buka Panel API Keys',
