@@ -32,7 +32,7 @@ export interface TableSyncSpec {
  * Sync order respects Foreign Key hierarchy strictly (Tier 1 -> Tier 5)
  * so incremental/full upserts into the local fallback DB never violate FKs.
  */
-const SYNC_PLAN: readonly TableSyncSpec[] = [
+export const SYNC_PLAN: readonly TableSyncSpec[] = [
   // Tier 1: No foreign key dependencies
   { tableName: 'users', table: s.users, pkProp: 'id', pkCol: s.users.id, mode: 'upsert' },
   { tableName: 'providers', table: s.providers, pkProp: 'id', pkCol: s.providers.id, mode: 'upsert' },
@@ -294,11 +294,12 @@ async function syncAppendWatermarkTable(
   return { rowsFetched, rowsUpserted };
 }
 
-/**
- * Synchronizes data one-way from Primary (`DATABASE_URL`) to Fallback (`DATABASE_URL_FALLBACK`)
- * following strict foreign-key order, then validates parity with `checkDatabaseParity()`.
- */
-export async function syncPrimaryToFallback(options: SyncOptions = {}): Promise<DatabaseSyncReport> {
+type SyncDirection = 'primary_to_fallback' | 'fallback_to_primary';
+
+async function runFullSync(
+  direction: SyncDirection,
+  options: SyncOptions = {},
+): Promise<DatabaseSyncReport> {
   const startedAt = new Date().toISOString();
   const primaryUrl = options.primaryUrl ?? getConnectionString();
   const fallbackUrl = options.fallbackUrl ?? getFallbackConnectionString();
@@ -316,17 +317,23 @@ export async function syncPrimaryToFallback(options: SyncOptions = {}): Promise<
   const batchSize = Math.max(10, Math.min(options.batchSize ?? 250, 1000));
   const overlapMinutes = Math.max(1, options.overlapMinutes ?? 60);
 
-  const primaryHandle = createDbHandle(primaryUrl, { max: 2 });
-  const fallbackHandle = createDbHandle(fallbackUrl, { max: 4 });
+  const isReverse = direction === 'fallback_to_primary';
+  const sourceUrl = isReverse ? fallbackUrl : primaryUrl;
+  const destinationUrl = isReverse ? primaryUrl : fallbackUrl;
+  const sourceLabel = isReverse ? 'fallback' : 'primary';
+  const destinationLabel = isReverse ? 'primary' : 'fallback';
+
+  const sourceHandle = createDbHandle(sourceUrl, { max: 2 });
+  const destinationHandle = createDbHandle(destinationUrl, { max: 4 });
   const warnings: string[] = [];
   const tablesSynced: TableSyncResult[] = [];
   let totalRowsFetched = 0;
   let totalRowsUpserted = 0;
 
   try {
-    const [primaryTables, fallbackTables] = await Promise.all([
-      listPublicTables(primaryHandle),
-      listPublicTables(fallbackHandle),
+    const [sourceTables, destinationTables] = await Promise.all([
+      listPublicTables(sourceHandle),
+      listPublicTables(destinationHandle),
     ]);
 
     for (const spec of SYNC_PLAN) {
@@ -343,24 +350,25 @@ export async function syncPrimaryToFallback(options: SyncOptions = {}): Promise<
         continue;
       }
 
-      if (!primaryTables.has(spec.tableName)) {
-        warnings.push(`Skipped ${spec.tableName}: missing on primary`);
+      if (!sourceTables.has(spec.tableName)) {
+        warnings.push(`Skipped ${spec.tableName}: missing on ${sourceLabel}`);
         tablesSynced.push({
           tableName: spec.tableName,
           skipped: true,
-          skipReason: 'missing_on_primary',
+          skipReason: `missing_on_${sourceLabel}`,
           rowsFetched: 0,
           rowsUpserted: 0,
         });
         continue;
       }
 
-      if (!fallbackTables.has(spec.tableName)) {
-        warnings.push(`Skipped ${spec.tableName}: missing on fallback (run Drizzle migrations on fallback)`);
+      if (!destinationTables.has(spec.tableName)) {
+        const destHint = isReverse ? 'primary' : 'fallback (run Drizzle migrations on fallback)';
+        warnings.push(`Skipped ${spec.tableName}: missing on ${destHint}`);
         tablesSynced.push({
           tableName: spec.tableName,
           skipped: true,
-          skipReason: 'missing_on_fallback',
+          skipReason: `missing_on_${destinationLabel}`,
           rowsFetched: 0,
           rowsUpserted: 0,
         });
@@ -370,8 +378,8 @@ export async function syncPrimaryToFallback(options: SyncOptions = {}): Promise<
       const res =
         spec.mode === 'append_watermark' && spec.tsCol && spec.tsColSql
           ? await syncAppendWatermarkTable(
-              primaryHandle,
-              fallbackHandle,
+              sourceHandle,
+              destinationHandle,
               spec,
               batchSize,
               overlapMinutes,
@@ -379,7 +387,14 @@ export async function syncPrimaryToFallback(options: SyncOptions = {}): Promise<
               dryRun,
               options.abortIf,
             )
-          : await syncUpsertTable(primaryHandle, fallbackHandle, spec, batchSize, dryRun, options.abortIf);
+          : await syncUpsertTable(
+              sourceHandle,
+              destinationHandle,
+              spec,
+              batchSize,
+              dryRun,
+              options.abortIf,
+            );
 
       totalRowsFetched += res.rowsFetched;
       totalRowsUpserted += res.rowsUpserted;
@@ -392,11 +407,12 @@ export async function syncPrimaryToFallback(options: SyncOptions = {}): Promise<
     }
   } finally {
     await Promise.all([
-      primaryHandle.close().catch(() => {}),
-      fallbackHandle.close().catch(() => {}),
+      sourceHandle.close().catch(() => {}),
+      destinationHandle.close().catch(() => {}),
     ]);
   }
 
+  // Always check parity with (primaryUrl, fallbackUrl) order so report columns stay consistent.
   const parityAfterSync = await checkDatabaseParity({ primaryUrl, fallbackUrl });
 
   return {
@@ -409,6 +425,22 @@ export async function syncPrimaryToFallback(options: SyncOptions = {}): Promise<
     warnings,
     parityAfterSync,
   };
+}
+
+/**
+ * Synchronizes data one-way from Primary (`DATABASE_URL`) to Fallback (`DATABASE_URL_FALLBACK`)
+ * following strict foreign-key order, then validates parity with `checkDatabaseParity()`.
+ */
+export function syncPrimaryToFallback(options: SyncOptions = {}): Promise<DatabaseSyncReport> {
+  return runFullSync('primary_to_fallback', options);
+}
+
+/**
+ * Synchronizes data one-way from Fallback (`DATABASE_URL_FALLBACK`) to Primary (`DATABASE_URL`).
+ * Never deletes rows on Primary; upsert tables overwrite stale rows and append tables ignore conflicts.
+ */
+export function syncFallbackToPrimary(options: SyncOptions = {}): Promise<DatabaseSyncReport> {
+  return runFullSync('fallback_to_primary', options);
 }
 
 // ---------------------------------------------------------------------------

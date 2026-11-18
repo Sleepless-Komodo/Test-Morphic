@@ -23,7 +23,8 @@
     "db:studio": "pnpm --filter @morphic/db studio",
     "db:e2e": "pnpm --filter @morphic/db e2e",
     "db:parity": "pnpm --filter @morphic/db parity",
-    "db:sync-fallback": "pnpm --filter @morphic/db sync-fallback"
+    "db:sync-fallback": "pnpm --filter @morphic/db sync-fallback",
+    "db:sync-to-primary": "pnpm --filter @morphic/db sync-to-primary"
   },
   "devDependencies": {
     "turbo": "^2.5.0",
