@@ -13,7 +13,7 @@ export type TableCategory = 'critical' | 'catalog' | 'operational';
 export interface ParityTableMeta {
   tableName: string;
   category: TableCategory;
-  timestampColumn: 'created_at' | 'updated_at' | 'processed_at' | 'published_at' | 'last_run_at' | null;
+  timestampColumn: 'created_at' | 'updated_at' | 'published_at' | 'last_run_at' | null;
 }
 
 /**
@@ -32,7 +32,7 @@ export const PARITY_TABLES: readonly ParityTableMeta[] = [
   { tableName: 'packages', category: 'critical', timestampColumn: 'created_at' },
   { tableName: 'entitlements', category: 'critical', timestampColumn: 'created_at' },
   { tableName: 'payments', category: 'critical', timestampColumn: 'created_at' },
-  { tableName: 'payment_events', category: 'critical', timestampColumn: 'processed_at' },
+  { tableName: 'payment_events', category: 'critical', timestampColumn: 'created_at' },
   { tableName: 'redeem_codes', category: 'critical', timestampColumn: 'created_at' },
   { tableName: 'redemptions', category: 'critical', timestampColumn: 'created_at' },
   { tableName: 'gift_cards', category: 'critical', timestampColumn: 'created_at' },

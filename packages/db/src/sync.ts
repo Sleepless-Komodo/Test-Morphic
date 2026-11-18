@@ -93,7 +93,7 @@ const SYNC_PLAN: readonly TableSyncSpec[] = [
     mode: 'append_watermark',
     tsProp: 'processedAt',
     tsCol: s.paymentEvents.processedAt,
-    tsColSql: 'processed_at',
+    tsColSql: 'created_at',
   },
   {
     tableName: 'credit_ledger',
