@@ -5,6 +5,7 @@ import { and, eq } from 'drizzle-orm';
 import { db, schema as s } from '@morphic/db';
 import { markPaymentIfOpen, processPaymentSuccess } from '@morphic/db/billing';
 import { notifyPaymentPaid } from '../lib/notify';
+import { scheduleTargetedSync } from '../lib/db-sync-queue';
 import { verifyCallbackSignature, checkTransactionStatus } from '../lib/duitku';
 import {
   verifyWebhookSignature as verifyPayPalWebhookSignature,
@@ -101,6 +102,7 @@ export async function handleWebhookMock(c: Context): Promise<Response> {
       return res;
     });
     if (fulfilled.success && !fulfilled.alreadyPaid) void notifyPaymentPaid(payment.id);
+    if (fulfilled.success) scheduleTargetedSync({ paymentId: payment.id, userId: payment.userId });
   } else {
     await db.transaction(async (tx) => {
       await tx.insert(s.paymentEvents).values({ provider: 'mock', eventId, paymentId: payment.id, payload });
@@ -239,6 +241,7 @@ export async function handleWebhookDuitku(c: Context): Promise<Response> {
         return res;
       });
       if (fulfilled.success && !fulfilled.alreadyPaid) void notifyPaymentPaid(payment.id);
+      if (fulfilled.success) scheduleTargetedSync({ paymentId: payment.id, userId: payment.userId });
 
       console.log(`[webhook/duitku] payment ${payment.id} paid — ${payment.credits} credits granted to ${payment.userId}`);
     } catch (err) {
@@ -399,6 +402,7 @@ export async function handleWebhookPaypal(c: Context): Promise<Response> {
         return c.json({ ok: true, duplicate: true });
       }
       if (fulfilled.success && !fulfilled.alreadyPaid) void notifyPaymentPaid(payment.id);
+      if (fulfilled.success) scheduleTargetedSync({ paymentId: payment.id, userId: payment.userId });
       console.log(`[webhook/paypal] payment ${payment.id} fulfilled via event ${eventType}`);
       return c.json({ ok: true });
     } catch (err) {

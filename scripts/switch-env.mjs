@@ -87,6 +87,16 @@ function printBanner(mode, env) {
     dbHost = 'custom-db';
   }
 
+  let fallbackDbHost = '';
+  try {
+    if (env.DATABASE_URL_FALLBACK) {
+      const u = new URL(env.DATABASE_URL_FALLBACK);
+      fallbackDbHost = u.port ? `${u.hostname}:${u.port}` : u.hostname;
+    }
+  } catch {
+    fallbackDbHost = 'custom-fallback-db';
+  }
+
   console.log(`\n${color}╔════════════════════════════════════════════════════════════════╗${RESET}`);
   console.log(`${color}║${RESET} ${BOLD}Morphic Environment:${RESET} ${color}${BOLD}${label.padEnd(41)}${RESET} ${color}║${RESET}`);
   console.log(`${color}╚════════════════════════════════════════════════════════════════╝${RESET}`);
@@ -96,6 +106,10 @@ function printBanner(mode, env) {
   console.log(`  ${GRAY}•${RESET} ${BOLD}API Backend Target:${RESET}    ${CYAN}${env.NEXT_PUBLIC_API_URL ?? '(unset)'}${RESET}`);
   console.log(`  ${GRAY}•${RESET} ${BOLD}Public Gateway URL:${RESET}    ${env.NEXT_PUBLIC_GATEWAY_URL ?? '(unset)'}`);
   console.log(`  ${GRAY}•${RESET} ${BOLD}Database Host:${RESET}         ${YELLOW}${dbHost}${RESET}`);
+  const failoverStatus = env.DB_FAILOVER_ENABLED === 'false' ? `${YELLOW}disabled${RESET}` : `${GREEN}auto-failover enabled${RESET}`;
+  console.log(
+    `  ${GRAY}•${RESET} ${BOLD}Fallback DB Host:${RESET}      ${fallbackDbHost ? `${CYAN}${fallbackDbHost}${RESET} (${failoverStatus})` : GRAY + '(not configured)' + RESET}`,
+  );
   console.log(`  ${GRAY}•${RESET} ${BOLD}Redis URL:${RESET}             ${env.REDIS_URL ? env.REDIS_URL : GRAY + '(disabled / in-memory)' + RESET}`);
   console.log(`  ${GRAY}•${RESET} ${BOLD}API Bind Port:${RESET}         ${env.API_PORT ?? '8787'}`);
   console.log(`  ${GRAY}•${RESET} ${BOLD}Duitku Mode:${RESET}           ${env.DUITKU_ENV === 'production' ? RED + 'production' : GREEN + (env.DUITKU_ENV || 'sandbox')}${RESET}`);

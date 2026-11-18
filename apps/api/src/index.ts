@@ -11,6 +11,7 @@ import { assertDuitkuConfig } from './lib/duitku';
 import { assertPaypalConfig } from './lib/paypal';
 import { warnIfProxyTrustUnset } from './lib/ip';
 import { runLeased } from './lib/job-lease';
+import { initDbFailoverMonitor, runFallbackSyncJob, scheduleStartupSelfCheck } from './lib/db-failover-monitor';
 
 // Validate Duitku environment config at startup. Production-mode runs must hard-exit
 // on misconfiguration; development/sandbox keeps warn-and-boot for local work.
@@ -28,6 +29,8 @@ if (process.env.NODE_ENV === 'production' || process.env.DUITKU_ENV === 'product
 // a misconfigured production process must crash, not silently run against sandbox.
 assertPaypalConfig();
 warnIfProxyTrustUnset();
+initDbFailoverMonitor();
+scheduleStartupSelfCheck();
 
 const port = Number(process.env.API_PORT ?? 8787);
 serve({ fetch: app.fetch, port }, (info) => {
@@ -114,4 +117,15 @@ const reconcileInterval = setInterval(() => {
   });
 }, PAYPAL_RECONCILE_MS);
 reconcileInterval.unref();
+
+// Periodic fallback DB sync: keeps local Termux PostgreSQL synced with Neon while primary is active.
+// Every run logs one `[db-sync] ok kind=full trigger=periodic ...` line, or `[db-sync] FAIL ...`
+// (Telegram alert after 3 consecutive failures). See lib/db-failover-monitor.ts.
+const DB_SYNC_INTERVAL_MS = Number(process.env.DB_SYNC_INTERVAL_MS ?? 10 * 60_000);
+if (process.env.DATABASE_URL_FALLBACK && Number.isFinite(DB_SYNC_INTERVAL_MS) && DB_SYNC_INTERVAL_MS > 0) {
+  const dbSyncInterval = setInterval(() => {
+    void runLeased('db-fallback-sync', DB_SYNC_INTERVAL_MS, () => runFallbackSyncJob('periodic'));
+  }, DB_SYNC_INTERVAL_MS);
+  dbSyncInterval.unref();
+}
 

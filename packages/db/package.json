@@ -8,7 +8,9 @@
   "exports": {
     ".": "./src/index.ts",
     "./schema": "./src/schema.ts",
-    "./billing": "./src/billing.ts"
+    "./billing": "./src/billing.ts",
+    "./parity": "./src/parity.ts",
+    "./sync": "./src/sync.ts"
   },
   "scripts": {
     "generate": "drizzle-kit generate",
@@ -17,6 +19,8 @@
     "seed": "tsx src/seed.ts",
     "make-admin": "tsx src/make-admin.ts",
     "e2e": "tsx src/e2e.ts",
+    "parity": "tsx src/cli-parity.ts",
+    "sync-fallback": "tsx src/cli-sync.ts",
     "setup:manual": "tsx scripts/setup-manual-test.ts",
     "pool:chutes-inceptron": "tsx scripts/pool-chutes-inceptron.ts",
     "packages:tokenomics": "tsx scripts/tokenomics-packages.ts",

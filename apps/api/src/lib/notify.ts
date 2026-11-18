@@ -4,6 +4,7 @@ import { sendEmail } from '@morphic/shared/email';
 import { BALANCE_CREDITS_PER_IDR } from '@morphic/shared/credits';
 import { processPaymentSuccess } from '@morphic/db/billing';
 import { rateLimitStore } from '../ratelimit';
+import { scheduleTargetedSync } from './db-sync-queue';
 
 /** Default 10,000,000 credits = Rp 5.000 (at BALANCE_CREDITS_PER_IDR = 2,000), ~25% of the minimum Rp 20.000 top-up pack. */
 export const DEFAULT_LOW_BALANCE_CREDITS = 10_000_000;
@@ -161,5 +162,6 @@ export async function notifyPaymentPaid(paymentId: string): Promise<void> {
 export async function fulfilPayment(paymentId: string) {
   const res = await processPaymentSuccess(paymentId);
   if (res.success && !res.alreadyPaid) void notifyPaymentPaid(paymentId);
+  if (res.success) scheduleTargetedSync({ paymentId });
   return res;
 }

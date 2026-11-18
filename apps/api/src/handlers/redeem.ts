@@ -2,6 +2,7 @@ import type { Context } from 'hono';
 import { db, schema as s } from '@morphic/db';
 import { eq, and, or, sql, lt, isNull } from 'drizzle-orm';
 import { grantCredits, grantEntitlement, grantPackage } from '@morphic/db/billing';
+import { scheduleTargetedSync } from '../lib/db-sync-queue';
 
 /**
  * Domain error for redeem code constraint violations.
@@ -175,6 +176,9 @@ export async function handleRedeem(c: Context): Promise<Response> {
       500,
     );
   }
+
+  // Transaction has committed: mirror this redeem to the local fallback DB (async; logged, never blocks).
+  scheduleTargetedSync({ userId, redeemCodeId: redeemCode.id });
 
   return c.json({ ok: true, message: 'code redeemed successfully', reward });
 }
