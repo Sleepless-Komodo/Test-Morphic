@@ -12,15 +12,21 @@ import { db, schema as s } from '@morphic/db';
 import { generateApiKey, maskedKey, hashApiKey } from '@morphic/shared/keys';
 import {
   canonicalizeAdminIp,
-  evaluateAdminIpAccess,
   extractTrustedAdminIp,
   hasAdminPermission,
+  isAdminIpAllowed,
   isAdminRole,
   isLoopbackAdminIp,
-  isSameAdminIpOrIpv6Prefix,
-  adminIpNetworkKey,
   type AdminPermission,
 } from '@morphic/shared/admin-rbac';
+import {
+  ADMIN_STEP_UP_IDLE_MS,
+  evaluateAdminStepUp,
+  formatStepUpValue,
+  parseGeoCountry,
+  safeAdminNextPath,
+  type AdminStepUpDecision,
+} from '@morphic/shared/admin-step-up';
 import { sendEmail } from '@morphic/shared/email';
 import { auth } from '@/lib/auth';
 import { fetchBackendApi } from './api-client';
@@ -79,26 +85,13 @@ async function requireUser() {
   return session.user;
 }
 
-// Trusted IPs are remembered per network (IPv6 /64), and the step-up code is per user: the client
-// IP can change between "send code" and "verify" (IPv6 privacy addresses, IPv4/IPv6 switching),
-// which used to make a fresh code read as expired.
-const adminTrustedIpId = (userId: string, ip: string) =>
-  `admin-trusted-ip:${userId}:${adminIpNetworkKey(ip) ?? ip}`;
+// The step-up code is per user, so a client IP that changes between "send code" and "verify"
+// (IPv6 privacy addresses, IPv4/IPv6 switching) cannot make a fresh code read as expired.
 const adminIpOtpId = (userId: string) => `admin-ip-otp:${userId}`;
-// One step-up per sign-in: once a session passed the email code it stays trusted until it
-// ends (logout or expiry), whatever IP it moves to.
+// One marker per session: it expires 24 hours after the last admin-panel activity, and that
+// activity pushes it forward (see `@morphic/shared/admin-step-up`).
 const adminVerifiedSessionId = (sessionId: string) => `admin-verified-session:${sessionId}`;
 
-/**
- * The signed-in admin, or null for guests, non-admins, strictly-blocked IPs, suspended admins and API-key sessions.
- * Admins who sign in with a password must also have login OTP on (`mfaMissing` otherwise);
- * Google/GitHub-only admins are secured by their provider's MFA.
- * When an admin switches to a new public IP (different from their session login IP and not yet verified via
- * Step-Up Email OTP within the last 7 days), `ipVerificationRequired` is set to true so `requireAdmin`
- * redirects them to `/dashboard/settings?admin_ip=verify` to verify a 6-digit email OTP.
- * One joined query (user role + session auth method + session IP), memoised per request so the admin layout
- * and page share it.
- */
 // Only the user columns admin checks and admin pages read; this runs on every dashboard navigation.
 const adminUserColumns = {
   id: s.users.id,
@@ -109,13 +102,19 @@ const adminUserColumns = {
   twoFactorEnabled: s.users.twoFactorEnabled,
 };
 
+/**
+ * The signed-in admin, or null for guests, non-admins, strictly-blocked IPs, suspended admins and API-key sessions.
+ * Admins who sign in with a password must also have login OTP on (`mfaMissing` otherwise);
+ * Google/GitHub-only admins are secured by their provider's MFA.
+ * Does not look at the admin-panel step-up: the dashboard sidebar calls this on every navigation,
+ * and that check (`adminStepUpState`) belongs to admin pages and actions only.
+ * One joined query (user role + session auth method), memoised per request.
+ */
 const adminCheck = cache(
   async (): Promise<{
     user: Pick<typeof s.users.$inferSelect, keyof typeof adminUserColumns>;
     sessionId: string;
-    sessionExpiresAt: Date;
     mfaMissing: boolean;
-    ipVerificationRequired: boolean;
     clientIp: string | null;
   } | null> => {
     const session = await getSessionWithRetry();
@@ -128,9 +127,7 @@ const adminCheck = cache(
       .select({
         user: adminUserColumns,
         authMethod: s.sessions.authMethod,
-        sessionIp: s.sessions.ipAddress,
         sessionId: s.sessions.id,
-        sessionExpiresAt: s.sessions.expiresAt,
       })
       .from(s.users)
       .innerJoin(s.sessions, eq(s.sessions.userId, s.users.id))
@@ -140,80 +137,71 @@ const adminCheck = cache(
       return null;
     }
 
-    const reqHeaders = await headers();
-    const clientIp = extractTrustedAdminIp(reqHeaders);
-    const canonicalClientIp = canonicalizeAdminIp(clientIp);
-    const canonicalSessionIp = canonicalizeAdminIp(row.sessionIp);
-
-    // Only query s.verifications for a trusted-IP badge if the client IP is non-local and differs from the session IP.
-    const trustedIps: string[] = [];
-    let sessionVerified = false;
-    if (
-      canonicalClientIp &&
-      !isLoopbackAdminIp(canonicalClientIp) &&
-      // With an allowlist, a session IP match alone does not admit, so the trust rows matter too.
-      (!isSameAdminIpOrIpv6Prefix(canonicalClientIp, canonicalSessionIp) || process.env.ADMIN_ALLOWED_IPS?.trim())
-    ) {
-      const trustedIpId = adminTrustedIpId(row.user.id, canonicalClientIp);
-      const verifiedSessionId = adminVerifiedSessionId(row.sessionId);
-      const trustedRows = await db
-        .select({ identifier: s.verifications.identifier })
-        .from(s.verifications)
-        .where(
-          and(
-            inArray(s.verifications.identifier, [trustedIpId, verifiedSessionId]),
-            gt(s.verifications.expiresAt, new Date()),
-          ),
-        );
-      sessionVerified = trustedRows.some((r) => r.identifier === verifiedSessionId);
-      if (trustedRows.some((r) => r.identifier === trustedIpId)) {
-        trustedIps.push(adminIpNetworkKey(canonicalClientIp) ?? canonicalClientIp);
-      }
-    }
-
-    const ipEval = evaluateAdminIpAccess({
-      clientIp,
-      sessionIp: row.sessionIp,
-      trustedIps,
-      allowlistRaw: process.env.ADMIN_ALLOWED_IPS,
-      strictAllowlist: process.env.ADMIN_IP_ENFORCEMENT === 'strict',
-    });
-
-    if (ipEval.status === 'denied') {
+    const clientIp = canonicalizeAdminIp(extractTrustedAdminIp(await headers()));
+    // Opt-in hard allowlist: ADMIN_ALLOWED_IPS + ADMIN_IP_ENFORCEMENT=strict.
+    if (process.env.ADMIN_IP_ENFORCEMENT === 'strict' && !isAdminIpAllowed(clientIp, process.env.ADMIN_ALLOWED_IPS)) {
       console.warn('[adminCheck] blocked admin access from strictly non-allowlisted IP', {
         userId: session.user.id,
-        clientIp: ipEval.canonicalClientIp,
+        clientIp,
       });
       return null;
     }
 
     const mfaMissing = !row.user.twoFactorEnabled && (await hasPasswordLogin(row.user.id));
-    return {
-      user: row.user,
-      sessionId: row.sessionId,
-      sessionExpiresAt: row.sessionExpiresAt,
-      mfaMissing,
-      ipVerificationRequired: ipEval.status === 'step_up_required' && !sessionVerified,
-      clientIp: ipEval.canonicalClientIp,
-    };
+    return { user: row.user, sessionId: row.sessionId, mfaMissing, clientIp };
   },
 );
 
 /**
+ * Whether this session must pass the admin-panel email OTP now, plus the request country.
+ * Local development over loopback skips it so `pnpm dev` needs no email.
+ */
+const adminStepUpState = cache(
+  async (sessionId: string): Promise<AdminStepUpDecision & { country: string | null }> => {
+    const reqHeaders = await headers();
+    const country = parseGeoCountry(reqHeaders);
+    const clientIp = canonicalizeAdminIp(extractTrustedAdminIp(reqHeaders));
+    if (process.env.NODE_ENV !== 'production' && (!clientIp || isLoopbackAdminIp(clientIp))) {
+      return { required: false, reason: 'ok', bump: false, storedCountry: null, country };
+    }
+    if (!country) console.warn('[adminStepUp] request country unknown, country check skipped');
+    const [row] = await db
+      .select({ value: s.verifications.value, expiresAt: s.verifications.expiresAt })
+      .from(s.verifications)
+      .where(eq(s.verifications.identifier, adminVerifiedSessionId(sessionId)))
+      .limit(1);
+    return { ...evaluateAdminStepUp({ row: row ?? null, nowMs: Date.now(), country }), country };
+  },
+);
+
+/** Pushes the session's step-up marker 24 hours ahead. A failed write only costs an earlier OTP. */
+async function bumpAdminStepUp(sessionId: string, country: string | null) {
+  const now = Date.now();
+  try {
+    await db
+      .update(s.verifications)
+      .set({
+        value: formatStepUpValue(now, country),
+        expiresAt: new Date(now + ADMIN_STEP_UP_IDLE_MS),
+        updatedAt: new Date(now),
+      })
+      .where(eq(s.verifications.identifier, adminVerifiedSessionId(sessionId)));
+  } catch (err) {
+    console.warn('[adminStepUp] could not extend the step-up marker:', err);
+  }
+}
+
+/**
  * Used by `DashboardLayout` to decide whether to render the "Panel admin" link in the sidebar.
- * Returns true for any active admin role even if Login OTP (`mfaMissing`) or IP Step-Up (`ipVerificationRequired`)
- * is pending — clicking `/admin` then triggers `requireAdmin()` which redirects to `/dashboard/settings?mfa=required`
- * or `/dashboard/settings?admin_ip=verify` with the appropriate setup prompt.
+ * Returns true for any active admin role even if Login OTP (`mfaMissing`) or the panel step-up
+ * is pending: opening `/admin` then asks for it.
  */
 async function isCurrentUserAdmin(): Promise<boolean> {
   return (await adminCheck()) !== null;
 }
 
-async function requireAdmin(
-  permission?: AdminPermission,
-  options?: { mode?: 'redirect' | 'throw' },
-) {
-  const shouldThrow = options?.mode === 'throw';
+/** Session + admin role + login OTP checks shared by the admin guards. */
+async function requireAdminBase(shouldThrow: boolean) {
   const session = await getSessionWithRetry();
   if (!session) {
     if (shouldThrow) throw new Error('Unauthorized: sign-in required.');
@@ -228,13 +216,24 @@ async function requireAdmin(
     if (shouldThrow) throw new Error('Forbidden: login OTP (MFA) is required for admin accounts.');
     redirect('/dashboard/settings?mfa=required');
   }
-  if (check.ipVerificationRequired) {
-    if (shouldThrow) {
-      throw new Error(
-        `Forbidden: new admin IP address (${check.clientIp ?? 'unknown'}) requires email OTP verification.`,
-      );
-    }
-    redirect('/dashboard/settings?admin_ip=verify');
+  return check;
+}
+
+/**
+ * Guard for admin pages (redirect mode) and admin actions (throw mode). A pending step-up sends
+ * pages to `/admin/verify` before they read any data, and passing it counts as admin activity.
+ */
+async function requireAdmin(
+  permission?: AdminPermission,
+  options?: { mode?: 'redirect' | 'throw' },
+) {
+  const shouldThrow = options?.mode === 'throw';
+  const check = await requireAdminBase(shouldThrow);
+  const stepUp = await adminStepUpState(check.sessionId);
+  if (stepUp.required) {
+    if (shouldThrow) throw new Error('Forbidden: admin step-up OTP required.');
+    const next = safeAdminNextPath((await headers()).get('x-morphic-path'));
+    redirect(`/admin/verify?next=${encodeURIComponent(next)}`);
   }
   if (permission && !hasAdminPermission(check.user.role, permission)) {
     if (shouldThrow) {
@@ -242,14 +241,26 @@ async function requireAdmin(
     }
     redirect('/admin?denied=1');
   }
+  if (stepUp.bump) await bumpAdminStepUp(check.sessionId, stepUp.storedCountry ?? stepUp.country);
   return check.user;
+}
+
+/**
+ * The admin layout's guard: same checks as `requireAdmin('overview')`, but a pending step-up is
+ * returned instead of redirected, so `/admin/verify` can render inside the shell. Never extends
+ * the marker.
+ */
+async function requireAdminForStepUp() {
+  const check = await requireAdminBase(false);
+  const stepUp = await adminStepUpState(check.sessionId);
+  return { user: check.user, required: stepUp.required };
 }
 
 async function requireInteractiveUser() {
   return requireUser();
 }
 
-export { requireUser, requireAdmin, requireInteractiveUser, isCurrentUserAdmin };
+export { requireUser, requireAdmin, requireAdminForStepUp, requireInteractiveUser, isCurrentUserAdmin };
 
 
 export async function listApiKeys() {
@@ -1152,39 +1163,27 @@ export async function getNotificationsAction() {
 
 const ADMIN_IP_OTP_TTL_MS = 10 * 60 * 1000;
 const ADMIN_IP_OTP_MAX_ATTEMPTS = 5;
-const DEFAULT_ADMIN_TRUSTED_IP_DAYS = 7;
-
-function getAdminTrustedIpTtlMs(): number {
-  const days = Number(process.env.ADMIN_TRUSTED_IP_DAYS ?? DEFAULT_ADMIN_TRUSTED_IP_DAYS);
-  const safeDays = Number.isFinite(days) && days > 0 ? Math.min(days, 90) : DEFAULT_ADMIN_TRUSTED_IP_DAYS;
-  return safeDays * 24 * 60 * 60 * 1000;
-}
-
-export async function getAdminIpStepUpStatus() {
-  const check = await adminCheck();
-  if (!check) return { isAdmin: false, required: false, clientIp: null };
-  return {
-    isAdmin: true,
-    required: check.ipVerificationRequired,
-    clientIp: check.clientIp,
-  };
-}
 
 /**
- * Sends a 6-digit Step-Up OTP to the signed-in admin's email address to authorize
- * admin access from a new/unrecognized public IP address.
+ * Read-only step-up status for the admin tab watcher. Never extends the marker, so a tab left
+ * open does not keep the session trusted.
  */
-export async function requestAdminIpVerificationCode() {
+export async function getAdminStepUpStatus(): Promise<{ isAdmin: boolean; required: boolean }> {
+  const check = await adminCheck();
+  if (!check) return { isAdmin: false, required: false };
+  if (check.mfaMissing) return { isAdmin: true, required: false };
+  const stepUp = await adminStepUpState(check.sessionId);
+  return { isAdmin: true, required: stepUp.required };
+}
+
+/** Sends a 6-digit code to the signed-in admin's email to open the Admin Panel. */
+export async function requestAdminStepUpCode(): Promise<{ ok: true } | { ok: false; error: string }> {
   const check = await adminCheck();
   if (!check) {
-    return { ok: false as const, error: 'Akses ditolak: akun bukan admin aktif.' };
+    return { ok: false, error: 'Akses ditolak: akun bukan admin aktif.' };
   }
   if (!check.user.email) {
-    return { ok: false as const, error: 'Akun admin tidak memiliki alamat email terdaftar.' };
-  }
-  const canonicalIp = check.clientIp;
-  if (!canonicalIp) {
-    return { ok: false as const, error: 'Alamat IP tidak terdeteksi.' };
+    return { ok: false, error: 'Akun admin tidak memiliki alamat email terdaftar.' };
   }
 
   const otpId = adminIpOtpId(check.user.id);
@@ -1194,7 +1193,7 @@ export async function requestAdminIpVerificationCode() {
     .where(eq(s.verifications.identifier, otpId))
     .limit(1);
   if (existing && Date.now() - existing.createdAt.getTime() < 60_000) {
-    return { ok: false as const, error: 'Tunggu 1 menit sebelum meminta kode baru.' };
+    return { ok: false, error: 'Tunggu 1 menit sebelum meminta kode baru.' };
   }
 
   const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
@@ -1205,28 +1204,28 @@ export async function requestAdminIpVerificationCode() {
     expiresAt: new Date(Date.now() + ADMIN_IP_OTP_TTL_MS),
   });
 
+  const ip = check.clientIp ?? 'tidak diketahui';
+  const country = parseGeoCountry(await headers()) ?? 'tidak diketahui';
   await sendEmail({
     to: check.user.email,
-    subject: `Kode verifikasi IP Admin Morphic: ${code}`,
-    text: `Permintaan akses Panel Admin Morphic terdeteksi dari alamat IP baru (${canonicalIp}).\n\nKode verifikasi Anda: ${code}\n\nKode ini berlaku 10 menit. Jika Anda tidak sedang mengakses Panel Admin, segera cabut sesi aktif Anda dan ganti kata sandi.`,
-    html: `<p>Permintaan akses <strong>Panel Admin Morphic</strong> terdeteksi dari alamat IP baru: <code>${canonicalIp}</code>.</p><p>Kode verifikasi Anda:</p><p style="font-size:24px;font-weight:700;letter-spacing:4px">${code}</p><p>Kode ini berlaku 10 menit. Jika Anda tidak sedang mengakses Panel Admin, segera cabut sesi aktif Anda dan ganti kata sandi.</p>`,
+    subject: `Kode verifikasi Panel Admin Morphic: ${code}`,
+    text: `Kode untuk membuka Panel Admin Morphic: ${code}\n\nBerlaku 10 menit. Permintaan dari IP ${ip} (negara: ${country}).\n\nJika Anda tidak sedang membuka Panel Admin, segera cabut sesi aktif Anda dan ganti kata sandi.`,
+    html: `<p>Kode untuk membuka <strong>Panel Admin Morphic</strong>:</p><p style="font-size:24px;font-weight:700;letter-spacing:4px">${code}</p><p>Berlaku 10 menit. Permintaan dari IP <code>${ip}</code> (negara: ${country}).</p><p>Jika Anda tidak sedang membuka Panel Admin, segera cabut sesi aktif Anda dan ganti kata sandi.</p>`,
   });
 
-  return { ok: true as const, clientIp: canonicalIp };
+  return { ok: true };
 }
 
 /**
- * Verifies the 6-digit Step-Up OTP for a new admin IP, marks the IP as trusted for
- * `ADMIN_TRUSTED_IP_DAYS` (default 7 days), updates the current session's IP, and logs to `admin_audit_log`.
+ * Verifies the 6-digit Admin Panel code. On success the session's step-up marker is written with
+ * the request country and a 24-hour expiry, and the check is logged to `admin_audit_log`.
  */
-export async function verifyAdminIpCode(formData: FormData) {
+export async function verifyAdminStepUpCode(
+  formData: FormData,
+): Promise<{ ok: true } | { ok: false; error: string }> {
   const check = await adminCheck();
   if (!check) {
-    return { ok: false as const, error: 'Akses ditolak: akun bukan admin aktif.' };
-  }
-  const canonicalIp = check.clientIp;
-  if (!canonicalIp) {
-    return { ok: false as const, error: 'Alamat IP tidak terdeteksi.' };
+    return { ok: false, error: 'Akses ditolak: akun bukan admin aktif.' };
   }
 
   const code = String(formData.get('code') || '').trim();
@@ -1238,12 +1237,12 @@ export async function verifyAdminIpCode(formData: FormData) {
     .limit(1);
 
   if (!row || row.expiresAt.getTime() < Date.now()) {
-    return { ok: false as const, error: 'Kode sudah kedaluwarsa. Minta kode baru.' };
+    return { ok: false, error: 'Kode sudah kedaluwarsa. Minta kode baru.' };
   }
   const [hash, n] = row.value.split(':');
   const attempts = Number(n) || 0;
   if (attempts >= ADMIN_IP_OTP_MAX_ATTEMPTS) {
-    return { ok: false as const, error: 'Terlalu banyak percobaan salah. Minta kode baru.' };
+    return { ok: false, error: 'Terlalu banyak percobaan salah. Minta kode baru.' };
   }
 
   const ok =
@@ -1255,46 +1254,28 @@ export async function verifyAdminIpCode(formData: FormData) {
       .update(s.verifications)
       .set({ value: `${hash}:${attempts + 1}` })
       .where(eq(s.verifications.id, row.id));
-    return { ok: false as const, error: 'Kode OTP salah.' };
+    return { ok: false, error: 'Kode OTP salah.' };
   }
 
-  const trustedId = adminTrustedIpId(check.user.id, canonicalIp);
-  const trustedExpiresAt = new Date(Date.now() + getAdminTrustedIpTtlMs());
-
-  await db.delete(s.verifications).where(eq(s.verifications.id, row.id));
-  await db.delete(s.verifications).where(eq(s.verifications.identifier, trustedId));
-  await db.insert(s.verifications).values({
-    identifier: trustedId,
-    value: 'verified',
-    expiresAt: trustedExpiresAt,
-  });
-
+  const now = Date.now();
+  const country = parseGeoCountry(await headers());
   const verifiedSessionId = adminVerifiedSessionId(check.sessionId);
+  await db.delete(s.verifications).where(eq(s.verifications.id, row.id));
   await db.delete(s.verifications).where(eq(s.verifications.identifier, verifiedSessionId));
   await db.insert(s.verifications).values({
     identifier: verifiedSessionId,
-    value: 'verified',
-    expiresAt: check.sessionExpiresAt,
+    value: formatStepUpValue(now, country),
+    expiresAt: new Date(now + ADMIN_STEP_UP_IDLE_MS),
   });
-
-  // Update the active session IP so subsequent checks on this session are fast-pathed without extra DB queries.
-  await db
-    .update(s.sessions)
-    .set({ ipAddress: canonicalIp, updatedAt: new Date() })
-    .where(eq(s.sessions.id, check.sessionId));
 
   await db.insert(s.adminAuditLog).values({
     adminId: check.user.id,
-    action: 'verify_admin_ip',
+    action: 'verify_admin_step_up',
     entity: 'session',
     entityId: check.sessionId,
-    detail: {
-      ip: canonicalIp,
-      trustedUntil: trustedExpiresAt.toISOString(),
-    },
+    detail: { ip: check.clientIp, country },
   });
 
-  revalidatePath('/admin');
-  revalidatePath('/dashboard/settings');
-  return { ok: true as const };
+  revalidatePath('/admin', 'layout');
+  return { ok: true };
 }

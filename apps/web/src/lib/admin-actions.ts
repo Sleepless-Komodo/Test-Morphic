@@ -160,8 +160,8 @@ async function checkCatalogWriteAdmin(en: boolean) {
       ? 'unauthorized'
       : msg.includes('login OTP') || msg.includes('MFA')
         ? 'mfa_required'
-        : msg.includes('new admin IP')
-          ? 'ip_verification_required'
+        : msg.includes('step-up OTP')
+          ? 'step_up_required'
           : 'forbidden';
     console.warn('[admin-actions] catalog:write denied:', { code, msg });
 
@@ -174,9 +174,9 @@ async function checkCatalogWriteAdmin(en: boolean) {
         en: 'Enable Login OTP (MFA) in dashboard settings before editing models.',
         id: 'Aktifkan Login OTP (MFA) di pengaturan sebelum mengubah model.',
       },
-      ip_verification_required: {
-        en: 'Verify your current admin IP via email OTP in dashboard settings first.',
-        id: 'Verifikasi IP admin Anda lewat OTP email di pengaturan terlebih dahulu.',
+      step_up_required: {
+        en: 'Your admin session needs OTP verification again. Reload the page.',
+        id: 'Sesi admin perlu verifikasi OTP ulang. Muat ulang halaman.',
       },
       forbidden: {
         en: 'Your account does not have permission to edit the model catalog.',

@@ -1,8 +1,7 @@
 import { and, eq, isNotNull } from 'drizzle-orm';
 import { db, schema as s } from '@morphic/db';
-import { getAdminIpStepUpStatus, listActiveSessions, requireUser } from '@/lib/actions';
+import { listActiveSessions, requireUser } from '@/lib/actions';
 import { isAdminRole } from '@morphic/shared/admin-rbac';
-import { AdminIpVerifyCard } from './admin-ip-verify-card';
 import { SettingsView } from './settings-view';
 
 export const dynamic = 'force-dynamic';
@@ -10,13 +9,12 @@ export const dynamic = 'force-dynamic';
 export default async function SettingsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ mfa?: string; admin_ip?: string }>;
+  searchParams: Promise<{ mfa?: string }>;
 }) {
-  const [user, sessions, params, adminIpStatus] = await Promise.all([
+  const [user, sessions, params] = await Promise.all([
     requireUser(),
     listActiveSessions(),
     searchParams,
-    getAdminIpStepUpStatus(),
   ]);
 
   // The session user carries no role, and the profile card used to print a fixed
@@ -48,12 +46,9 @@ export default async function SettingsPage({
   }
 
   const adminMfaNotice = params.mfa === 'required' && isAdminRole(account?.role) && !account?.twoFactorEnabled;
-  const adminIpVerifyNotice =
-    adminIpStatus.isAdmin && (adminIpStatus.required || params.admin_ip === 'verify');
 
   return (
     <>
-      {adminIpVerifyNotice && <AdminIpVerifyCard clientIp={adminIpStatus.clientIp} />}
       {adminMfaNotice && (
         <p role="alert" className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900">
           Panel admin butuh OTP login. Aktifkan &quot;Kode OTP via email saat login&quot; di bawah, lalu buka /admin lagi.
