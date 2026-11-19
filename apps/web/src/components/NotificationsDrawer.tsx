@@ -151,20 +151,23 @@ function content(n: NotificationItem, en: boolean): { title: string; body: strin
   }
 }
 
-export function NotificationsDrawer({ items: initial, en }: { items: NotificationItem[] | null; en: boolean }) {
-  const [items, setItems] = useState(initial);
+export function NotificationsDrawer({ en }: { en: boolean }) {
+  // undefined = still loading, null = the first read failed.
+  const [items, setItems] = useState<NotificationItem[] | null | undefined>(undefined);
   const [isOpen, setIsOpen] = useState(false);
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [tab, setTab] = useState<Tab>('all');
   const [seen, setSeen] = useLocalStorage(SEEN_KEY);
 
-  // The layout's copy goes stale on client navigation; re-read on open and every 2 min while visible.
+  // Loaded here rather than in the dashboard layout: the layout re-runs on every navigation and
+  // auto-refresh, and this component outlives both. Read on mount, on open, and every 2 min while visible.
   const refresh = () => {
     getNotificationsAction()
       .then(setItems)
-      .catch(() => {}); // keep showing the last good list
+      .catch(() => setItems((prev) => (prev === undefined ? null : prev))); // keep the last good list
   };
   useEffect(() => {
+    refresh();
     const id = setInterval(() => {
       if (document.visibilityState === 'visible') refresh();
     }, 120_000);
@@ -266,7 +269,9 @@ export function NotificationsDrawer({ items: initial, en }: { items: Notificatio
             </div>
 
             <div className="flex-1 overflow-y-auto px-5 py-5">
-              {items === null ? (
+              {items === undefined ? (
+                <p className="py-16 text-center text-sm text-neutral-700">{en ? 'Loading notifications…' : 'Memuat notifikasi…'}</p>
+              ) : items === null ? (
                 <p className="py-16 text-center text-sm text-neutral-700">
                   {en ? 'Notifications could not be loaded. Reload the page to try again.' : 'Notifikasi gagal dimuat. Muat ulang halaman untuk mencoba lagi.'}
                 </p>

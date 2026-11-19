@@ -181,7 +181,7 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
       icon: Terminal,
       keywords: 'curl bash terminal request chat completions',
       onSelect: () => {
-        const curl = `curl ${API_BASE_URL}/chat/completions \\\n  -H "Authorization: Bearer YOUR_MORPHIC_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{"model": "deepseek-v4", "messages": [{"role": "user", "content": "Hello Morphic"}]}'`;
+        const curl = `curl ${API_BASE_URL}/chat/completions \\\n  -H "Authorization: Bearer YOUR_MORPHIC_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{"model": "${models[0]?.id ?? 'MODEL_ID'}", "messages": [{"role": "user", "content": "Hello Morphic"}]}'`;
         copyToClipboard(curl, 'snip-curl');
       },
     });

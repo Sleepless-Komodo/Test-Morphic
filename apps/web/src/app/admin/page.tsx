@@ -8,6 +8,7 @@ import { formatCredits } from '@/lib/utils';
 import { AutoRefresh } from '@/components/AutoRefresh';
 import { IDR_PER_USD } from '@/lib/money';
 import { memo } from '@/lib/memo';
+import { LIVE_TTL_MS, SLOW_TTL_MS } from '@/lib/refresh';
 import { Activity, AlertTriangle, Users, Cpu, DollarSign, Zap, ServerCrash } from 'lucide-react';
 
 function StatsCardsSkeleton() {
@@ -40,7 +41,7 @@ async function AlertBannerSection({ t }: { t: any }) {
   const fiveMinCutoff = new Date(Date.now() - 5 * 60_000);
   let fiveMinStats: { providerName: string | null; total: number; errors: number }[] = [];
   try {
-    fiveMinStats = await memo('admin:overview:alerts', 15_000, () => db
+    fiveMinStats = await memo('admin:overview:alerts', LIVE_TTL_MS, () => db
       .select({
         providerName: s.requestLogs.providerName,
         total: sql<number>`count(*)::int`,
@@ -105,7 +106,7 @@ async function CoreStatsCardsSection({ t }: { t: any }) {
     | undefined;
 
   try {
-    [stats] = await memo('admin:overview:core', 20_000, () =>
+    [stats] = await memo('admin:overview:core', 10 * 60_000, () =>
       db
         .select({
           usersCount: sql<number>`(select count(*)::int from ${s.users})`,
@@ -183,7 +184,7 @@ async function CoreStatsCardsSection({ t }: { t: any }) {
 async function ProviderHealth24hSection({ t }: { t: any }) {
   let healthStats: any[] = [];
   try {
-    healthStats = await memo('admin:overview:health', 30_000, () => db
+    healthStats = await memo('admin:overview:health', SLOW_TTL_MS, () => db
       .select({
         providerName: s.requestLogs.providerName,
         total: sql<number>`count(*)::int`,
@@ -258,7 +259,7 @@ async function ProviderHealth24hSection({ t }: { t: any }) {
 async function CircuitBreakersSection({ t }: { t: any }) {
   let providers: { name: string; status: string; circuitBreaker: any }[] = [];
   try {
-    providers = await memo('admin:overview:breakers', 10_000, () => db
+    providers = await memo('admin:overview:breakers', LIVE_TTL_MS, () => db
       .select({
         name: s.providers.name,
         status: s.providers.status,

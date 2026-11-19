@@ -1,31 +1,25 @@
 // apps/web/src/app/dashboard/page.tsx
 // TypeScript React / Next.js Server Component / Node.js / Linux x86_64
 import { eq, sql, desc, and, or, gt, isNull } from 'drizzle-orm';
-import { getSessionWithRetry } from '@/lib/actions';
+import { getOwnBalance, getSessionWithRetry } from '@/lib/actions';
 import { db, schema as s } from '@morphic/db';
 import { readyModelIds } from '@morphic/shared/model-readiness';
 import { memo } from '@/lib/memo';
+import { LIVE_TTL_MS, SLOW_TTL_MS } from '@/lib/refresh';
+import { PREVIEW_LIMIT } from '@/lib/pagination';
 import DeveloperGateway from '@/components/DeveloperGateway';
 import { AutoRefresh } from '@/components/AutoRefresh';
+import { hasStoredCredentials } from '@/lib/models-data';
 
 interface BalanceSnapshot {
   credits: number;
   updatedAt: string | null;
 }
 
-async function loadBalance(userId: string): Promise<BalanceSnapshot> {
-  // The gateway's /v1/account/balance runs this exact query against this exact row, so going
-  // through it only added an HTTPS round trip to another region.
+async function loadBalance(): Promise<BalanceSnapshot> {
+  // Shared with the dashboard layout through React cache(), so one request reads the row once.
   try {
-    const [bal] = await db
-      .select({ credits: s.balances.credits, updatedAt: s.balances.updatedAt })
-      .from(s.balances)
-      .where(eq(s.balances.userId, userId))
-      .limit(1);
-    return {
-      credits: bal?.credits ?? 0,
-      updatedAt: bal?.updatedAt ? bal.updatedAt.toISOString() : null,
-    };
+    return await getOwnBalance();
   } catch (err) {
     console.warn('[DashboardPage] Balance read failed:', err);
     return { credits: 0, updatedAt: null };
@@ -45,7 +39,8 @@ async function loadActiveKeyCount(userId: string): Promise<number> {
 }
 
 async function loadUsageTotals(userId: string) {
-  return memo(`dashboard:usage-totals:${userId}`, 10_000, async () => {
+  // All-time totals move slowly relative to their cost (a full scan of the user's usage rows).
+  return memo(`dashboard:usage-totals:${userId}`, SLOW_TTL_MS, async () => {
     const [row] = await db
       .select({
         totalTokens: sql<number>`coalesce(sum(${s.usageRecords.totalTokens}),0)::bigint`,
@@ -86,7 +81,7 @@ async function loadRecentRequests(userId: string): Promise<any[]> {
       .leftJoin(s.models, eq(s.usageRecords.modelId, s.models.id))
       .where(eq(s.usageRecords.userId, userId))
       .orderBy(desc(s.usageRecords.createdAt))
-      .limit(6);
+      .limit(PREVIEW_LIMIT);
   } catch (err) {
     console.warn('[DashboardPage] Recent request read failed:', err);
     return [];
@@ -97,7 +92,7 @@ const TREND_DAYS = 14;
 
 /** Credits spent per WIB calendar day over the last 14 days, oldest first, zero-filled. */
 async function loadDailySpend(userId: string): Promise<Array<{ day: string; credits: number }>> {
-  return memo(`dashboard:daily-spend:${userId}`, 15_000, async () => {
+  return memo(`dashboard:daily-spend:${userId}`, LIVE_TTL_MS, async () => {
     const dayKey = (d: Date) => new Date(d.getTime() + 7 * 3_600_000).toISOString().slice(0, 10);
     const days = Array.from({ length: TREND_DAYS }, (_, i) => dayKey(new Date(Date.now() - (TREND_DAYS - 1 - i) * 86_400_000)));
     const rows = await db
@@ -117,11 +112,12 @@ async function loadDailySpend(userId: string): Promise<Array<{ day: string; cred
 }
 
 async function loadModelStats() {
-  return memo('dashboard:model-stats', 30_000, async () => {
+  return memo('dashboard:model-stats', LIVE_TTL_MS, async () => {
     const [models, providers, pool] = await Promise.all([
       db
         .select({
           id: s.models.id,
+          publicModelId: s.models.publicModelId,
           providerId: s.models.providerId,
           fallbackProviderId: s.models.fallbackProviderId,
           inputCreditsPer1m: s.models.inputCreditsPer1m,
@@ -134,7 +130,7 @@ async function loadModelStats() {
         .select({
           id: s.providers.id,
           status: s.providers.status,
-          encryptedCredentials: s.providers.encryptedCredentials,
+          encryptedCredentials: hasStoredCredentials,
           credentialReference: s.providers.credentialReference,
         })
         .from(s.providers),
@@ -149,10 +145,12 @@ async function loadModelStats() {
       modelCount: ready.length,
       avgCreditsPer1m: ready.length ? ready.reduce((a, m) => a + (m.inputCreditsPer1m + m.outputCreditsPer1m) / 2, 0) / ready.length : 0,
       minInputRate: ready.length ? Math.min(...ready.map((m) => m.inputCreditsPer1m)) : 0,
+      // Quickstart snippets name a model that can actually serve the request.
+      sampleModelId: ready[0]?.publicModelId ?? null,
     };
   }).catch((err) => {
     console.warn('[DashboardPage] Database offline, showing empty model stats:', err);
-    return { modelCount: 0, avgCreditsPer1m: 0, minInputRate: 0 };
+    return { modelCount: 0, avgCreditsPer1m: 0, minInputRate: 0, sampleModelId: null };
   });
 }
 
@@ -162,7 +160,7 @@ export default async function DashboardPage() {
 
   // Every load below is independent of the others and shared via short TTL caches where possible.
   const [balance, activeKeys, usage, recentRequests, modelStats, dailySpend] = await Promise.all([
-    userId ? loadBalance(userId) : Promise.resolve<BalanceSnapshot>({ credits: 0, updatedAt: null }),
+    userId ? loadBalance() : Promise.resolve<BalanceSnapshot>({ credits: 0, updatedAt: null }),
     userId ? loadActiveKeyCount(userId) : Promise.resolve(0),
     userId
       ? loadUsageTotals(userId)
@@ -175,7 +173,7 @@ export default async function DashboardPage() {
   return (
     <>
       {/* Balance, usage, recent requests and model stats stay current while the tab is open. */}
-      <AutoRefresh intervalMs={30_000} />
+      <AutoRefresh />
       <DeveloperGateway
         userBalance={balance.credits}
         balanceUpdatedAt={balance.updatedAt}
@@ -183,6 +181,7 @@ export default async function DashboardPage() {
         serverModelCount={modelStats.modelCount}
         serverAvgCreditsPer1m={modelStats.avgCreditsPer1m}
         serverMinInputRate={modelStats.minInputRate}
+        sampleModelId={modelStats.sampleModelId}
         activeKeys={activeKeys}
         serverUsage={usage}
         dailySpend={dailySpend}

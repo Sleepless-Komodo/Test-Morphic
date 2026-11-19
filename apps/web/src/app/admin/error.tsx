@@ -1,6 +1,9 @@
 'use client';
 
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { AlertTriangle } from 'lucide-react';
+import { getAdminStepUpStatus } from '@/lib/actions';
 
 export default function AdminError({
   error,
@@ -9,6 +12,24 @@ export default function AdminError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  const router = useRouter();
+
+  // Production hides server error messages, so an action refused for a lapsed admin OTP lands
+  // here as a generic error. Ask the server and send the admin to the OTP dialog when that is why.
+  useEffect(() => {
+    let cancelled = false;
+    getAdminStepUpStatus()
+      .then((status) => {
+        if (cancelled || !status.required || window.location.pathname.startsWith('/admin/verify')) return;
+        const next = window.location.pathname + window.location.search;
+        router.replace(`/admin/verify?next=${encodeURIComponent(next)}`);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [router]);
+
   const isDbTimeout = error.message?.includes('ETIMEDOUT') || error.message?.includes('ECONNREFUSED');
 
   return (

@@ -395,7 +395,8 @@ export default function AboutView({ copy }: { copy: AboutCopy }) {
 
       <Origin copy={copy} />
 
-      {/* Real counts, counted up once on view. */}
+      {/* Real counts, counted up once on view. Left out when the database could not be read. */}
+      {copy.facts.length > 0 && (
       <section aria-label={copy.factsLabel} className="mx-auto w-full max-w-6xl px-4 sm:px-6">
         <SectionLabel>{copy.factsLabel}</SectionLabel>
         <dl className={`mt-8 grid grid-cols-2 gap-x-8 gap-y-12 border-t border-neutral-300 pt-10 ${copy.facts.length === 4 ? 'lg:grid-cols-4' : 'lg:grid-cols-3'}`}>
@@ -412,6 +413,7 @@ export default function AboutView({ copy }: { copy: AboutCopy }) {
           ))}
         </dl>
       </section>
+      )}
 
       <Vision copy={copy} />
 

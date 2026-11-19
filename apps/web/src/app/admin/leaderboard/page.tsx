@@ -7,6 +7,7 @@ import { formatCredits, formatTokenEstimate } from '@/lib/utils';
 import { UserCell } from '../user-cell';
 import { IDR_PER_USD, rupiah } from '@/lib/money';
 import { memo } from '@/lib/memo';
+import { SLOW_TTL_MS } from '@/lib/refresh';
 import { AutoRefresh } from '@/components/AutoRefresh';
 
 
@@ -52,6 +53,9 @@ export default async function AdminLeaderboard({ searchParams }: { searchParams:
       usdCents: sql<number>`coalesce(sum(${s.payments.amountCents}) filter (where ${s.payments.currency} = 'USD'), 0)::float8`.as('spend_usd_cents'),
       credits: sql<number>`coalesce(sum(${s.payments.credits}), 0)::float8`.as('spend_credits'),
       orders: sql<number>`count(*)::int`.as('spend_orders'),
+      // Window totals run over every group before LIMIT, so the revenue tile needs no second scan.
+      totalIdr: sql<number>`coalesce(sum(${spendIdr}) over (), 0)::float8`.as('spend_total_idr'),
+      buyers: sql<number>`count(*) over ()::int`.as('spend_buyers'),
     })
     .from(s.payments)
     .where(paidWhere)
@@ -67,6 +71,9 @@ export default async function AdminLeaderboard({ searchParams }: { searchParams:
       errors: sql<number>`count(*) filter (where ${s.requestLogs.status} <> 'success')::int`.as('req_errors'),
       tokens: sql<number>`coalesce(sum(coalesce(${s.requestLogs.promptTokens}, 0) + coalesce(${s.requestLogs.completionTokens}, 0)), 0)::float8`.as('req_tokens'),
       credits: sql<number>`coalesce(sum(${s.requestLogs.creditsConsumed}), 0)::float8`.as('req_credits'),
+      totalRequests: sql<number>`(sum(count(*)) over ())::int`.as('req_total'),
+      // count(user_id) skips the null-user group, matching count(distinct user_id).
+      users: sql<number>`count(${s.requestLogs.userId}) over ()::int`.as('req_users'),
     })
     .from(s.requestLogs)
     .where(reqWhere)
@@ -75,8 +82,7 @@ export default async function AdminLeaderboard({ searchParams }: { searchParams:
     .limit(10)
     .as('top_requesters');
 
-  // All four reads run in parallel: one round trip of latency for the whole page.
-  const [spenders, requesters, [revenue], [traffic]] = await memo(`admin:leaderboard:${period.key}`, 30_000, () => Promise.all([
+  const [spenderRows, requesterRows] = await memo(`admin:leaderboard:${period.key}`, SLOW_TTL_MS, () => Promise.all([
     db
       .select({
         userId: s.users.id,
@@ -89,9 +95,11 @@ export default async function AdminLeaderboard({ searchParams }: { searchParams:
         usdCents: topSpendersSub.usdCents,
         credits: topSpendersSub.credits,
         orders: topSpendersSub.orders,
+        totalIdr: topSpendersSub.totalIdr,
+        buyers: topSpendersSub.buyers,
       })
       .from(topSpendersSub)
-      .innerJoin(s.users, eq(s.users.id, topSpendersSub.userId))
+      .leftJoin(s.users, eq(s.users.id, topSpendersSub.userId))
       .orderBy(desc(topSpendersSub.spendIdr)),
     db
       .select({
@@ -104,16 +112,19 @@ export default async function AdminLeaderboard({ searchParams }: { searchParams:
         errors: topRequestersSub.errors,
         tokens: topRequestersSub.tokens,
         credits: topRequestersSub.credits,
+        totalRequests: topRequestersSub.totalRequests,
+        users: topRequestersSub.users,
       })
       .from(topRequestersSub)
-      .innerJoin(s.users, eq(s.users.id, topRequestersSub.userId))
+      .leftJoin(s.users, eq(s.users.id, topRequestersSub.userId))
       .orderBy(desc(topRequestersSub.requests)),
-    db.select({ total: spendIdr, buyers: sql<number>`count(distinct ${s.payments.userId})::int` }).from(s.payments).where(paidWhere),
-    db
-      .select({ total: requests, users: sql<number>`count(distinct ${s.requestLogs.userId})::int` })
-      .from(s.requestLogs)
-      .where(reqWhere),
   ]));
+  // Left joins keep the totals when a top group has no user row (requests from deleted users);
+  // those rows were never listed, so drop them here.
+  const revenue = { total: spenderRows[0]?.totalIdr ?? 0, buyers: spenderRows[0]?.buyers ?? 0 };
+  const traffic = { total: requesterRows[0]?.totalRequests ?? 0, users: requesterRows[0]?.users ?? 0 };
+  const spenders = spenderRows.filter((r) => r.userId !== null);
+  const requesters = requesterRows.filter((r) => r.userId !== null);
 
   const tile = 'rounded-3xl border border-neutral-200/90 bg-white shadow-2xs';
   const label = 'text-xs font-semibold text-neutral-500';

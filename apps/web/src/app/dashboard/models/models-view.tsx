@@ -17,7 +17,7 @@ export function ModelsView({ initialModels }: { initialModels: any[] }) {
   const [selectedCap, setSelectedCap] = useState('All');
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [selectedModelId, setSelectedModelId] = useState<string>(
-    initialModels[0]?.publicModelId || 'deepseek-v4'
+    initialModels[0]?.publicModelId ?? ''
   );
   const [copiedCurl, setCopiedCurl] = useState(false);
 
@@ -93,7 +93,8 @@ export function ModelsView({ initialModels }: { initialModels: any[] }) {
   const activeModel =
     filtered.find((m: any) => m.publicModelId === selectedModelId) ||
     filtered[0] ||
-    initialModels[0] || { publicModelId: 'deepseek-v4', displayName: 'DeepSeek V4' };
+    // Empty catalogue: the sample keeps a placeholder id instead of naming a model we do not serve.
+    initialModels[0] || { publicModelId: 'MODEL_ID', displayName: '' };
 
   const curlCommand = `curl ${CHAT_COMPLETIONS_URL} \\
   -H "Authorization: Bearer mp-live-xxxxxxxxxxxx" \\

@@ -13,7 +13,7 @@ export default async function UsagePage(props: { searchParams?: Promise<{ range?
   return (
     <>
       <UsageView data={data} days={days} />
-      <AutoRefresh intervalMs={60_000} />
+      <AutoRefresh />
     </>
   );
 }

@@ -12,20 +12,30 @@ import { db, schema as s } from '@morphic/db';
 import { generateApiKey, maskedKey, hashApiKey } from '@morphic/shared/keys';
 import {
   canonicalizeAdminIp,
-  evaluateAdminIpAccess,
   extractTrustedAdminIp,
   hasAdminPermission,
+  isAdminIpAllowed,
   isAdminRole,
   isLoopbackAdminIp,
-  isSameAdminIpOrIpv6Prefix,
-  adminIpNetworkKey,
   type AdminPermission,
 } from '@morphic/shared/admin-rbac';
+import {
+  ADMIN_OTP_RESEND_COOLDOWN_MS,
+  ADMIN_STEP_UP_IDLE_MS,
+  evaluateAdminStepUp,
+  otpResendWaitSeconds,
+  formatStepUpValue,
+  parseGeoCountry,
+  safeAdminNextPath,
+  type AdminStepUpDecision,
+} from '@morphic/shared/admin-step-up';
 import { sendEmail } from '@morphic/shared/email';
 import { auth } from '@/lib/auth';
 import { fetchBackendApi } from './api-client';
 import { softDeleteUser } from './account-deletion';
 import { loadNotifications } from './notifications';
+import { PAGE_SIZE, cursorAt, decodeCursor, olderThan, toPage } from './pagination';
+import type { GiftTransaction } from '@/app/dashboard/redeem/redeem-view';
 
 import { cache } from 'react';
 
@@ -56,39 +66,57 @@ export const getSessionWithRetry = cache(async () => {
   return null;
 });
 
+/**
+ * The signed-in user's balance row, read at most once per request: the dashboard layout and the
+ * page under it both show it. Takes no user id, so as a server action it can only read your own.
+ */
+export const getOwnBalance = cache(async (): Promise<{ credits: number; updatedAt: string | null }> => {
+  const session = await getSessionWithRetry();
+  if (!session) return { credits: 0, updatedAt: null };
+  const [bal] = await db
+    .select({ credits: s.balances.credits, updatedAt: s.balances.updatedAt })
+    .from(s.balances)
+    .where(eq(s.balances.userId, session.user.id))
+    .limit(1);
+  return { credits: bal?.credits ?? 0, updatedAt: bal?.updatedAt ? bal.updatedAt.toISOString() : null };
+});
+
 async function requireUser() {
   const session = await getSessionWithRetry();
   if (!session) redirect('/login');
   return session.user;
 }
 
-// Trusted IPs are remembered per network (IPv6 /64), and the step-up code is per user: the client
-// IP can change between "send code" and "verify" (IPv6 privacy addresses, IPv4/IPv6 switching),
-// which used to make a fresh code read as expired.
-const adminTrustedIpId = (userId: string, ip: string) =>
-  `admin-trusted-ip:${userId}:${adminIpNetworkKey(ip) ?? ip}`;
+// The step-up code is per user, so a client IP that changes between "send code" and "verify"
+// (IPv6 privacy addresses, IPv4/IPv6 switching) cannot make a fresh code read as expired.
 const adminIpOtpId = (userId: string) => `admin-ip-otp:${userId}`;
-// One step-up per sign-in: once a session passed the email code it stays trusted until it
-// ends (logout or expiry), whatever IP it moves to.
+// One marker per session: it expires 24 hours after the last admin-panel activity, and that
+// activity pushes it forward (see `@morphic/shared/admin-step-up`).
 const adminVerifiedSessionId = (sessionId: string) => `admin-verified-session:${sessionId}`;
+
+// Only the user columns admin checks and admin pages read; this runs on every dashboard navigation.
+const adminUserColumns = {
+  id: s.users.id,
+  email: s.users.email,
+  name: s.users.name,
+  role: s.users.role,
+  suspended: s.users.suspended,
+  twoFactorEnabled: s.users.twoFactorEnabled,
+};
 
 /**
  * The signed-in admin, or null for guests, non-admins, strictly-blocked IPs, suspended admins and API-key sessions.
  * Admins who sign in with a password must also have login OTP on (`mfaMissing` otherwise);
  * Google/GitHub-only admins are secured by their provider's MFA.
- * When an admin switches to a new public IP (different from their session login IP and not yet verified via
- * Step-Up Email OTP within the last 7 days), `ipVerificationRequired` is set to true so `requireAdmin`
- * redirects them to `/dashboard/settings?admin_ip=verify` to verify a 6-digit email OTP.
- * One joined query (user role + session auth method + session IP), memoised per request so the admin layout
- * and page share it.
+ * Does not look at the admin-panel step-up: the dashboard sidebar calls this on every navigation,
+ * and that check (`adminStepUpState`) belongs to admin pages and actions only.
+ * One joined query (user role + session auth method), memoised per request.
  */
 const adminCheck = cache(
   async (): Promise<{
-    user: typeof s.users.$inferSelect;
+    user: Pick<typeof s.users.$inferSelect, keyof typeof adminUserColumns>;
     sessionId: string;
-    sessionExpiresAt: Date;
     mfaMissing: boolean;
-    ipVerificationRequired: boolean;
     clientIp: string | null;
   } | null> => {
     const session = await getSessionWithRetry();
@@ -99,11 +127,9 @@ const adminCheck = cache(
     // can never reach admin actions.
     const [row] = await db
       .select({
-        user: s.users,
+        user: adminUserColumns,
         authMethod: s.sessions.authMethod,
-        sessionIp: s.sessions.ipAddress,
         sessionId: s.sessions.id,
-        sessionExpiresAt: s.sessions.expiresAt,
       })
       .from(s.users)
       .innerJoin(s.sessions, eq(s.sessions.userId, s.users.id))
@@ -113,80 +139,71 @@ const adminCheck = cache(
       return null;
     }
 
-    const reqHeaders = await headers();
-    const clientIp = extractTrustedAdminIp(reqHeaders);
-    const canonicalClientIp = canonicalizeAdminIp(clientIp);
-    const canonicalSessionIp = canonicalizeAdminIp(row.sessionIp);
-
-    // Only query s.verifications for a trusted-IP badge if the client IP is non-local and differs from the session IP.
-    const trustedIps: string[] = [];
-    let sessionVerified = false;
-    if (
-      canonicalClientIp &&
-      !isLoopbackAdminIp(canonicalClientIp) &&
-      // With an allowlist, a session IP match alone does not admit, so the trust rows matter too.
-      (!isSameAdminIpOrIpv6Prefix(canonicalClientIp, canonicalSessionIp) || process.env.ADMIN_ALLOWED_IPS?.trim())
-    ) {
-      const trustedIpId = adminTrustedIpId(row.user.id, canonicalClientIp);
-      const verifiedSessionId = adminVerifiedSessionId(row.sessionId);
-      const trustedRows = await db
-        .select({ identifier: s.verifications.identifier })
-        .from(s.verifications)
-        .where(
-          and(
-            inArray(s.verifications.identifier, [trustedIpId, verifiedSessionId]),
-            gt(s.verifications.expiresAt, new Date()),
-          ),
-        );
-      sessionVerified = trustedRows.some((r) => r.identifier === verifiedSessionId);
-      if (trustedRows.some((r) => r.identifier === trustedIpId)) {
-        trustedIps.push(adminIpNetworkKey(canonicalClientIp) ?? canonicalClientIp);
-      }
-    }
-
-    const ipEval = evaluateAdminIpAccess({
-      clientIp,
-      sessionIp: row.sessionIp,
-      trustedIps,
-      allowlistRaw: process.env.ADMIN_ALLOWED_IPS,
-      strictAllowlist: process.env.ADMIN_IP_ENFORCEMENT === 'strict',
-    });
-
-    if (ipEval.status === 'denied') {
+    const clientIp = canonicalizeAdminIp(extractTrustedAdminIp(await headers()));
+    // Opt-in hard allowlist: ADMIN_ALLOWED_IPS + ADMIN_IP_ENFORCEMENT=strict.
+    if (process.env.ADMIN_IP_ENFORCEMENT === 'strict' && !isAdminIpAllowed(clientIp, process.env.ADMIN_ALLOWED_IPS)) {
       console.warn('[adminCheck] blocked admin access from strictly non-allowlisted IP', {
         userId: session.user.id,
-        clientIp: ipEval.canonicalClientIp,
+        clientIp,
       });
       return null;
     }
 
     const mfaMissing = !row.user.twoFactorEnabled && (await hasPasswordLogin(row.user.id));
-    return {
-      user: row.user,
-      sessionId: row.sessionId,
-      sessionExpiresAt: row.sessionExpiresAt,
-      mfaMissing,
-      ipVerificationRequired: ipEval.status === 'step_up_required' && !sessionVerified,
-      clientIp: ipEval.canonicalClientIp,
-    };
+    return { user: row.user, sessionId: row.sessionId, mfaMissing, clientIp };
   },
 );
 
 /**
+ * Whether this session must pass the admin-panel email OTP now, plus the request country.
+ * Local development over loopback skips it so `pnpm dev` needs no email.
+ */
+const adminStepUpState = cache(
+  async (sessionId: string): Promise<AdminStepUpDecision & { country: string | null }> => {
+    const reqHeaders = await headers();
+    const country = parseGeoCountry(reqHeaders);
+    const clientIp = canonicalizeAdminIp(extractTrustedAdminIp(reqHeaders));
+    if (process.env.NODE_ENV !== 'production' && (!clientIp || isLoopbackAdminIp(clientIp))) {
+      return { required: false, reason: 'ok', bump: false, storedCountry: null, country };
+    }
+    if (!country) console.warn('[adminStepUp] request country unknown, country check skipped');
+    const [row] = await db
+      .select({ value: s.verifications.value, expiresAt: s.verifications.expiresAt })
+      .from(s.verifications)
+      .where(eq(s.verifications.identifier, adminVerifiedSessionId(sessionId)))
+      .limit(1);
+    return { ...evaluateAdminStepUp({ row: row ?? null, nowMs: Date.now(), country }), country };
+  },
+);
+
+/** Pushes the session's step-up marker 24 hours ahead. A failed write only costs an earlier OTP. */
+async function bumpAdminStepUp(sessionId: string, country: string | null) {
+  const now = Date.now();
+  try {
+    await db
+      .update(s.verifications)
+      .set({
+        value: formatStepUpValue(now, country),
+        expiresAt: new Date(now + ADMIN_STEP_UP_IDLE_MS),
+        updatedAt: new Date(now),
+      })
+      .where(eq(s.verifications.identifier, adminVerifiedSessionId(sessionId)));
+  } catch (err) {
+    console.warn('[adminStepUp] could not extend the step-up marker:', err);
+  }
+}
+
+/**
  * Used by `DashboardLayout` to decide whether to render the "Panel admin" link in the sidebar.
- * Returns true for any active admin role even if Login OTP (`mfaMissing`) or IP Step-Up (`ipVerificationRequired`)
- * is pending — clicking `/admin` then triggers `requireAdmin()` which redirects to `/dashboard/settings?mfa=required`
- * or `/dashboard/settings?admin_ip=verify` with the appropriate setup prompt.
+ * Returns true for any active admin role even if Login OTP (`mfaMissing`) or the panel step-up
+ * is pending: opening `/admin` then asks for it.
  */
 async function isCurrentUserAdmin(): Promise<boolean> {
   return (await adminCheck()) !== null;
 }
 
-async function requireAdmin(
-  permission?: AdminPermission,
-  options?: { mode?: 'redirect' | 'throw' },
-) {
-  const shouldThrow = options?.mode === 'throw';
+/** Session + admin role + login OTP checks shared by the admin guards. */
+async function requireAdminBase(shouldThrow: boolean) {
   const session = await getSessionWithRetry();
   if (!session) {
     if (shouldThrow) throw new Error('Unauthorized: sign-in required.');
@@ -201,13 +218,24 @@ async function requireAdmin(
     if (shouldThrow) throw new Error('Forbidden: login OTP (MFA) is required for admin accounts.');
     redirect('/dashboard/settings?mfa=required');
   }
-  if (check.ipVerificationRequired) {
-    if (shouldThrow) {
-      throw new Error(
-        `Forbidden: new admin IP address (${check.clientIp ?? 'unknown'}) requires email OTP verification.`,
-      );
-    }
-    redirect('/dashboard/settings?admin_ip=verify');
+  return check;
+}
+
+/**
+ * Guard for admin pages (redirect mode) and admin actions (throw mode). A pending step-up sends
+ * pages to `/admin/verify` before they read any data, and passing it counts as admin activity.
+ */
+async function requireAdmin(
+  permission?: AdminPermission,
+  options?: { mode?: 'redirect' | 'throw' },
+) {
+  const shouldThrow = options?.mode === 'throw';
+  const check = await requireAdminBase(shouldThrow);
+  const stepUp = await adminStepUpState(check.sessionId);
+  if (stepUp.required) {
+    if (shouldThrow) throw new Error('Forbidden: admin step-up OTP required.');
+    const next = safeAdminNextPath((await headers()).get('x-morphic-path'));
+    redirect(`/admin/verify?next=${encodeURIComponent(next)}`);
   }
   if (permission && !hasAdminPermission(check.user.role, permission)) {
     if (shouldThrow) {
@@ -215,14 +243,26 @@ async function requireAdmin(
     }
     redirect('/admin?denied=1');
   }
+  if (stepUp.bump) await bumpAdminStepUp(check.sessionId, stepUp.storedCountry ?? stepUp.country);
   return check.user;
+}
+
+/**
+ * The admin layout's guard: same checks as `requireAdmin('overview')`, but a pending step-up is
+ * returned instead of redirected, so `/admin/verify` can render inside the shell. Never extends
+ * the marker.
+ */
+async function requireAdminForStepUp() {
+  const check = await requireAdminBase(false);
+  const stepUp = await adminStepUpState(check.sessionId);
+  return { user: check.user, required: stepUp.required };
 }
 
 async function requireInteractiveUser() {
   return requireUser();
 }
 
-export { requireUser, requireAdmin, requireInteractiveUser, isCurrentUserAdmin };
+export { requireUser, requireAdmin, requireAdminForStepUp, requireInteractiveUser, isCurrentUserAdmin };
 
 
 export async function listApiKeys() {
@@ -305,7 +345,8 @@ export async function listActiveSessions(): Promise<ActiveSession[]> {
     })
     .from(s.sessions)
     .where(and(eq(s.sessions.userId, session.user.id), gt(s.sessions.expiresAt, new Date())))
-    .orderBy(desc(s.sessions.createdAt));
+    .orderBy(desc(s.sessions.createdAt))
+    .limit(50);
 
   return rows.map((row) => ({ ...row, isCurrent: row.id === session.session.id }));
 }
@@ -585,19 +626,21 @@ export async function checkPaymentStatusAction(paymentId: string) {
 
 
 export async function getUsageLogsAction(params: {
-  page?: number;
+  /** Opaque keyset cursor from a previous call's `nextCursor`; omitted for the newest page. */
+  before?: string | null;
   limit?: number;
   from?: string;
   to?: string;
+  status?: 'all' | 'success' | 'error';
 } = {}) {
   const session = await getSessionWithRetry();
   if (!session) redirect('/login');
 
-  const page = Math.max(1, params.page ?? 1);
-  const limit = Math.min(100, Math.max(1, params.limit ?? 50));
+  // Up to 500 so the CSV export can walk the range in a few large batches.
+  const limit = Math.min(500, Math.max(1, Math.trunc(Number(params.limit)) || PAGE_SIZE));
 
   // Read the usage table directly: the gateway endpoint this used to call issues the same
-  // two queries against the same rows, one region away.
+  // queries against the same rows, one region away.
   try {
     const conditions = [eq(s.usageRecords.userId, session.user.id)];
     if (params.from) {
@@ -608,37 +651,37 @@ export async function getUsageLogsAction(params: {
       const toDate = new Date(params.to);
       if (!isNaN(toDate.getTime())) conditions.push(lte(s.usageRecords.createdAt, toDate));
     }
+    // "Errors" covers every non-success status (error and partial), as the table always showed it.
+    if (params.status === 'success') conditions.push(eq(s.usageRecords.status, 'success'));
+    else if (params.status === 'error') conditions.push(ne(s.usageRecords.status, 'success'));
+    const older = olderThan(s.usageRecords.createdAt, s.usageRecords.id, decodeCursor(params.before));
+    if (older) conditions.push(older);
 
-    const whereClause = and(...conditions);
-    const offset = (page - 1) * limit;
-
-    const [[totalRes], rows] = await Promise.all([
-      db.select({ count: sql<number>`count(*)::int` }).from(s.usageRecords).where(whereClause),
-      db
-        .select({
-          id: s.usageRecords.id,
-          requestId: s.usageRecords.requestId,
-          model: s.models.displayName,
-          publicModelId: s.models.publicModelId,
-          promptTokens: s.usageRecords.promptTokens,
-          completionTokens: s.usageRecords.completionTokens,
-          totalTokens: s.usageRecords.totalTokens,
-          credits: s.usageRecords.creditsConsumed,
-          status: s.usageRecords.status,
-          streamed: s.usageRecords.streamed,
-          latencyMs: s.usageRecords.latencyMs,
-          createdAt: s.usageRecords.createdAt,
-        })
-        .from(s.usageRecords)
-        .leftJoin(s.models, eq(s.usageRecords.modelId, s.models.id))
-        .where(whereClause)
-        .orderBy(desc(s.usageRecords.createdAt))
-        .limit(limit)
-        .offset(offset),
-    ]);
+    const rows = await db
+      .select({
+        id: s.usageRecords.id,
+        cursorAt: cursorAt(s.usageRecords.createdAt),
+        requestId: s.usageRecords.requestId,
+        model: s.models.displayName,
+        publicModelId: s.models.publicModelId,
+        promptTokens: s.usageRecords.promptTokens,
+        completionTokens: s.usageRecords.completionTokens,
+        totalTokens: s.usageRecords.totalTokens,
+        credits: s.usageRecords.creditsConsumed,
+        status: s.usageRecords.status,
+        streamed: s.usageRecords.streamed,
+        latencyMs: s.usageRecords.latencyMs,
+        createdAt: s.usageRecords.createdAt,
+      })
+      .from(s.usageRecords)
+      .leftJoin(s.models, eq(s.usageRecords.modelId, s.models.id))
+      .where(and(...conditions))
+      .orderBy(desc(s.usageRecords.createdAt), desc(s.usageRecords.id))
+      .limit(limit + 1);
+    const { items, nextCursor } = toPage(rows, limit);
 
     return {
-      data: rows.map((u) => ({
+      data: items.map((u) => ({
         id: u.id,
         requestId: u.requestId,
         model: u.model,
@@ -652,14 +695,292 @@ export async function getUsageLogsAction(params: {
         latencyMs: u.latencyMs,
         createdAt: u.createdAt.toISOString(),
       })),
-      total: totalRes?.count ?? 0,
-      page,
-      limit,
+      nextCursor,
     };
   } catch (err) {
     console.warn('[getUsageLogsAction] Database fallback failed:', err);
-    return { data: [], total: 0, page: 1, limit };
+    return { data: [], nextCursor: null };
   }
+}
+
+/** One page of the signed-in user's payments for the billing list: the newest when `before` is empty. */
+export async function getPaymentsPageAction(params: { before?: string | null } = {}) {
+  const user = await requireUser();
+  // Explicit columns: capture ids, reconcile timestamps and refund amounts stay on the server.
+  const rows = await db
+    .select({
+      id: s.payments.id,
+      cursorAt: cursorAt(s.payments.createdAt),
+      provider: s.payments.provider,
+      externalId: s.payments.externalId,
+      packageId: s.payments.packageId,
+      packageName: s.packages.name,
+      amountCents: s.payments.amountCents,
+      currency: s.payments.currency,
+      credits: s.payments.credits,
+      status: s.payments.status,
+      createdAt: s.payments.createdAt,
+    })
+    .from(s.payments)
+    .leftJoin(s.packages, eq(s.payments.packageId, s.packages.id))
+    .where(and(eq(s.payments.userId, user.id), olderThan(s.payments.createdAt, s.payments.id, decodeCursor(params.before))))
+    .orderBy(desc(s.payments.createdAt), desc(s.payments.id))
+    .limit(PAGE_SIZE + 1);
+  const { items, nextCursor } = toPage(rows);
+  return {
+    data: items.map(({ cursorAt: _c, ...p }) => ({ ...p, createdAt: p.createdAt.toISOString() })),
+    nextCursor,
+  };
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Ids behind `code:<id>` / `payment:<id>` ledger references, so names resolve by primary key. */
+function referencedIds(refs: (string | null)[], prefix: string): string[] {
+  const ids = refs.flatMap((r) => (r?.startsWith(prefix) ? [r.slice(prefix.length)] : []));
+  return [...new Set(ids.filter((id) => UUID_RE.test(id)))];
+}
+
+/** One page of the signed-in user's credit ledger, then the redeem code and package names it points to. */
+export async function getLedgerPageAction(params: { before?: string | null } = {}) {
+  const user = await requireUser();
+  const rows = await db
+    .select({
+      id: s.creditLedger.id,
+      cursorAt: cursorAt(s.creditLedger.createdAt),
+      entryType: s.creditLedger.entryType,
+      amount: s.creditLedger.amount,
+      reference: s.creditLedger.reference,
+      createdAt: s.creditLedger.createdAt,
+    })
+    .from(s.creditLedger)
+    .where(and(eq(s.creditLedger.userId, user.id), olderThan(s.creditLedger.createdAt, s.creditLedger.id, decodeCursor(params.before))))
+    .orderBy(desc(s.creditLedger.createdAt), desc(s.creditLedger.id))
+    .limit(PAGE_SIZE + 1);
+  const { items, nextCursor } = toPage(rows);
+  const refs = items.map((r) => r.reference);
+  const codeIds = referencedIds(refs, 'code:');
+  const paymentIds = referencedIds(refs, 'payment:');
+  const [codes, paid] = await Promise.all([
+    codeIds.length
+      ? db.select({ id: s.redeemCodes.id, code: s.redeemCodes.code }).from(s.redeemCodes).where(inArray(s.redeemCodes.id, codeIds))
+      : [],
+    paymentIds.length
+      ? db
+          .select({ id: s.payments.id, packageName: s.packages.name })
+          .from(s.payments)
+          .leftJoin(s.packages, eq(s.payments.packageId, s.packages.id))
+          .where(inArray(s.payments.id, paymentIds))
+      : [],
+  ]);
+  const codeById = new Map(codes.map((c) => [c.id, c.code]));
+  const packageByPayment = new Map(paid.map((p) => [p.id, p.packageName]));
+  return {
+    data: items.map(({ cursorAt: _c, ...r }) => ({
+      ...r,
+      createdAt: r.createdAt.toISOString(),
+      redeemCode: r.reference?.startsWith('code:') ? (codeById.get(r.reference.slice(5)) ?? null) : null,
+      packageName: r.reference?.startsWith('payment:') ? (packageByPayment.get(r.reference.slice(8)) ?? null) : null,
+    })),
+    nextCursor,
+  };
+}
+
+const GIFT_OPEN = ['pending', 'pending_paypal', 'capturing'];
+const GIFT_FAILED = ['failed', 'expired'];
+
+type SentGiftRow = {
+  id: string;
+  cursorAt: string;
+  createdAt: Date;
+  design: string;
+  recipientEmail: string | null;
+  amountCents: number;
+  currency: string;
+  credits: number;
+  paymentStatus: string;
+  code: string | null;
+  redeemedCount: number | null;
+};
+type ReceivedGiftRow = { id: string; cursorAt: string; createdAt: Date; design: string; credits: number; fromEmail: string };
+
+/** Sent cards and received redemptions as one newest-first list; `at` is the row's cursor timestamp. */
+function toGiftTransactions(sent: SentGiftRow[], received: ReceivedGiftRow[]): (GiftTransaction & { at: string; ms: number })[] {
+  return [
+    ...sent.map((g) => ({
+      id: g.id,
+      at: g.cursorAt,
+      ms: g.createdAt.getTime(),
+      date: g.createdAt.toISOString(),
+      direction: 'sent' as const,
+      design: g.design,
+      credits: g.credits,
+      amountCents: g.amountCents,
+      currency: g.currency,
+      from: null,
+      to: g.recipientEmail,
+      code: g.paymentStatus === 'paid' ? g.code : null,
+      status: GIFT_OPEN.includes(g.paymentStatus)
+        ? ('pending' as const)
+        : GIFT_FAILED.includes(g.paymentStatus)
+          ? ('failed' as const)
+          : g.paymentStatus !== 'paid'
+            ? ('on_hold' as const)
+            : (g.redeemedCount ?? 0) > 0
+              ? ('redeemed' as const)
+              : ('ready' as const),
+    })),
+    ...received.map((g) => ({
+      id: `r-${g.id}`,
+      at: g.cursorAt,
+      ms: g.createdAt.getTime(),
+      date: g.createdAt.toISOString(),
+      direction: 'received' as const,
+      design: g.design,
+      credits: g.credits,
+      amountCents: null,
+      currency: null,
+      from: g.fromEmail,
+      to: null,
+      code: null,
+      status: 'redeemed' as const,
+    })),
+  ].sort((a, b) => b.ms - a.ms || b.at.localeCompare(a.at));
+}
+
+/**
+ * One page of gift cards the signed-in user bought or received, newest first. `before` is the
+ * created_at text of the last row shown; each table returns at most PAGE_SIZE + 1 rows older than it.
+ */
+export async function getGiftHistoryPageAction(params: { before?: string | null } = {}): Promise<{
+  data: GiftTransaction[];
+  nextCursor: string | null;
+}> {
+  const user = await requireUser();
+  const before = typeof params.before === 'string' && params.before.length <= 64 && !Number.isNaN(Date.parse(params.before))
+    ? params.before
+    : null;
+  const [sent, received] = await Promise.all([
+    db
+      .select({
+        id: s.giftCards.id,
+        cursorAt: cursorAt(s.giftCards.createdAt),
+        createdAt: s.giftCards.createdAt,
+        design: s.giftCards.design,
+        recipientEmail: s.giftCards.recipientEmail,
+        amountCents: s.payments.amountCents,
+        currency: s.payments.currency,
+        credits: s.payments.credits,
+        paymentStatus: s.payments.status,
+        code: s.redeemCodes.code,
+        redeemedCount: s.redeemCodes.redeemedCount,
+      })
+      .from(s.giftCards)
+      .innerJoin(s.payments, eq(s.payments.id, s.giftCards.paymentId))
+      .leftJoin(s.redeemCodes, eq(s.redeemCodes.id, s.giftCards.redeemCodeId))
+      .where(and(eq(s.giftCards.purchaserId, user.id), before ? sql`${s.giftCards.createdAt} < ${before}::timestamptz` : undefined))
+      .orderBy(desc(s.giftCards.createdAt))
+      .limit(PAGE_SIZE + 1),
+    db
+      .select({
+        id: s.giftCards.id,
+        cursorAt: cursorAt(s.redemptions.createdAt),
+        createdAt: s.redemptions.createdAt,
+        design: s.giftCards.design,
+        credits: s.payments.credits,
+        fromEmail: s.users.email,
+      })
+      .from(s.redemptions)
+      .innerJoin(s.giftCards, eq(s.giftCards.redeemCodeId, s.redemptions.codeId))
+      .innerJoin(s.payments, eq(s.payments.id, s.giftCards.paymentId))
+      .innerJoin(s.users, eq(s.users.id, s.giftCards.purchaserId))
+      .where(
+        and(
+          eq(s.redemptions.userId, user.id),
+          ne(s.giftCards.purchaserId, user.id),
+          before ? sql`${s.redemptions.createdAt} < ${before}::timestamptz` : undefined,
+        ),
+      )
+      .orderBy(desc(s.redemptions.createdAt))
+      .limit(PAGE_SIZE + 1),
+  ]);
+  const merged = toGiftTransactions(sent, received);
+  const page = merged.slice(0, PAGE_SIZE);
+  return {
+    data: page.map(({ at: _a, ms: _m, ...tx }) => tx),
+    // More than a page across both tables means older rows remain below the last one shown.
+    nextCursor: merged.length > PAGE_SIZE ? page.at(-1)!.at : null,
+  };
+}
+
+const exportBatch = (limit?: number) => Math.min(500, Math.max(1, Math.trunc(Number(limit)) || 500));
+
+/** One keyset batch of the signed-in user's payments for the billing CSV export (same columns as the gateway's /v1/account/payments). */
+export async function getPaymentsExportPageAction(params: { before?: string | null; limit?: number } = {}) {
+  const user = await requireUser();
+  const limit = exportBatch(params.limit);
+  const rows = await db
+    .select({
+      id: s.payments.id,
+      cursorAt: cursorAt(s.payments.createdAt),
+      provider: s.payments.provider,
+      amountCents: s.payments.amountCents,
+      currency: s.payments.currency,
+      credits: s.payments.credits,
+      status: s.payments.status,
+      paidAt: s.payments.paidAt,
+      createdAt: s.payments.createdAt,
+    })
+    .from(s.payments)
+    .where(and(eq(s.payments.userId, user.id), olderThan(s.payments.createdAt, s.payments.id, decodeCursor(params.before))))
+    .orderBy(desc(s.payments.createdAt), desc(s.payments.id))
+    .limit(limit + 1);
+  const { items, nextCursor } = toPage(rows, limit);
+  return {
+    data: items.map((p) => ({
+      id: p.id,
+      provider: p.provider,
+      amount_cents: p.amountCents,
+      currency: p.currency,
+      credits: p.credits,
+      status: p.status,
+      paid_at: p.paidAt?.toISOString() ?? null,
+      created_at: p.createdAt.toISOString(),
+    })),
+    nextCursor,
+  };
+}
+
+/** One keyset batch of the signed-in user's credit ledger for the billing CSV export (same columns as the gateway's /v1/account/transactions). */
+export async function getLedgerExportPageAction(params: { before?: string | null; limit?: number } = {}) {
+  const user = await requireUser();
+  const limit = exportBatch(params.limit);
+  const rows = await db
+    .select({
+      id: s.creditLedger.id,
+      cursorAt: cursorAt(s.creditLedger.createdAt),
+      entryType: s.creditLedger.entryType,
+      amount: s.creditLedger.amount,
+      sourceType: s.creditLedger.sourceType,
+      reference: s.creditLedger.reference,
+      createdAt: s.creditLedger.createdAt,
+    })
+    .from(s.creditLedger)
+    .where(and(eq(s.creditLedger.userId, user.id), olderThan(s.creditLedger.createdAt, s.creditLedger.id, decodeCursor(params.before))))
+    .orderBy(desc(s.creditLedger.createdAt), desc(s.creditLedger.id))
+    .limit(limit + 1);
+  const { items, nextCursor } = toPage(rows, limit);
+  return {
+    data: items.map((t) => ({
+      id: t.id,
+      entry_type: t.entryType,
+      amount: t.amount,
+      source_type: t.sourceType,
+      reference: t.reference,
+      created_at: t.createdAt.toISOString(),
+    })),
+    nextCursor,
+  };
 }
 
 export async function provisionPostPaymentKey(params?: { packageName?: string }) {
@@ -844,39 +1165,33 @@ export async function getNotificationsAction() {
 
 const ADMIN_IP_OTP_TTL_MS = 10 * 60 * 1000;
 const ADMIN_IP_OTP_MAX_ATTEMPTS = 5;
-const DEFAULT_ADMIN_TRUSTED_IP_DAYS = 7;
-
-function getAdminTrustedIpTtlMs(): number {
-  const days = Number(process.env.ADMIN_TRUSTED_IP_DAYS ?? DEFAULT_ADMIN_TRUSTED_IP_DAYS);
-  const safeDays = Number.isFinite(days) && days > 0 ? Math.min(days, 90) : DEFAULT_ADMIN_TRUSTED_IP_DAYS;
-  return safeDays * 24 * 60 * 60 * 1000;
-}
-
-export async function getAdminIpStepUpStatus() {
-  const check = await adminCheck();
-  if (!check) return { isAdmin: false, required: false, clientIp: null };
-  return {
-    isAdmin: true,
-    required: check.ipVerificationRequired,
-    clientIp: check.clientIp,
-  };
-}
 
 /**
- * Sends a 6-digit Step-Up OTP to the signed-in admin's email address to authorize
- * admin access from a new/unrecognized public IP address.
+ * Read-only step-up status for the admin tab watcher. Never extends the marker, so a tab left
+ * open does not keep the session trusted.
  */
-export async function requestAdminIpVerificationCode() {
+export async function getAdminStepUpStatus(): Promise<{ isAdmin: boolean; required: boolean }> {
+  const check = await adminCheck();
+  if (!check) return { isAdmin: false, required: false };
+  if (check.mfaMissing) return { isAdmin: true, required: false };
+  const stepUp = await adminStepUpState(check.sessionId);
+  return { isAdmin: true, required: stepUp.required };
+}
+
+/** Sends a 6-digit code to the signed-in admin's email to open the Admin Panel. */
+export type AdminStepUpCodeResult =
+  | { ok: true; retryAfterS: number }
+  | { ok: false; reason: 'cooldown'; retryAfterS: number }
+  | { ok: false; reason: 'send_failed'; error: string; retryAfterS: number }
+  | { ok: false; reason: 'denied'; error: string };
+
+export async function requestAdminStepUpCode(): Promise<AdminStepUpCodeResult> {
   const check = await adminCheck();
   if (!check) {
-    return { ok: false as const, error: 'Akses ditolak: akun bukan admin aktif.' };
+    return { ok: false, reason: 'denied', error: 'Akses ditolak: akun bukan admin aktif.' };
   }
   if (!check.user.email) {
-    return { ok: false as const, error: 'Akun admin tidak memiliki alamat email terdaftar.' };
-  }
-  const canonicalIp = check.clientIp;
-  if (!canonicalIp) {
-    return { ok: false as const, error: 'Alamat IP tidak terdeteksi.' };
+    return { ok: false, reason: 'denied', error: 'Akun admin tidak memiliki alamat email terdaftar.' };
   }
 
   const otpId = adminIpOtpId(check.user.id);
@@ -885,9 +1200,10 @@ export async function requestAdminIpVerificationCode() {
     .from(s.verifications)
     .where(eq(s.verifications.identifier, otpId))
     .limit(1);
-  if (existing && Date.now() - existing.createdAt.getTime() < 60_000) {
-    return { ok: false as const, error: 'Tunggu 1 menit sebelum meminta kode baru.' };
-  }
+  // The previous code is still in the inbox and still valid: the dialog shows the input and a
+  // countdown instead of a dead end.
+  const waitS = existing ? otpResendWaitSeconds(existing.createdAt.getTime(), Date.now()) : 0;
+  if (waitS > 0) return { ok: false, reason: 'cooldown', retryAfterS: waitS };
 
   const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
   await db.delete(s.verifications).where(eq(s.verifications.identifier, otpId));
@@ -897,28 +1213,40 @@ export async function requestAdminIpVerificationCode() {
     expiresAt: new Date(Date.now() + ADMIN_IP_OTP_TTL_MS),
   });
 
-  await sendEmail({
-    to: check.user.email,
-    subject: `Kode verifikasi IP Admin Morphic: ${code}`,
-    text: `Permintaan akses Panel Admin Morphic terdeteksi dari alamat IP baru (${canonicalIp}).\n\nKode verifikasi Anda: ${code}\n\nKode ini berlaku 10 menit. Jika Anda tidak sedang mengakses Panel Admin, segera cabut sesi aktif Anda dan ganti kata sandi.`,
-    html: `<p>Permintaan akses <strong>Panel Admin Morphic</strong> terdeteksi dari alamat IP baru: <code>${canonicalIp}</code>.</p><p>Kode verifikasi Anda:</p><p style="font-size:24px;font-weight:700;letter-spacing:4px">${code}</p><p>Kode ini berlaku 10 menit. Jika Anda tidak sedang mengakses Panel Admin, segera cabut sesi aktif Anda dan ganti kata sandi.</p>`,
-  });
+  const ip = check.clientIp ?? 'tidak diketahui';
+  const country = parseGeoCountry(await headers()) ?? 'tidak diketahui';
+  try {
+    await sendEmail({
+      to: check.user.email,
+      subject: `Kode verifikasi Panel Admin Morphic: ${code}`,
+      text: `Kode untuk membuka Panel Admin Morphic: ${code}\n\nBerlaku 10 menit. Permintaan dari IP ${ip} (negara: ${country}).\n\nJika Anda tidak sedang membuka Panel Admin, segera cabut sesi aktif Anda dan ganti kata sandi.`,
+      html: `<p>Kode untuk membuka <strong>Panel Admin Morphic</strong>:</p><p style="font-size:24px;font-weight:700;letter-spacing:4px">${code}</p><p>Berlaku 10 menit. Permintaan dari IP <code>${ip}</code> (negara: ${country}).</p><p>Jika Anda tidak sedang membuka Panel Admin, segera cabut sesi aktif Anda dan ganti kata sandi.</p>`,
+    });
+  } catch (err) {
+    // The stored code never reached anyone, but the row stays so the 60-second cooldown also
+    // applies to failed sends: repeated clicks cannot hammer the email provider.
+    console.error('[requestAdminStepUpCode] email send failed:', err);
+    return {
+      ok: false,
+      reason: 'send_failed',
+      error: 'Email kode gagal dikirim. Coba lagi setelah hitungan selesai.',
+      retryAfterS: Math.ceil(ADMIN_OTP_RESEND_COOLDOWN_MS / 1000),
+    };
+  }
 
-  return { ok: true as const, clientIp: canonicalIp };
+  return { ok: true, retryAfterS: Math.ceil(ADMIN_OTP_RESEND_COOLDOWN_MS / 1000) };
 }
 
 /**
- * Verifies the 6-digit Step-Up OTP for a new admin IP, marks the IP as trusted for
- * `ADMIN_TRUSTED_IP_DAYS` (default 7 days), updates the current session's IP, and logs to `admin_audit_log`.
+ * Verifies the 6-digit Admin Panel code. On success the session's step-up marker is written with
+ * the request country and a 24-hour expiry, and the check is logged to `admin_audit_log`.
  */
-export async function verifyAdminIpCode(formData: FormData) {
+export async function verifyAdminStepUpCode(
+  formData: FormData,
+): Promise<{ ok: true } | { ok: false; error: string }> {
   const check = await adminCheck();
   if (!check) {
-    return { ok: false as const, error: 'Akses ditolak: akun bukan admin aktif.' };
-  }
-  const canonicalIp = check.clientIp;
-  if (!canonicalIp) {
-    return { ok: false as const, error: 'Alamat IP tidak terdeteksi.' };
+    return { ok: false, error: 'Akses ditolak: akun bukan admin aktif.' };
   }
 
   const code = String(formData.get('code') || '').trim();
@@ -930,12 +1258,12 @@ export async function verifyAdminIpCode(formData: FormData) {
     .limit(1);
 
   if (!row || row.expiresAt.getTime() < Date.now()) {
-    return { ok: false as const, error: 'Kode sudah kedaluwarsa. Minta kode baru.' };
+    return { ok: false, error: 'Kode sudah kedaluwarsa. Minta kode baru.' };
   }
   const [hash, n] = row.value.split(':');
   const attempts = Number(n) || 0;
   if (attempts >= ADMIN_IP_OTP_MAX_ATTEMPTS) {
-    return { ok: false as const, error: 'Terlalu banyak percobaan salah. Minta kode baru.' };
+    return { ok: false, error: 'Terlalu banyak percobaan salah. Minta kode baru.' };
   }
 
   const ok =
@@ -947,46 +1275,28 @@ export async function verifyAdminIpCode(formData: FormData) {
       .update(s.verifications)
       .set({ value: `${hash}:${attempts + 1}` })
       .where(eq(s.verifications.id, row.id));
-    return { ok: false as const, error: 'Kode OTP salah.' };
+    return { ok: false, error: 'Kode OTP salah.' };
   }
 
-  const trustedId = adminTrustedIpId(check.user.id, canonicalIp);
-  const trustedExpiresAt = new Date(Date.now() + getAdminTrustedIpTtlMs());
-
-  await db.delete(s.verifications).where(eq(s.verifications.id, row.id));
-  await db.delete(s.verifications).where(eq(s.verifications.identifier, trustedId));
-  await db.insert(s.verifications).values({
-    identifier: trustedId,
-    value: 'verified',
-    expiresAt: trustedExpiresAt,
-  });
-
+  const now = Date.now();
+  const country = parseGeoCountry(await headers());
   const verifiedSessionId = adminVerifiedSessionId(check.sessionId);
+  await db.delete(s.verifications).where(eq(s.verifications.id, row.id));
   await db.delete(s.verifications).where(eq(s.verifications.identifier, verifiedSessionId));
   await db.insert(s.verifications).values({
     identifier: verifiedSessionId,
-    value: 'verified',
-    expiresAt: check.sessionExpiresAt,
+    value: formatStepUpValue(now, country),
+    expiresAt: new Date(now + ADMIN_STEP_UP_IDLE_MS),
   });
-
-  // Update the active session IP so subsequent checks on this session are fast-pathed without extra DB queries.
-  await db
-    .update(s.sessions)
-    .set({ ipAddress: canonicalIp, updatedAt: new Date() })
-    .where(eq(s.sessions.id, check.sessionId));
 
   await db.insert(s.adminAuditLog).values({
     adminId: check.user.id,
-    action: 'verify_admin_ip',
+    action: 'verify_admin_step_up',
     entity: 'session',
     entityId: check.sessionId,
-    detail: {
-      ip: canonicalIp,
-      trustedUntil: trustedExpiresAt.toISOString(),
-    },
+    detail: { ip: check.clientIp, country },
   });
 
-  revalidatePath('/admin');
-  revalidatePath('/dashboard/settings');
-  return { ok: true as const };
+  revalidatePath('/admin', 'layout');
+  return { ok: true };
 }

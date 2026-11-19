@@ -7,6 +7,7 @@ import { ArrowUpRight } from 'lucide-react';
 import { useTranslation } from '@/lib/i18n';
 import AnimatedText from '@/components/AnimatedText';
 import HeroContours from '@/components/HeroContours';
+import landing from '@/data/landing.json';
 
 interface HeroOpeningProps {
   isLoggedIn?: boolean;
@@ -68,7 +69,13 @@ export default function HeroOpening({ isLoggedIn = false }: HeroOpeningProps) {
   const headline1 = t?.hero?.headline || (locale === 'id' ? 'Satu Kunci API' : 'One Single API Key');
   const headline2 =
     t?.hero?.headlineSub || (locale === 'id' ? 'untuk Semua Model AI Terbaik.' : 'for the Best AI Models.');
-  const subheadline = t.hero.subheadline;
+  // Landing copy comes from src/data/landing.json, so the page never waits on the database.
+  const subheadline = t.hero.subheadline.replace(
+    '{makers}',
+    landing.heroMakers.length
+      ? new Intl.ListFormat(locale === 'id' ? 'id' : 'en', { type: 'conjunction' }).format(landing.heroMakers)
+      : t.hero.subheadlineFallback,
+  );
 
   return (
     <section ref={sectionRef} className="hero-section relative w-full bg-[#fafafa] p-2 sm:p-3">

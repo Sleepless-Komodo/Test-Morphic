@@ -2,9 +2,10 @@ import Link from 'next/link';
 import { requireAdmin } from '@/lib/actions';
 import { getServerTranslation } from '@/lib/i18n/server';
 import { Download, History } from 'lucide-react';
+import { PAGE_SIZE, readPageRequest, toPageBoth } from '@/lib/pagination';
+import { Pager } from '@/components/Pager';
 import { listAuditActions, queryAuditLog, readAuditFilters } from './query';
 
-const PAGE_LIMIT = 200;
 const fieldClass =
   'min-h-10 w-full rounded-xl border border-neutral-300 bg-white px-3 text-xs text-neutral-900 focus:outline-none focus:ring-2 focus:ring-neutral-950';
 
@@ -14,10 +15,14 @@ export default async function AdminAudit({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   await requireAdmin('security:read');
-  const { t } = await getServerTranslation();
-  const filters = readAuditFilters(await searchParams);
+  const { t, locale } = await getServerTranslation();
+  const params = await searchParams;
+  const filters = readAuditFilters(params);
+  const req = readPageRequest(params);
   const filtered = Boolean(filters.q || filters.action || filters.from || filters.to);
-  const [entries, actions] = await Promise.all([queryAuditLog(filters, PAGE_LIMIT), listAuditActions()]);
+  const [rows, actions] = await Promise.all([queryAuditLog(filters, PAGE_SIZE + 1, req), listAuditActions()]);
+  const page = toPageBoth(rows, req);
+  const entries = page.items;
   const exportQuery = new URLSearchParams(
     Object.entries(filters).filter((kv): kv is [string, string] => Boolean(kv[1])),
   ).toString();
@@ -86,8 +91,6 @@ export default async function AdminAudit({
         </div>
       </form>
 
-      {entries.length === PAGE_LIMIT && <p className="text-[11px] text-neutral-600">{t.admin.audit.showingCap}</p>}
-
       {/* Audit Table Card */}
       <div className="bg-white rounded-2xl border border-neutral-200/90 shadow-xs overflow-hidden">
         {entries.length === 0 ? (
@@ -133,6 +136,13 @@ export default async function AdminAudit({
           </div>
         )}
       </div>
+      <Pager
+        path="/admin/audit"
+        params={{ ...filters }}
+        prevCursor={page.prevCursor}
+        nextCursor={page.nextCursor}
+        en={locale === 'en'}
+      />
     </div>
   );
 }

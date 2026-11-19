@@ -11,6 +11,7 @@ import {
   type MotionValue,
 } from 'framer-motion';
 import { useTranslation } from '@/lib/i18n';
+import landing from '@/data/landing.json';
 
 // One drawing, read top to bottom: every model's line bends into the Morphic gateway,
 // then a single line runs down through what the gateway does and ends at your app.
@@ -24,21 +25,9 @@ const BORDER = '#e5e5e5';
 const LABEL_GAP = 52; // keeps the outgoing line clear of the gateway label
 const TAIL_PX = 42; // comet tail length in drawing units
 
-// Real marks only (vendored LobeHub SVGs, see public/logos/README.md).
-const MODELS = [
-  { label: 'OpenAI', logo: '/logos/openai.svg' },
-  { label: 'Gemini', logo: '/logos/gemini-color.svg' },
-  { label: 'Claude', logo: '/logos/claude-color.svg' },
-  { label: 'Grok', logo: '/logos/grok.svg' },
-  { label: 'Llama', logo: '/logos/meta-color.svg' },
-  { label: 'Mistral', logo: '/logos/mistral-color.svg' },
-  { label: 'DeepSeek', logo: '/logos/deepseek-color.svg' },
-  { label: 'Qwen', logo: '/logos/qwen-color.svg' },
-  { label: 'Kimi', logo: '/logos/kimi-color.svg' },
-  { label: 'GLM', logo: '/logos/zhipu-color.svg' },
-  { label: 'MiniMax', logo: '/logos/minimax-color.svg' },
-  { label: 'Yi', logo: '/logos/yi.svg' },
-];
+// Logos come from src/data/landing.json (vendored LobeHub SVGs, see public/logos/README.md).
+// The phone layout is a 4 by 3 grid, so at most 12 are drawn.
+const MODELS = landing.gatewayLogos.slice(0, 12);
 
 type Seg = { d: string; range: [number, number] };
 type ModelNodeGeo = { x: number; y: number; appear: [number, number] };

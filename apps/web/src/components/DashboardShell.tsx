@@ -16,7 +16,6 @@ import { SUPPORT_EMAIL } from '@/lib/contact';
 import { NotificationsDrawer } from '@/components/NotificationsDrawer';
 import NavMenu, { analyticsItems } from '@/components/NavMenu';
 import { useLocalStorage } from '@/lib/use-local-storage';
-import type { NotificationItem } from '@/lib/notifications';
 import {
   BarChart3,
   BookOpen,
@@ -48,12 +47,10 @@ interface DashboardShellProps {
   /** Resolved on the server from the DB role; only controls whether the link is shown.
    *  /admin itself is guarded by requireAdmin on every request. */
   isAdmin?: boolean;
-  /** null when the read failed; the drawer says so instead of showing an empty list. */
-  notifications: NotificationItem[] | null;
   children: React.ReactNode;
 }
 
-export function DashboardShell({ session, balance, isAdmin = false, notifications, children }: DashboardShellProps) {
+export function DashboardShell({ session, balance, isAdmin = false, children }: DashboardShellProps) {
   const { t, locale } = useTranslation();
   const pathname = usePathname();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -102,6 +99,9 @@ export function DashboardShell({ session, balance, isAdmin = false, notification
   const focusRing = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950';
 
   // Native <details> gives the collapsible groups without extra state.
+  // Links use the default prefetch: on these dynamic pages that fetches only the loading.tsx shell.
+  // prefetch={true} rendered every linked page in full, running all of its queries, whenever the
+  // sidebar was on screen.
   const renderNavLink = (item: typeof overviewItem) => {
     const Icon = item.icon;
     const active = isActive(item.href);
@@ -109,7 +109,6 @@ export function DashboardShell({ session, balance, isAdmin = false, notification
       <Link
         key={item.href}
         href={item.href}
-        prefetch={true}
         onClick={() => {
           setPendingHref(item.href);
           setMobileNavOpen(false);
@@ -168,7 +167,6 @@ export function DashboardShell({ session, balance, isAdmin = false, notification
       <div className="mt-auto mx-3 pt-4 border-t border-neutral-200 flex flex-col gap-1">
         <Link
           href="/dashboard/redeem"
-          prefetch={true}
           onClick={() => {
             setPendingHref('/dashboard/redeem');
             setMobileNavOpen(false);
@@ -243,7 +241,6 @@ export function DashboardShell({ session, balance, isAdmin = false, notification
             {locale === 'en' ? 'Get ' : 'Dapatkan '}
             <Link
               href="/dashboard/billing"
-              prefetch={true}
               onClick={() => setPendingHref('/dashboard/billing')}
               className={`font-semibold text-sky-700 underline underline-offset-2 hover:text-sky-900 rounded ${focusRing}`}
             >
@@ -252,7 +249,6 @@ export function DashboardShell({ session, balance, isAdmin = false, notification
             {locale === 'en' ? ' on top-up, and exclusive gifts for ' : ' untuk top-up, dan hadiah eksklusif untuk '}
             <Link
               href="/dashboard/redeem"
-              prefetch={true}
               onClick={() => setPendingHref('/dashboard/redeem')}
               className={`font-semibold text-sky-700 underline underline-offset-2 hover:text-sky-900 rounded ${focusRing}`}
             >
@@ -322,7 +318,6 @@ export function DashboardShell({ session, balance, isAdmin = false, notification
           </nav>
           <Link
             href="/dashboard/billing"
-            prefetch={true}
             onClick={() => setPendingHref('/dashboard/billing')}
             className={`inline-flex items-center gap-2 h-9 pl-3 pr-1 rounded-full bg-white border border-neutral-200 hover:border-neutral-300 transition-colors ${focusRing}`}
           >
@@ -339,10 +334,9 @@ export function DashboardShell({ session, balance, isAdmin = false, notification
           <div className="hidden md:block">
             <LanguageToggle />
           </div>
-          <NotificationsDrawer items={notifications} en={locale === 'en'} />
+          <NotificationsDrawer en={locale === 'en'} />
           <Link
             href="/dashboard/settings"
-            prefetch={true}
             onClick={() => setPendingHref('/dashboard/settings')}
             title={t.dashboard.navSettings}
             aria-label={t.dashboard.navSettings}

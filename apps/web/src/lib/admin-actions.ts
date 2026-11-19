@@ -8,7 +8,7 @@ import { requireAdmin } from '@/lib/actions';
 import { softDeleteUser } from '@/lib/account-deletion';
 import { randomInt } from 'node:crypto';
 import { normalizeCatalog, type CatalogResult } from '@/lib/provider-catalog';
-import { loadAlerts } from '@/lib/admin-insights';
+import { ALERTS_TTL_MS, loadAlerts } from '@/lib/admin-insights';
 import { invalidate, memo } from '@/lib/memo';
 import { parsePackageForm } from '@/lib/package-form';
 import { isUuid, parseModelForm } from '@/lib/model-form';
@@ -16,6 +16,13 @@ import { getServerTranslation } from '@/lib/i18n/server';
 import { multiplier, UNLIMITED_MAX_OUTPUT_MULTIPLIER } from '@morphic/shared/credits';
 import { isUserRole, type AdminPermission } from '@morphic/shared/admin-rbac';
 import { sendEmail } from '@morphic/shared/email';
+
+/** A model, pool entry or provider changed: drop every cached view of the catalogue so it shows at once. */
+function invalidateCatalog() {
+  invalidate('dashboard:model');
+  invalidate('public:model');
+  invalidate('admin:overview:breakers');
+}
 
 const requireAdminPerm = (permission: AdminPermission) =>
   requireAdmin(permission, { mode: 'throw' });
@@ -153,8 +160,8 @@ async function checkCatalogWriteAdmin(en: boolean) {
       ? 'unauthorized'
       : msg.includes('login OTP') || msg.includes('MFA')
         ? 'mfa_required'
-        : msg.includes('new admin IP')
-          ? 'ip_verification_required'
+        : msg.includes('step-up OTP')
+          ? 'step_up_required'
           : 'forbidden';
     console.warn('[admin-actions] catalog:write denied:', { code, msg });
 
@@ -167,9 +174,9 @@ async function checkCatalogWriteAdmin(en: boolean) {
         en: 'Enable Login OTP (MFA) in dashboard settings before editing models.',
         id: 'Aktifkan Login OTP (MFA) di pengaturan sebelum mengubah model.',
       },
-      ip_verification_required: {
-        en: 'Verify your current admin IP via email OTP in dashboard settings first.',
-        id: 'Verifikasi IP admin Anda lewat OTP email di pengaturan terlebih dahulu.',
+      step_up_required: {
+        en: 'Your admin session needs OTP verification again. Reload the page.',
+        id: 'Sesi admin perlu verifikasi OTP ulang. Muat ulang halaman.',
       },
       forbidden: {
         en: 'Your account does not have permission to edit the model catalog.',
@@ -272,6 +279,7 @@ export async function saveModel(formData: FormData): Promise<ModelActionResult> 
   }
 
   revalidatePath('/admin/models');
+  invalidateCatalog();
   revalidatePath('/dashboard/models');
   return {
     ok: true,
@@ -321,6 +329,7 @@ export async function deleteModel(formData: FormData): Promise<{ deleted: boolea
   });
 
   revalidatePath('/admin/models');
+  invalidateCatalog();
   revalidatePath('/dashboard/models');
   return {
     deleted: true,
@@ -445,6 +454,7 @@ export async function saveModelPoolEntry(formData: FormData): Promise<ModelActio
   }
 
   revalidatePath('/admin/models');
+  invalidateCatalog();
   return {
     ok: true,
     message: en ? 'Pool entry saved.' : 'Pool entry berhasil disimpan.',
@@ -468,6 +478,7 @@ export async function toggleModelPoolEntry(formData: FormData) {
     .where(eq(s.modelProviderPool.id, id));
   await audit(admin.id, nextEnabled ? 'enable_pool_entry' : 'disable_pool_entry', 'model_provider_pool', id);
   revalidatePath('/admin/models');
+  invalidateCatalog();
 }
 
 export async function deleteModelPoolEntry(formData: FormData) {
@@ -488,6 +499,7 @@ export async function deleteModelPoolEntry(formData: FormData) {
   await db.delete(s.modelProviderPool).where(eq(s.modelProviderPool.id, id));
   await audit(admin.id, 'delete', 'model_provider_pool', id, entry);
   revalidatePath('/admin/models');
+  invalidateCatalog();
 }
 
 export async function saveProvider(formData: FormData) {
@@ -544,6 +556,7 @@ export async function saveProvider(formData: FormData) {
     }
   }
   revalidatePath('/admin/providers');
+  invalidateCatalog();
 }
 
 async function loadCatalog(baseUrl: string, credential: string | null): Promise<CatalogResult> {
@@ -689,6 +702,7 @@ export async function deleteProvider(formData: FormData): Promise<{ deleted: boo
   await audit(admin.id, 'delete', 'provider', id, { name: target.name });
   revalidatePath('/admin/providers');
   revalidatePath('/admin/models');
+  invalidateCatalog();
   return { deleted: true, message: `Provider "${target.name}" berhasil dihapus.` };
 }
 
@@ -711,6 +725,7 @@ export async function toggleProviderStatus(formData: FormData) {
 
   revalidatePath('/admin/providers');
   revalidatePath('/admin/models');
+  invalidateCatalog();
 }
 type PackageResult = { ok: boolean; message: string };
 
@@ -997,7 +1012,7 @@ const VALID_ABUSE_STATUSES = new Set(['open', 'investigating', 'resolved', 'dism
  */
 export async function syncAbuseCasesFromSignals() {
   const admin = await requireAdminPerm('security:write');
-  const a = await memo('admin:alerts', 20_000, () => loadAlerts());
+  const a = await memo('admin:alerts', ALERTS_TTL_MS, () => loadAlerts());
 
   type Candidate = {
     userId: string | null;

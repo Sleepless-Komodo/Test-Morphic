@@ -5,6 +5,7 @@
 import { and, desc, eq, gt, isNotNull, lt, lte, ne, sql } from 'drizzle-orm';
 import { db, schema as s } from '@morphic/db';
 import { IDR_PER_USD } from './money.ts';
+import { SLOW_TTL_MS } from './refresh.ts';
 
 const L = s.requestLogs;
 const HOUR = 3_600_000;
@@ -75,6 +76,9 @@ export const ALERTS = {
   sharedIpUsers: 3,
   sharedIpDays: 30,
 } as const;
+
+// loadAlerts scans the ledger and a week of logs; the reconcile and release actions invalidate it.
+export const ALERTS_TTL_MS = SLOW_TTL_MS;
 
 export async function loadAlerts(now = new Date()) {
   const hourAgo = new Date(now.getTime() - HOUR);

@@ -85,3 +85,8 @@ docs/artifact/
 apps/web/next-env.d.ts
 context-duitku-payment.md
 .agent
+
+# Local AI tooling: per-machine settings and generated output
+.claude/settings.local.json
+.claude/worktrees/
+graphify-out/

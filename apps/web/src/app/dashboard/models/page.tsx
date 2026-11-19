@@ -5,10 +5,12 @@ import { db, schema as s } from '@morphic/db';
 import { readyModelIds } from '@morphic/shared/model-readiness';
 import { providerBrand } from '@/lib/gateway-providers';
 import { memo } from '@/lib/memo';
+import { LIVE_TTL_MS } from '@/lib/refresh';
 import { ModelsView } from './models-view';
+import { hasStoredCredentials } from '@/lib/models-data';
 
 async function loadDashboardModels() {
-  return memo('dashboard:models:catalog', 15_000, async () => {
+  return memo('dashboard:models:catalog', LIVE_TTL_MS, async () => {
     const [rows, providers, pool] = await Promise.all([
       db
         .select({
@@ -33,7 +35,7 @@ async function loadDashboardModels() {
         .select({
           id: s.providers.id,
           status: s.providers.status,
-          encryptedCredentials: s.providers.encryptedCredentials,
+          encryptedCredentials: hasStoredCredentials,
           credentialReference: s.providers.credentialReference,
         })
         .from(s.providers),

@@ -20,6 +20,9 @@ export function formatTokenEstimate(n: number): string {
   return Math.round(n).toString();
 }
 
+/** Context window as people write it: 64K, 128K, 1M. */
+export const formatContext = (n: number) => (n >= 1_000_000 ? `${+(n / 1_000_000).toFixed(1)}M` : `${Math.round(n / 1000)}K`);
+
 export function timeAgo(date: Date | string | null, locale: string = 'en'): string {
   const isId = locale === 'id';
   if (!date) return isId ? 'belum pernah' : 'never';

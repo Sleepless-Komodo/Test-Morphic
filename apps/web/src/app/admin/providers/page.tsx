@@ -6,6 +6,7 @@ import { Server } from 'lucide-react';
 import { Suspense } from 'react';
 import { fetchAllProviderCatalogs } from '@/lib/admin-actions';
 import { memo } from '@/lib/memo';
+import { LIVE_TTL_MS } from '@/lib/refresh';
 import { ProvidersClient, type ProviderRow, type ProviderStat } from './providers-client';
 import { ProviderCatalog, ProviderCatalogSkeleton } from './provider-catalog';
 
@@ -36,7 +37,7 @@ export default async function AdminProviders() {
         status: s.providers.status,
       })
       .from(s.providers),
-    memo('admin:overview:alerts', 15_000, () =>
+    memo('admin:overview:alerts', LIVE_TTL_MS, () =>
       db
         .select({
           providerName: s.requestLogs.providerName,

@@ -1,17 +1,25 @@
-import { desc, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { db, schema as s } from '@morphic/db';
 import { requireAdmin } from '@/lib/actions';
 import { getServerTranslation } from '@/lib/i18n/server';
+import { PAGE_SIZE, cursorAt, keyset, readPageRequest, toPageBoth } from '@/lib/pagination';
+import { Pager } from '@/components/Pager';
 import { Users as UsersIcon } from 'lucide-react';
 import { UsersTable, type UserItem } from './users-table';
 
 export const dynamic = 'force-dynamic';
 
-export default async function AdminUsers() {
+export default async function AdminUsers({
+  searchParams,
+}: {
+  searchParams: Promise<{ before?: string; after?: string }>;
+}) {
   const admin = await requireAdmin('users:read');
-  const { t } = await getServerTranslation();
+  const { t, locale } = await getServerTranslation();
+  const req = readPageRequest(await searchParams);
+  const ks = keyset(s.users.createdAt, s.users.id, req);
 
-  const users = await db
+  const page = toPageBoth(await db
     .select({
       id: s.users.id,
       email: s.users.email,
@@ -20,11 +28,14 @@ export default async function AdminUsers() {
       suspended: s.users.suspended,
       createdAt: s.users.createdAt,
       credits: s.balances.credits,
+      cursorAt: cursorAt(s.users.createdAt),
     })
     .from(s.users)
     .leftJoin(s.balances, eq(s.users.id, s.balances.userId))
-    .orderBy(desc(s.users.createdAt))
-    .limit(100);
+    .where(ks.where)
+    .orderBy(...ks.orderBy)
+    .limit(PAGE_SIZE + 1), req);
+  const users = page.items;
 
   const formattedUsers: UserItem[] = users.map((u) => ({
     id: u.id,
@@ -53,6 +64,7 @@ export default async function AdminUsers() {
 
       {/* Interactive Users Table with Delete and Adjust capabilities */}
       <UsersTable users={formattedUsers} currentAdminId={admin.id} currentAdminRole={admin.role} />
+      <Pager path="/admin/users" prevCursor={page.prevCursor} nextCursor={page.nextCursor} en={locale === 'en'} />
     </div>
   );
 }

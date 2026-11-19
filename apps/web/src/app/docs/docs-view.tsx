@@ -24,7 +24,7 @@ import {
   X,
 } from 'lucide-react';
 import { useTranslation } from '@/lib/i18n';
-import { API_BASE_URL, CHAT_COMPLETIONS_URL } from '@/lib/utils';
+import { API_BASE_URL, CHAT_COMPLETIONS_URL, formatContext } from '@/lib/utils';
 
 const BASE_URL = API_BASE_URL;
 // Installer scripts live next to /v1 on the gateway. The commands use this fixed URL rather than
@@ -252,13 +252,27 @@ function CodeBlock({
   );
 }
 
-interface DocsViewProps {
-  session?: any;
+export interface DocsModel {
+  id: string;
+  name: string;
+  maker: string;
+  contextLength: number;
 }
 
-export default function DocsView({ session }: DocsViewProps) {
+interface DocsViewProps {
+  session?: any;
+  /** Active models from the database, by name. Samples use these ids. */
+  models: DocsModel[];
+}
+
+export default function DocsView({ session, models }: DocsViewProps) {
   const { locale } = useTranslation();
   const isId = locale === 'id';
+  // Samples name a real model; MODEL_ID only when the catalogue could not be read.
+  const MODEL = models[0]?.id ?? 'MODEL_ID';
+  const MODEL_2 = models[1]?.id ?? MODEL;
+  const sampleModels = models.length ? models.slice(0, 3) : [{ id: MODEL, name: MODEL, maker: '', contextLength: 0 }];
+  const makerNames = [...new Set(models.map((m) => m.maker))].filter((m) => m !== 'Other');
 
   const [activeIde, setActiveIde] = useState<IdeKey>('opencode');
   const [activeSdk, setActiveSdk] = useState<SdkKey>('ts');
@@ -422,9 +436,7 @@ claude "Analyze this repository architecture"`,
         "apiKey": "{env:MORPHIC_API_KEY}"
       },
       "models": {
-        "MiniMaxAI/MiniMax-M2.7": {
-          "name": "MiniMax M2.7"
-        }
+${sampleModels.map((m) => `        ${JSON.stringify(m.id)}: {\n          "name": ${JSON.stringify(m.name)}\n        }`).join(',\n')}
       }
     }
   },
@@ -479,7 +491,7 @@ curl -fsSL ${QUICKSTART_URL}/opencode.sh | bash`,
   "provider": "openai",
   "base_url": "${BASE_URL}",
   "api_key": "mp-live-xxxxxxxxxxxxxxxxxxxx",
-  "default_model": "deepseek-v4"
+  "default_model": "${MODEL}"
 }`;
 
     if (os === 'macos') {
@@ -490,7 +502,7 @@ curl -fsSL ${QUICKSTART_URL}/opencode.sh | bash`,
         code: `export OPENAI_BASE_URL="${BASE_URL}"
 export OPENAI_API_KEY="mp-live-xxxxxxxxxxxxxxxxxxxx"
 
-hermes --model deepseek-v4`,
+hermes --model ${MODEL}`,
         extraFile: '~/.hermes/config.json (opsional)',
         extraLanguage: 'json',
         extraCode: configJson,
@@ -504,7 +516,7 @@ hermes --model deepseek-v4`,
         code: `export OPENAI_BASE_URL="${BASE_URL}"
 export OPENAI_API_KEY="mp-live-xxxxxxxxxxxxxxxxxxxx"
 
-hermes --model deepseek-v4`,
+hermes --model ${MODEL}`,
         extraFile: '~/.hermes/config.json (opsional)',
         extraLanguage: 'json',
         extraCode: configJson,
@@ -518,7 +530,7 @@ hermes --model deepseek-v4`,
         code: `set OPENAI_BASE_URL=${BASE_URL}
 set OPENAI_API_KEY=mp-live-xxxxxxxxxxxxxxxxxxxx
 
-hermes --model deepseek-v4`,
+hermes --model ${MODEL}`,
         extraFile: '%USERPROFILE%\\.hermes\\config.json (opsional)',
         extraLanguage: 'json',
         extraCode: configJson,
@@ -531,7 +543,7 @@ hermes --model deepseek-v4`,
       code: `$env:OPENAI_BASE_URL = "${BASE_URL}"
 $env:OPENAI_API_KEY  = "mp-live-xxxxxxxxxxxxxxxxxxxx"
 
-hermes --model deepseek-v4`,
+hermes --model ${MODEL}`,
       extraFile: '$HOME\\.hermes\\config.json (opsional)',
       extraLanguage: 'json',
       extraCode: configJson,
@@ -541,25 +553,12 @@ hermes --model deepseek-v4`,
   const getVsCodeSnippet = () => {
     const continueConfig = `{
   "models": [
-    {
-      "title": "Morphic - DeepSeek V4",
-      "provider": "openai",
-      "model": "deepseek-v4",
-      "apiBase": "${BASE_URL}",
-      "apiKey": "mp-live-xxxxxxxxxxxxxxxxxxxx"
-    },
-    {
-      "title": "Morphic - Qwen Max",
-      "provider": "openai",
-      "model": "qwen-max",
-      "apiBase": "${BASE_URL}",
-      "apiKey": "mp-live-xxxxxxxxxxxxxxxxxxxx"
-    }
+${sampleModels.slice(0, 2).map((m) => `    {\n      "title": ${JSON.stringify(`Morphic - ${m.name}`)},\n      "provider": "openai",\n      "model": ${JSON.stringify(m.id)},\n      "apiBase": "${BASE_URL}",\n      "apiKey": "mp-live-xxxxxxxxxxxxxxxxxxxx"\n    }`).join(',\n')}
   ],
   "tabAutocompleteModel": {
     "title": "Morphic Autocomplete",
     "provider": "openai",
-    "model": "deepseek-v4",
+    "model": "${MODEL}",
     "apiBase": "${BASE_URL}",
     "apiKey": "mp-live-xxxxxxxxxxxxxxxxxxxx"
   }
@@ -569,7 +568,7 @@ hermes --model deepseek-v4`,
   "apiProvider": "openai",
   "openAiBaseUrl": "${BASE_URL}",
   "openAiApiKey": "mp-live-xxxxxxxxxxxxxxxxxxxx",
-  "openAiModelId": "deepseek-v4"
+  "openAiModelId": "${MODEL}"
 }`;
 
     return {
@@ -592,7 +591,7 @@ hermes --model deepseek-v4`,
         code: `export OPENAI_API_BASE="${BASE_URL}"
 export OPENAI_API_KEY="mp-live-xxxxxxxxxxxxxxxxxxxx"
 
-aider --model openai/deepseek-v4`,
+aider --model openai/${MODEL}`,
       };
     }
     if (os === 'linux') {
@@ -603,7 +602,7 @@ aider --model openai/deepseek-v4`,
         code: `export OPENAI_API_BASE="${BASE_URL}"
 export OPENAI_API_KEY="mp-live-xxxxxxxxxxxxxxxxxxxx"
 
-aider --model openai/deepseek-v4`,
+aider --model openai/${MODEL}`,
       };
     }
     if (winShell === 'cmd') {
@@ -614,7 +613,7 @@ aider --model openai/deepseek-v4`,
         code: `set OPENAI_API_BASE=${BASE_URL}
 set OPENAI_API_KEY=mp-live-xxxxxxxxxxxxxxxxxxxx
 
-aider --model openai/deepseek-v4`,
+aider --model openai/${MODEL}`,
       };
     }
     return {
@@ -624,7 +623,7 @@ aider --model openai/deepseek-v4`,
       code: `$env:OPENAI_API_BASE = "${BASE_URL}"
 $env:OPENAI_API_KEY  = "mp-live-xxxxxxxxxxxxxxxxxxxx"
 
-aider --model openai/deepseek-v4`,
+aider --model openai/${MODEL}`,
     };
   };
 
@@ -715,10 +714,8 @@ aider --model openai/deepseek-v4`,
 Base URL: ${BASE_URL}
 API Key:  mp-live-xxxxxxxxxxxxxxxxxxxx
 
-// Rekomendasi Model IDs untuk ditambahkan (+ Add Model):
-- deepseek-v4    (Coding & reasoning, konteks 64K)
-- kimi-coding    (Konteks 256K, refactoring multi-file)
-- qwen-max       (General purpose & reasoning, konteks 32K)`,
+// Model IDs untuk ditambahkan (+ Add Model):
+${sampleModels.map((m) => `- ${m.id}${m.contextLength ? `    (konteks ${formatContext(m.contextLength)})` : ''}`).join('\n')}`,
     },
     windsurf: {
       name: 'Windsurf',
@@ -732,7 +729,7 @@ API Key:  mp-live-xxxxxxxxxxxxxxxxxxxx
   "provider": "openai-compatible",
   "endpoint": "${BASE_URL}",
   "apiKey": "mp-live-xxxxxxxxxxxxxxxxxxxx",
-  "defaultModel": "deepseek-v4"
+  "defaultModel": "${MODEL}"
 }`,
     },
     aider: {
@@ -756,7 +753,7 @@ API Key:  mp-live-xxxxxxxxxxxxxxxxxxxx
   -H "Authorization: Bearer mp-live-xxxxxxxxxxxxxxxxxxxx" \\
   -H "Content-Type: application/json" \\
   -d '{
-    "model": "deepseek-v4",
+    "model": "${MODEL}",
     "messages": [
       { "role": "system", "content": "You are an expert developer." },
       { "role": "user", "content": "Hello Morphic Gateway!" }
@@ -773,7 +770,7 @@ API Key:  mp-live-xxxxxxxxxxxxxxxxxxxx
   -H "Authorization: Bearer mp-live-xxxxxxxxxxxxxxxxxxxx" \\
   -H "Content-Type: application/json" \\
   -d '{
-    "model": "deepseek-v4",
+    "model": "${MODEL}",
     "messages": [
       { "role": "system", "content": "You are an expert developer." },
       { "role": "user", "content": "Hello Morphic Gateway!" }
@@ -789,7 +786,7 @@ API Key:  mp-live-xxxxxxxxxxxxxxxxxxxx
         code: `curl.exe ${CHAT_URL} ^
   -H "Authorization: Bearer mp-live-xxxxxxxxxxxxxxxxxxxx" ^
   -H "Content-Type: application/json" ^
-  -d "{\\"model\\":\\"deepseek-v4\\",\\"messages\\":[{\\"role\\":\\"system\\",\\"content\\":\\"You are an expert developer.\\"},{\\"role\\":\\"user\\",\\"content\\":\\"Hello Morphic Gateway!\\"}],\\"temperature\\":0.2}"`,
+  -d "{\\"model\\":\\"${MODEL}\\",\\"messages\\":[{\\"role\\":\\"system\\",\\"content\\":\\"You are an expert developer.\\"},{\\"role\\":\\"user\\",\\"content\\":\\"Hello Morphic Gateway!\\"}],\\"temperature\\":0.2}"`,
       };
     }
     return {
@@ -799,7 +796,7 @@ API Key:  mp-live-xxxxxxxxxxxxxxxxxxxx
 curl.exe ${CHAT_URL} \`
   -H "Authorization: Bearer mp-live-xxxxxxxxxxxxxxxxxxxx" \`
   -H "Content-Type: application/json" \`
-  -d '{"model":"deepseek-v4","messages":[{"role":"system","content":"You are an expert developer."},{"role":"user","content":"Hello Morphic Gateway!"}],"temperature":0.2}'
+  -d '{"model":"${MODEL}","messages":[{"role":"system","content":"You are an expert developer."},{"role":"user","content":"Hello Morphic Gateway!"}],"temperature":0.2}'
 
 # Opsi 2: Menggunakan cmdlet native PowerShell (Invoke-RestMethod)
 $headers = @{
@@ -807,7 +804,7 @@ $headers = @{
   "Content-Type"  = "application/json"
 }
 $body = @{
-  model = "deepseek-v4"
+  model = "${MODEL}"
   messages = @(
     @{ role = "system"; content = "You are an expert developer." }
     @{ role = "user"; content = "Hello Morphic Gateway!" }
@@ -829,7 +826,7 @@ curl ${CHAT_URL} \\
   -H "Authorization: Bearer mp-live-xxxxxxxxxxxxxxxxxxxx" \\
   -H "Content-Type: application/json" \\
   -d '{
-    "model": "deepseek-v4",
+    "model": "${MODEL}",
     "messages": [
       { "role": "user", "content": "Halo Morphic! Buatkan fungsi validasi email." }
     ],
@@ -843,7 +840,7 @@ curl ${CHAT_URL} \\
   -H "Authorization: Bearer mp-live-xxxxxxxxxxxxxxxxxxxx" \\
   -H "Content-Type: application/json" \\
   -d '{
-    "model": "deepseek-v4",
+    "model": "${MODEL}",
     "messages": [{ "role": "user", "content": "Hitung 1 sampai 5 perlahan." }],
     "stream": true
   }'`,
@@ -857,13 +854,13 @@ curl ${CHAT_URL} \\
 curl.exe ${CHAT_URL} ^
   -H "Authorization: Bearer mp-live-xxxxxxxxxxxxxxxxxxxx" ^
   -H "Content-Type: application/json" ^
-  -d "{\\"model\\":\\"deepseek-v4\\",\\"messages\\":[{\\"role\\":\\"user\\",\\"content\\":\\"Halo Morphic! Buatkan fungsi validasi email.\\"}],\\"temperature\\":0.5,\\"max_tokens\\":512}"
+  -d "{\\"model\\":\\"${MODEL}\\",\\"messages\\":[{\\"role\\":\\"user\\",\\"content\\":\\"Halo Morphic! Buatkan fungsi validasi email.\\"}],\\"temperature\\":0.5,\\"max_tokens\\":512}"
 
 REM 2. Server-Sent Events (SSE Streaming via curl.exe):
 curl.exe ${CHAT_URL} -N ^
   -H "Authorization: Bearer mp-live-xxxxxxxxxxxxxxxxxxxx" ^
   -H "Content-Type: application/json" ^
-  -d "{\\"model\\":\\"deepseek-v4\\",\\"messages\\":[{\\"role\\":\\"user\\",\\"content\\":\\"Hitung 1 sampai 5 perlahan.\\"}],\\"stream\\":true}"`,
+  -d "{\\"model\\":\\"${MODEL}\\",\\"messages\\":[{\\"role\\":\\"user\\",\\"content\\":\\"Hitung 1 sampai 5 perlahan.\\"}],\\"stream\\":true}"`,
       };
     }
     return {
@@ -873,13 +870,13 @@ curl.exe ${CHAT_URL} -N ^
 curl.exe ${CHAT_URL} \`
   -H "Authorization: Bearer mp-live-xxxxxxxxxxxxxxxxxxxx" \`
   -H "Content-Type: application/json" \`
-  -d '{"model":"deepseek-v4","messages":[{"role":"user","content":"Halo Morphic! Buatkan fungsi validasi email."}],"temperature":0.5,"max_tokens":512}'
+  -d '{"model":"${MODEL}","messages":[{"role":"user","content":"Halo Morphic! Buatkan fungsi validasi email."}],"temperature":0.5,"max_tokens":512}'
 
 # 2. Server-Sent Events (SSE Streaming via curl.exe):
 curl.exe ${CHAT_URL} -N \`
   -H "Authorization: Bearer mp-live-xxxxxxxxxxxxxxxxxxxx" \`
   -H "Content-Type: application/json" \`
-  -d '{"model":"deepseek-v4","messages":[{"role":"user","content":"Hitung 1 sampai 5 perlahan."}],"stream":true}'`,
+  -d '{"model":"${MODEL}","messages":[{"role":"user","content":"Hitung 1 sampai 5 perlahan."}],"stream":true}'`,
     };
   };
 
@@ -897,7 +894,7 @@ const client = new OpenAI({
 async function main() {
   // 1. Chat Completion Standar
   const completion = await client.chat.completions.create({
-    model: "deepseek-v4",
+    model: "${MODEL}",
     messages: [
       { role: "system", content: "You are an expert TypeScript engineer." },
       { role: "user", content: "Buatkan helper debounce typed di TypeScript." },
@@ -909,7 +906,7 @@ async function main() {
 
   // 2. Real-time Streaming (SSE)
   const stream = await client.chat.completions.create({
-    model: "deepseek-v4",
+    model: "${MODEL}",
     messages: [{ role: "user", content: "Jelaskan arsitektur micro-frontend." }],
     stream: true,
   });
@@ -932,7 +929,7 @@ client = OpenAI(
 
 # 1. Non-streaming completion
 response = client.chat.completions.create(
-    model="deepseek-v4",
+    model="${MODEL}",
     messages=[
         {"role": "system", "content": "You are a backend architect."},
         {"role": "user", "content": "Tuliskan implementasi caching Redis di Python."},
@@ -944,7 +941,7 @@ print(response.choices[0].message.content)
 
 # 2. Real-time Streaming (SSE)
 stream = client.chat.completions.create(
-    model="kimi-coding",
+    model="${MODEL_2}",
     messages=[{"role": "user", "content": "Optimasi query PostgreSQL berikut..."}],
     stream=True,
 )
@@ -959,7 +956,7 @@ curl ${CHAT_URL} \\
   -H "Authorization: Bearer mp-live-xxxxxxxxxxxxxxxxxxxx" \\
   -H "Content-Type: application/json" \\
   -d '{
-    "model": "deepseek-v4",
+    "model": "${MODEL}",
     "messages": [
       { "role": "user", "content": "Halo Morphic! Buatkan fungsi validasi email." }
     ],
@@ -973,7 +970,7 @@ curl ${CHAT_URL} \\
   -H "Authorization: Bearer mp-live-xxxxxxxxxxxxxxxxxxxx" \\
   -H "Content-Type: application/json" \\
   -d '{
-    "model": "deepseek-v4",
+    "model": "${MODEL}",
     "messages": [{ "role": "user", "content": "Hitung 1 sampai 5 perlahan." }],
     "stream": true
   }'`;
@@ -1263,8 +1260,8 @@ curl ${CHAT_URL} \\
               </h1>
               <p className="text-sm sm:text-base text-neutral-600 leading-relaxed max-w-3xl">
                 {isId
-                  ? 'Morphic AI Gateway adalah reverse proxy cerdas berkecepatan tinggi yang kompatibel 100% dengan OpenAI wire protocol. Gunakan satu Base URL dan satu API Key untuk mengakses DeepSeek V4, Claude 3.5 Sonnet, Qwen 2.5, dan model terbaik lainnya tanpa berlangganan kartu kredit internasional terpisah.'
-                  : 'Morphic AI Gateway is a high-speed intelligent reverse-proxy 100% compliant with the OpenAI wire protocol. Use a single Base URL and API Key to access DeepSeek V4, Claude 3.5 Sonnet, Qwen 2.5, and more without separate international subscriptions.'}
+                  ? `Morphic AI Gateway adalah reverse proxy cerdas berkecepatan tinggi yang kompatibel 100% dengan OpenAI wire protocol. Gunakan satu Base URL dan satu API Key untuk mengakses ${makerNames.length ? `model dari ${makerNames.join(', ')}` : 'berbagai model AI'} tanpa berlangganan kartu kredit internasional terpisah.`
+                  : `Morphic AI Gateway is a high-speed intelligent reverse-proxy 100% compliant with the OpenAI wire protocol. Use a single Base URL and API Key to access ${makerNames.length ? `models from ${makerNames.join(', ')}` : 'many AI models'} without separate international subscriptions.`}
               </p>
             </div>
 
@@ -1319,8 +1316,8 @@ curl ${CHAT_URL} \\
 
             <p className="text-sm text-neutral-600 leading-relaxed">
               {isId
-                ? 'Morphic beroperasi sebagai drop-in reverse proxy resmi untuk ekosistem OpenAI. Seluruh request client dialirkan secara transparan ke provider model upstream (DeepSeek, Anthropic, Qwen, Moonshot Kimi) dengan mempertahankan format wire-protocol OpenAI.'
-                : 'Morphic operates as a transparent drop-in reverse proxy for the OpenAI ecosystem. All client requests are streamed directly to upstream providers (DeepSeek, Anthropic, Qwen, Moonshot Kimi) maintaining exact OpenAI wire specifications.'}
+                ? `Morphic beroperasi sebagai drop-in reverse proxy resmi untuk ekosistem OpenAI. Seluruh request client dialirkan secara transparan ke provider model upstream${makerNames.length ? ` (${makerNames.join(', ')})` : ''} dengan mempertahankan format wire-protocol OpenAI.`
+                : `Morphic operates as a transparent drop-in reverse proxy for the OpenAI ecosystem. All client requests are streamed directly to upstream providers${makerNames.length ? ` (${makerNames.join(', ')})` : ''} maintaining exact OpenAI wire specifications.`}
             </p>
 
             <ul className="space-y-2 text-xs sm:text-sm text-neutral-700 pt-1">
@@ -1422,13 +1419,13 @@ curl ${CHAT_URL} \\
   "id": "chatcmpl-morph-98f2b314d",
   "object": "chat.completion",
   "created": 1741628400,
-  "model": "deepseek-v4",
+  "model": "${MODEL}",
   "choices": [
     {
       "index": 0,
       "message": {
         "role": "assistant",
-        "content": "Hello! I am DeepSeek V4 running via Morphic Gateway. How can I help you build today?"
+        "content": "Hello! How can I help you build today?"
       },
       "finish_reason": "stop"
     }
@@ -1747,7 +1744,7 @@ curl ${CHAT_URL} \\
                         <td className="p-3 font-mono font-bold text-neutral-950">model</td>
                         <td className="p-3 font-mono text-neutral-500">string</td>
                         <td className="p-3 text-red-600 font-bold">Required</td>
-                        <td className="p-3">ID Model resmi (misal: <code className="font-mono bg-neutral-100 px-1 rounded">deepseek-v4</code>, <code className="font-mono bg-neutral-100 px-1 rounded">kimi-coding</code>).</td>
+                        <td className="p-3">ID Model resmi (misal: <code className="font-mono bg-neutral-100 px-1 rounded">{MODEL}</code>{MODEL_2 !== MODEL && <>, <code className="font-mono bg-neutral-100 px-1 rounded">{MODEL_2}</code></>}).</td>
                       </tr>
                       <tr>
                         <td className="p-3 font-mono font-bold text-neutral-950">messages</td>
@@ -1806,24 +1803,7 @@ curl ${CHAT_URL} \\
 {
   "object": "list",
   "data": [
-    {
-      "id": "deepseek-v4",
-      "object": "model",
-      "created": 1740000000,
-      "owned_by": "morphic"
-    },
-    {
-      "id": "kimi-coding",
-      "object": "model",
-      "created": 1740000000,
-      "owned_by": "morphic"
-    },
-    {
-      "id": "qwen-max",
-      "object": "model",
-      "created": 1740000000,
-      "owned_by": "morphic"
-    }
+${sampleModels.map((m) => `    {\n      "id": ${JSON.stringify(m.id)},\n      "object": "model",\n      "created": 1740000000,\n      "owned_by": "morphic"\n    }`).join(',\n')}
   ]
 }`}
                 />
@@ -1843,52 +1823,28 @@ curl ${CHAT_URL} \\
                   <thead className="bg-neutral-50 border-b border-neutral-200 text-neutral-500 font-semibold">
                     <tr>
                       <th className="p-3 sm:p-3.5">Model ID</th>
-                      <th className="p-3 sm:p-3.5">Provider</th>
+                      <th className="p-3 sm:p-3.5">{isId ? 'Nama' : 'Name'}</th>
+                      <th className="p-3 sm:p-3.5">{isId ? 'Pembuat' : 'Maker'}</th>
                       <th className="p-3 sm:p-3.5">Context</th>
-                      <th className="p-3 sm:p-3.5">Use Case</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-neutral-100 text-neutral-700">
-                    <tr>
-                      <td className="p-3 sm:p-3.5 font-mono font-bold text-neutral-950">
-                        deepseek-v4
-                      </td>
-                      <td className="p-3 sm:p-3.5">DeepSeek</td>
-                      <td className="p-3 sm:p-3.5 font-mono">64K</td>
-                      <td className="p-3 sm:p-3.5 text-xs text-neutral-600">
-                        Paling hemat & responsif. Ideal untuk auto-complete Cursor dan routine coding.
-                      </td>
-                    </tr>
-                    <tr>
-                      <td className="p-3 sm:p-3.5 font-mono font-bold text-neutral-950">
-                        kimi-coding
-                      </td>
-                      <td className="p-3 sm:p-3.5">Kimi</td>
-                      <td className="p-3 sm:p-3.5 font-mono">256K</td>
-                      <td className="p-3 sm:p-3.5 text-xs text-neutral-600">
-                        Konteks terpanjang di katalog. Untuk refactoring multi-file dan membaca repo besar sekaligus.
-                      </td>
-                    </tr>
-                    <tr>
-                      <td className="p-3 sm:p-3.5 font-mono font-bold text-neutral-950">
-                        qwen-max
-                      </td>
-                      <td className="p-3 sm:p-3.5">Qwen</td>
-                      <td className="p-3 sm:p-3.5 font-mono">32K</td>
-                      <td className="p-3 sm:p-3.5 text-xs text-neutral-600">
-                        Kuat dalam logika matematika, data engineering, dan database schema design.
-                      </td>
-                    </tr>
-                    <tr>
-                      <td className="p-3 sm:p-3.5 font-mono font-bold text-neutral-950">
-                        DeepSeek-V4-Flash-0731
-                      </td>
-                      <td className="p-3 sm:p-3.5">Dahl</td>
-                      <td className="p-3 sm:p-3.5 font-mono">64K</td>
-                      <td className="p-3 sm:p-3.5 text-xs text-neutral-600">
-                        Varian Flash dari DeepSeek V4, tanpa dukungan vision.
-                      </td>
-                    </tr>
+                    {models.length === 0 ? (
+                      <tr>
+                        <td colSpan={4} className="p-3 sm:p-3.5 text-neutral-600">
+                          {isId ? 'Daftar model sedang tidak bisa dimuat. Cek halaman katalog model.' : 'The model list could not be loaded. See the models catalog.'}
+                        </td>
+                      </tr>
+                    ) : (
+                      models.map((m) => (
+                        <tr key={m.id}>
+                          <td className="p-3 sm:p-3.5 font-mono font-bold text-neutral-950">{m.id}</td>
+                          <td className="p-3 sm:p-3.5">{m.name}</td>
+                          <td className="p-3 sm:p-3.5">{m.maker === 'Other' ? '—' : m.maker}</td>
+                          <td className="p-3 sm:p-3.5 font-mono">{m.contextLength ? formatContext(m.contextLength) : '—'}</td>
+                        </tr>
+                      ))
+                    )}
                   </tbody>
                 </table>
               </div>

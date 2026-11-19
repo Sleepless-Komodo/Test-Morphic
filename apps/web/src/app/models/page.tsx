@@ -12,17 +12,27 @@ import { AutoRefresh } from '@/components/AutoRefresh';
 import { memo } from '@/lib/memo';
 import { providerBrand } from '@/lib/gateway-providers';
 import { makerFromId } from '@/lib/model-maker';
-import { mergeCatalog, type CatalogModel, type SnapshotModel } from '@/lib/model-catalog';
+import { joinNames, loadPublicModels, makersOf } from '@/lib/models-data';
+import { buildCatalog, type CatalogModel, type SnapshotModel } from '@/lib/model-catalog';
 import snapshot from '@/data/model-catalog.json';
+import { LIVE_TTL_MS } from '@/lib/refresh';
 
-export const metadata = {
-  title: 'Models Catalog | Morphic AI Gateway',
-  description: 'Jelajahi model AI dari OpenAI, Anthropic, Google, DeepSeek, Qwen, Kimi, MiniMax, dan lainnya lewat satu endpoint OpenAI-compatible.',
-};
+export async function generateMetadata() {
+  const models = await loadPublicModels()
+    .then((l) => l.models)
+    .catch(() => null);
+  const makers = makersOf(models ?? []);
+  return {
+    title: 'Models Catalog | Morphic AI Gateway',
+    description: makers.length
+      ? `Jelajahi ${models!.length} model AI dari ${joinNames(makers, false)} lewat satu endpoint OpenAI-compatible.`
+      : 'Jelajahi model AI yang aktif di Morphic lewat satu endpoint OpenAI-compatible.',
+  };
+}
 
 const HOURS = 24;
 
-/** Snapshot catalog overlaid with our active models and their real traffic: 7-day tokens and 24 hourly success buckets. */
+/** Our active models with their real traffic: 7-day tokens and 24 hourly success buckets. */
 async function loadCatalog(): Promise<CatalogModel[]> {
   const fallback = alias(s.providers, 'fallback_provider');
   const [models, volume, hourly, pool] = await Promise.all([
@@ -101,13 +111,13 @@ async function loadCatalog(): Promise<CatalogModel[]> {
     tokens7d: tokensBy.get(id) ?? 0,
     hourly: bucketsBy.get(id) ?? Array.from({ length: HOURS }, () => ({ total: 0, errors: 0 })),
   }));
-  return mergeCatalog(snapshot.models as SnapshotModel[], live, HOURS);
+  return buildCatalog(snapshot.models as SnapshotModel[], live);
 }
 
 export default async function ModelsPage() {
   // Session and catalog in parallel. The catalog is the same for every visitor, so concurrent
-  // renders share one query for 20s; AutoRefresh keeps an open tab current.
-  // An unreachable DB still shows the snapshot, just with no model marked live.
+  // renders share one query for 90s; AutoRefresh keeps an open tab current.
+  // An unreachable DB shows an empty catalog rather than models we cannot serve.
   const [session, models] = await Promise.all([
     headers()
       .then((h) => getSessionSafe(h))
@@ -115,9 +125,9 @@ export default async function ModelsPage() {
         console.warn('[ModelsPage] Session check failed, rendering as guest:', err);
         return null;
       }),
-    memo('public:models', 20_000, loadCatalog).catch((err) => {
+    memo('public:models', LIVE_TTL_MS, loadCatalog).catch((err) => {
       console.warn('[ModelsPage] Catalog read failed:', err);
-      return mergeCatalog(snapshot.models as SnapshotModel[], [], HOURS);
+      return [] as CatalogModel[];
     }),
   ]);
 
@@ -125,7 +135,7 @@ export default async function ModelsPage() {
     <main className="min-h-screen bg-[#fafafa] text-neutral-900 selection:bg-neutral-900 selection:text-white flex flex-col justify-between overflow-x-clip">
       <Navbar session={session} />
       <ModelsExplorer models={models} />
-      <AutoRefresh intervalMs={60_000} />
+      <AutoRefresh />
       <Footer />
     </main>
   );

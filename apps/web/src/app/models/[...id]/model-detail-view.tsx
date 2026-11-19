@@ -608,13 +608,11 @@ export function ModelDetailView({ detail, isLoggedIn }: { detail: ModelDetail; i
   const { locale } = useTranslation();
   const en = locale === 'en';
   const { model, meta } = detail;
-  const soon = model.status === 'soon';
   // Live model with no provider holding a key: listed, but nothing can serve it right now.
   const offline = model.status === 'active' && detail.providers.every((p) => p.ready === false);
   const maker = meta?.maker ?? makerFromId(model.publicModelId);
   const makerLogo = (cls: string) =>
     meta?.makerLogo ? <GatewayProviderLogo brand={{ label: maker, logo: meta.makerLogo }} className={cls} /> : <ModelProviderLogo provider={model.publicModelId} className={cls} />;
-  const usdRange = (r: [number, number] | null | undefined) => (!r ? '—' : r[0] === r[1] ? `$${r[0]}` : `$${r[0]}-${r[1]}`);
   const modalities = (list: string[] | undefined) => (list?.length ? list.map((m) => m.charAt(0).toUpperCase() + m.slice(1)).join(', ') : 'Text');
   const [copied, setCopied] = useState<string | null>(null);
   const [selectedProviderName, setSelectedProviderName] = useState<string | null>(null);
@@ -714,12 +712,12 @@ export function ModelDetailView({ detail, isLoggedIn }: { detail: ModelDetail; i
                     className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${
                       model.status === 'active' && !offline
                         ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
-                        : soon || offline
+                        : offline
                           ? 'border-neutral-300 bg-neutral-100 text-neutral-800'
                           : 'border-amber-300 bg-amber-50 text-amber-900'
                     }`}
                   >
-                    {offline ? (en ? 'Unavailable' : 'Belum tersedia') : model.status === 'active' ? (en ? 'Active' : 'Aktif') : soon ? 'Soon' : 'Deprecated'}
+                    {offline ? (en ? 'Unavailable' : 'Belum tersedia') : model.status === 'active' ? (en ? 'Active' : 'Aktif') : 'Deprecated'}
                   </span>
                 </div>
                 <button
@@ -804,11 +802,7 @@ export function ModelDetailView({ detail, isLoggedIn }: { detail: ModelDetail; i
         <Section
           title="Providers"
           subtitle={
-            soon
-              ? en
-                ? 'Providers that serve this model upstream. Click a provider to inspect specifications and live telemetry.'
-                : 'Provider yang melayani model ini di upstream. Klik provider untuk melihat detail metrik dan spesifikasi.'
-              : detail.providers.length > 1
+            detail.providers.length > 1
                 ? en
                   ? 'Requests go to the primary provider; the fallback takes over when it fails. Click any provider to open the telemetry drawer.'
                   : 'Request dikirim ke provider utama; cadangan mengambil alih saat utama gagal. Klik provider untuk membuka panel detail di kanan.'
@@ -859,22 +853,13 @@ export function ModelDetailView({ detail, isLoggedIn }: { detail: ModelDetail; i
                               <ChevronRight className="h-3.5 w-3.5 text-neutral-400 transition-transform group-hover:translate-x-0.5 group-hover:text-neutral-950" />
                             </div>
                             <div className="text-xs text-neutral-600">
-                              {soon ? 'upstream' : <><span className="font-mono">{p.name}</span> · {p.ready === false ? (en ? 'offline' : 'offline') : p.role === 'primary' ? (en ? 'primary' : 'utama') : en ? 'fallback' : 'cadangan'}</>}
+                              <span className="font-mono">{p.name}</span> · {p.ready === false ? 'offline' : p.role === 'primary' ? (en ? 'primary' : 'utama') : en ? 'fallback' : 'cadangan'}
                             </div>
                           </div>
                         </div>
                       </td>
-                      {soon ? (
-                        <>
-                          <td className={`${td} text-right`}>{usdRange(meta?.inputUsd)}</td>
-                          <td className={`${td} text-right`}>{usdRange(meta?.outputUsd)}</td>
-                        </>
-                      ) : (
-                        <>
-                          <td className={`${td} text-right`}>{fmtMultiplier(model.inputCreditsPer1m, en)} <span className="text-neutral-600">{fmtIdrPer1m(model.inputCreditsPer1m)}</span></td>
-                          <td className={`${td} text-right`}>{fmtMultiplier(model.outputCreditsPer1m, en)} <span className="text-neutral-600">{fmtIdrPer1m(model.outputCreditsPer1m)}</span></td>
-                        </>
-                      )}
+                      <td className={`${td} text-right`}>{fmtMultiplier(model.inputCreditsPer1m, en)} <span className="text-neutral-600">{fmtIdrPer1m(model.inputCreditsPer1m)}</span></td>
+                      <td className={`${td} text-right`}>{fmtMultiplier(model.outputCreditsPer1m, en)} <span className="text-neutral-600">{fmtIdrPer1m(model.outputCreditsPer1m)}</span></td>
                       <td className={`${td} text-right`}>{model.contextLength ? compact.format(model.contextLength) : '—'}</td>
                       <td className={`${td} text-right`}>{fmtLatencyCompact(st.latency)}</td>
                       <td className={`${td} text-right`}>{fmtTps(st.tps)}</td>
@@ -960,9 +945,7 @@ export function ModelDetailView({ detail, isLoggedIn }: { detail: ModelDetail; i
               <div className="mt-1 text-3xl font-heading font-bold text-neutral-950 tabular-nums">{compact.format(totalTokens)}</div>
               {perProvider.size === 0 && (
                 <p className="mt-3 text-sm text-neutral-700">
-                  {soon
-                    ? en ? 'Counts start once this model is live on Morphic.' : 'Mulai dihitung setelah model ini aktif di Morphic.'
-                    : en ? 'Counts every request routed through Morphic.' : 'Menghitung tiap request yang lewat Morphic.'}
+                  {en ? 'Counts every request routed through Morphic.' : 'Menghitung tiap request yang lewat Morphic.'}
                 </p>
               )}
               <ul className="mt-4 space-y-3">
@@ -1033,8 +1016,8 @@ export function ModelDetailView({ detail, isLoggedIn }: { detail: ModelDetail; i
                     <h2 id="provider-drawer-title" className="font-heading text-lg sm:text-xl font-extrabold text-neutral-950 truncate">
                       {activeProvider.label}
                     </h2>
-                    <span className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${soon || activeProvider.ready === false ? 'border-neutral-300 bg-neutral-100 text-neutral-700' : 'border-emerald-300 bg-emerald-50 text-emerald-800'}`}>
-                      {soon ? 'Soon' : activeProvider.ready === false ? 'Offline' : activeProvider.role === 'primary' ? (en ? 'Primary' : 'Utama') : en ? 'Fallback' : 'Cadangan'}
+                    <span className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${activeProvider.ready === false ? 'border-neutral-300 bg-neutral-100 text-neutral-700' : 'border-emerald-300 bg-emerald-50 text-emerald-800'}`}>
+                      {activeProvider.ready === false ? 'Offline' : activeProvider.role === 'primary' ? (en ? 'Primary' : 'Utama') : en ? 'Fallback' : 'Cadangan'}
                     </span>
                   </div>
                   <div className="mt-0.5 font-mono text-xs text-neutral-500 truncate">{activeProvider.name.toLowerCase()}</div>
@@ -1075,9 +1058,9 @@ export function ModelDetailView({ detail, isLoggedIn }: { detail: ModelDetail; i
                       <div key={k} className="rounded-xl border border-neutral-200/80 bg-neutral-50/70 p-3.5">
                         <div className="text-xs text-neutral-500">{k === 'input' ? 'Input' : 'Output'}</div>
                         <div className="mt-1 font-heading text-lg font-extrabold text-neutral-950 tabular-nums">
-                          {soon ? usdRange(k === 'input' ? meta?.inputUsd : meta?.outputUsd) : fmtMultiplier(per1m, en)}
+                          {fmtMultiplier(per1m, en)}
                         </div>
-                        <div className="text-[11px] font-mono text-neutral-500">/ M tokens{!soon && per1m > 0 ? ` · ${fmtIdrPer1m(per1m)}` : ''}</div>
+                        <div className="text-[11px] font-mono text-neutral-500">/ M tokens{per1m > 0 ? ` · ${fmtIdrPer1m(per1m)}` : ''}</div>
                       </div>
                     );
                   })}

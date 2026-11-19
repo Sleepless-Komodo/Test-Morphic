@@ -2,7 +2,7 @@ import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { requireAdmin } from '@/lib/actions';
 import { getServerTranslation } from '@/lib/i18n/server';
-import { ALERTS, loadAlerts } from '@/lib/admin-insights';
+import { ALERTS, ALERTS_TTL_MS, loadAlerts } from '@/lib/admin-insights';
 import { memo } from '@/lib/memo';
 import { reconcileUserBalance, releaseStuckReservations } from '@/lib/admin-actions';
 import { formatCredits, formatTokenEstimate, timeAgo } from '@/lib/utils';
@@ -47,7 +47,7 @@ export default async function AdminAlerts() {
   await requireAdmin('security:read');
   const { locale } = await getServerTranslation();
   const en = locale === 'en';
-  const a = await memo('admin:alerts', 20_000, () => loadAlerts());
+  const a = await memo('admin:alerts', ALERTS_TTL_MS, () => loadAlerts());
 
   const th = 'py-2.5 px-3 font-mono font-semibold uppercase tracking-wider text-[10px] text-neutral-500';
   const num = 'py-2.5 px-3 text-right font-mono tabular-nums';

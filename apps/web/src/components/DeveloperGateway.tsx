@@ -16,9 +16,7 @@ import { formatCredits, formatTokenEstimate, timeAgo, API_BASE_URL } from '@/lib
 import { fmtBalance, fmtMultiplier, fmtTokens } from '@/lib/billing-format';
 import GatewayStatusPopover from '@/components/GatewayStatusPopover';
 import QuickstartHub from '@/components/QuickstartHub';
-import { ModelItem } from '@/lib/models-data';
 import { SpendTrend } from '@/components/SpendTrend';
-export type { ModelItem } from '@/lib/models-data';
 
 const BASE_URL = API_BASE_URL || 'https://morphic-api.web.id/v1';
 
@@ -49,13 +47,13 @@ export interface RecentRequestItem {
 interface DeveloperGatewayProps {
   userBalance?: number;
   balanceUpdatedAt?: string | null;
-  /** Active models from the database, passed in by the Server Component. */
-  initialModels?: ModelItem[];
   recentRequests?: RecentRequestItem[];
   /** Pre-computed server-side model stats to avoid client-side string parsing */
   serverModelCount?: number;
   serverAvgCreditsPer1m?: number;
   serverMinInputRate?: number;
+  /** A routable model from the database, for the quickstart snippets. */
+  sampleModelId?: string | null;
   activeKeys?: number;
   serverUsage?: { totalTokens: number; promptTokens: number; completionTokens: number };
   dailySpend?: Array<{ day: string; credits: number }>;
@@ -64,11 +62,11 @@ interface DeveloperGatewayProps {
 export default function DeveloperGateway({
   userBalance = 0,
   balanceUpdatedAt,
-  initialModels,
   recentRequests: initialRecentRequests = [],
   serverModelCount,
   serverAvgCreditsPer1m,
   serverMinInputRate,
+  sampleModelId,
   activeKeys: serverActiveKeys,
   serverUsage,
   dailySpend = [],
@@ -83,16 +81,12 @@ export default function DeveloperGateway({
   // Read straight from props so each AutoRefresh render shows the latest requests.
   const recentRequests: RecentRequestItem[] = initialRecentRequests;
 
-  // Derived metrics from active model list / server data
+  // Derived metrics from server data
   const activeKeys = serverActiveKeys ?? 0;
-
-  // The catalogue shown here is whatever the database returned. It used to fall back to a
-  // static list of six models, so an empty or unreachable catalogue looked fully stocked.
-  const activeModelList = useMemo(() => initialModels ?? [], [initialModels]);
 
   // Every figure below is computed server-side from the catalogue; the client-side estimates
   // that replaced them parsed a price string that no longer exists.
-  const modelCount = serverModelCount ?? activeModelList.length;
+  const modelCount = serverModelCount ?? 0;
   const minInputRate = serverMinInputRate ?? 0;
   const avgCreditsPer1m = serverAvgCreditsPer1m ?? 0;
 
@@ -416,7 +410,7 @@ export default function DeveloperGateway({
 
         {/* Right Column: Quickstart Hub */}
         <div className="h-full">
-          <QuickstartHub />
+          <QuickstartHub modelId={sampleModelId ?? 'MODEL_ID'} />
         </div>
       </div>
     </div>

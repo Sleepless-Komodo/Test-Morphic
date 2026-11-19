@@ -172,6 +172,8 @@ export function middleware(req: NextRequest) {
   const requestHeaders = new Headers(req.headers);
   requestHeaders.set('x-morphic-country', detectedCountry);
   requestHeaders.set('x-morphic-currency', currency);
+  // Always overwritten here, so admin pages can trust it when building the post-OTP return path.
+  requestHeaders.set('x-morphic-path', req.nextUrl.pathname + req.nextUrl.search);
 
   // 7. Security Headers & Response setup
   const response = NextResponse.next({

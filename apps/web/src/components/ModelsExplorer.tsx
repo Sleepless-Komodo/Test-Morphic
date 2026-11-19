@@ -9,7 +9,6 @@ import { fmtIdrPer1m, fmtMultiplier } from '@/lib/billing-format';
 import type { CatalogModel } from '@/lib/model-catalog';
 
 const compact = new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 2 });
-const usd = new Intl.NumberFormat('en', { maximumFractionDigits: 4 });
 
 // Minimum-context steps for the slider; index 0 means "any".
 const CONTEXT_STEPS = [0, 8_000, 32_000, 128_000, 256_000, 1_000_000];
@@ -107,7 +106,6 @@ function Modalities({ list, en }: { list: string[]; en: boolean }) {
   );
 }
 
-const range = (r: [number, number] | null) => (!r ? '—' : r[0] === r[1] ? `$${usd.format(r[0])}/M` : `$${usd.format(r[0])}-${usd.format(r[1])}/M`);
 const HOURS_AGO = (n: number, en: boolean) => (n === 0 ? (en ? 'This hour' : 'Jam ini') : en ? `${n}h ago` : `${n} jam lalu`);
 
 function UptimeBars({ hourly, en }: { hourly: CatalogModel['hourly']; en: boolean }) {
@@ -157,10 +155,7 @@ function ModelCell({ m, en }: { m: CatalogModel; en: boolean }) {
     }
   };
   const title = `${m.maker}: ${m.name}`;
-  const price =
-    m.price.unit === 'credits'
-      ? [`${fmtMultiplier(m.price.input, en)} · ${fmtIdrPer1m(m.price.input)}`, `${fmtMultiplier(m.price.output, en)} · ${fmtIdrPer1m(m.price.output)}`]
-      : [range(m.price.input), range(m.price.output)];
+  const price = [`${fmtMultiplier(m.price.input, en)} · ${fmtIdrPer1m(m.price.input)}`, `${fmtMultiplier(m.price.output, en)} · ${fmtIdrPer1m(m.price.output)}`];
 
   return (
     <li className="relative flex flex-col border-b border-r border-neutral-200 p-5 sm:p-6 transition-colors hover:bg-neutral-50 has-[a:focus-visible]:bg-neutral-50 has-[a:focus-visible]:ring-2 has-[a:focus-visible]:ring-inset has-[a:focus-visible]:ring-neutral-950">
@@ -176,9 +171,6 @@ function ModelCell({ m, en }: { m: CatalogModel; en: boolean }) {
                 {title}
               </Link>
             </h3>
-            {!m.live && (
-              <span className="shrink-0 rounded-full bg-neutral-950 px-2 py-0.5 text-[11px] font-semibold text-white">Soon</span>
-            )}
           </div>
           <div className="relative z-10 flex w-fit max-w-full items-center gap-1 text-xs text-neutral-700">
             <span className="truncate font-mono">{m.id}</span>
@@ -244,7 +236,6 @@ export default function ModelsExplorer({ models }: { models: CatalogModel[] }) {
   const [inputs, setInputs] = useState<Set<string>>(new Set());
   const [makers, setMakers] = useState<Set<string>>(new Set());
   const [providers, setProviders] = useState<Set<string>>(new Set());
-  const [liveOnly, setLiveOnly] = useState(false);
   const [shown, setShown] = useState(PAGE);
 
   const toggle = (set: Set<string>, setter: (s: Set<string>) => void) => (v: string) => {
@@ -260,18 +251,16 @@ export default function ModelsExplorer({ models }: { models: CatalogModel[] }) {
   const providerList = useMemo(() => byFrequency(models, (m) => m.providers.map((p) => p.label)), [models]);
   const makerLogo = useMemo(() => new Map(models.map((m) => [m.maker, m.makerLogo])), [models]);
   const providerLogo = useMemo(() => new Map(models.flatMap((m) => m.providers.map((p) => [p.label, p.logo] as const))), [models]);
-  const liveCount = models.filter((m) => m.live).length;
 
   const matches = (m: CatalogModel, skipTab = false) =>
     (skipTab || tab === 'all' || m.output.includes(tab)) &&
     (m.contextLength ?? 0) >= CONTEXT_STEPS[ctxStep]! &&
     (!inputs.size || [...inputs].every((i) => m.input.includes(i))) &&
     (!makers.size || makers.has(m.maker)) &&
-    (!providers.size || m.providers.some((p) => providers.has(p.label))) &&
-    (!liveOnly || m.live);
+    (!providers.size || m.providers.some((p) => providers.has(p.label)));
 
-  // Live first, busiest first; the rest keep the snapshot's newest-first order (sort is stable).
-  const filtered = models.filter((m) => matches(m)).sort((a, b) => Number(b.live) - Number(a.live) || b.tokens7d - a.tokens7d);
+  // Busiest first.
+  const filtered = models.filter((m) => matches(m)).sort((a, b) => b.tokens7d - a.tokens7d);
   const tabCount = (id: string) => models.filter((m) => matches(m, true) && (id === 'all' || m.output.includes(id))).length;
 
   const reset = () => {
@@ -280,27 +269,12 @@ export default function ModelsExplorer({ models }: { models: CatalogModel[] }) {
     setInputs(new Set());
     setMakers(new Set());
     setProviders(new Set());
-    setLiveOnly(false);
     setShown(PAGE);
   };
 
   const more: [string, string] = en ? ['Show more', 'Show less'] : ['Lihat semua', 'Sembunyikan'];
   const filters = (
     <>
-      <FilterGroup title={en ? 'Availability' : 'Ketersediaan'}>
-        <label className="flex items-center gap-2.5 py-1 text-sm text-neutral-800 hover:text-neutral-950 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={liveOnly}
-            onChange={(e) => {
-              setLiveOnly(e.target.checked);
-              setShown(PAGE);
-            }}
-            className="h-4 w-4 rounded border-neutral-300 accent-neutral-950"
-          />
-          {en ? `Live on Morphic (${liveCount})` : `Aktif di Morphic (${liveCount})`}
-        </label>
-      </FilterGroup>
       <FilterGroup title={en ? 'Input Modalities' : 'Modalitas Input'}>
         <CheckList items={inputList} selected={inputs} onToggle={toggle(inputs, setInputs)} labelOf={(v) => modalityLabel(v, en)} moreLabel={more} />
       </FilterGroup>
@@ -380,10 +354,14 @@ export default function ModelsExplorer({ models }: { models: CatalogModel[] }) {
             </div>
 
             <p className="border-b border-neutral-200 px-5 py-3 text-sm text-neutral-700 sm:px-6" aria-live="polite">
-              {en ? `${filtered.length} models, ${liveCount} live on Morphic` : `${filtered.length} model, ${liveCount} aktif di Morphic`}
+              {en ? `${filtered.length} of ${models.length} models` : `${filtered.length} dari ${models.length} model`}
             </p>
 
-            {filtered.length === 0 ? (
+            {models.length === 0 ? (
+              <div className="px-6 py-16 text-center text-sm text-neutral-700">
+                {en ? 'No models are available right now. Check back shortly.' : 'Belum ada model yang tersedia saat ini. Coba lagi sebentar lagi.'}
+              </div>
+            ) : filtered.length === 0 ? (
               <div className="px-6 py-16 text-center text-sm text-neutral-700">
                 {en ? 'No models match these filters.' : 'Tidak ada model yang cocok dengan filter ini.'}
                 <div className="mt-4">
