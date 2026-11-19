@@ -50,8 +50,8 @@ Selain itu, OTP-nya lewat redirect ke `/dashboard/settings?admin_ip=verify`, yan
   (SG ke ID minta OTP), supaya cookie yang dicuri di luar negeri tidak bisa dipakai dari
   Indonesia tanpa OTP. Setelah verifikasi di negara baru, aturan idle 24 jam berlaku seperti
   biasa. Aturan idle 24 jam selalu berlaku di negara mana pun.
-- Sumber negara: header geo dari Netlify (`x-nf-geo`, base64 JSON berisi `country.code`, dengan
-  `x-country` sebagai cadangan). Header ini harus dibaca dari request asli. Header yang di-set
+- Sumber negara: header geo dari edge hosting. Netlify: `x-nf-geo` (base64 JSON berisi
+  `country.code`) atau `x-country`. Vercel: `x-vercel-ip-country` (deploy test sekarang di Vercel). Header ini harus dibaca dari request asli. Header yang di-set
   middleware (`x-morphic-country`) tidak boleh dipakai karena jatuh ke `US` kalau header geo tidak
   ada.
 - Negara tidak terdeteksi berarti cek negara dilewati (fail open) dan `console.warn` dicatat,

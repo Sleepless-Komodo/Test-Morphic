@@ -5,8 +5,6 @@ import { useRouter } from 'next/navigation';
 import { requestAdminStepUpCode, verifyAdminStepUpCode } from '@/lib/actions';
 import { useTranslation } from '@/lib/i18n';
 
-const RESEND_COOLDOWN_S = 60;
-
 /**
  * Email OTP gate shown over the admin shell when the session has been away from the panel for
  * 24 hours or arrives from another country. The panel stays locked until the code is accepted;
@@ -69,13 +67,14 @@ export function StepUpDialog({ email, next }: { email: string | null; next: stri
     startTransition(async () => {
       try {
         const res = await requestAdminStepUpCode();
-        if (!res.ok) {
+        if (!res.ok && res.reason !== 'cooldown') {
           setError(res.error);
           return;
         }
+        // A cooldown means the last code is still in the inbox: show the input and count down.
         setCodeSent(true);
-        setCooldown(RESEND_COOLDOWN_S);
-        setInfo(copy.sent);
+        setCooldown(res.retryAfterS);
+        setInfo(res.ok ? copy.sent : copy.stillValid);
         requestAnimationFrame(() => codeRef.current?.focus());
       } catch {
         setError(copy.failed);

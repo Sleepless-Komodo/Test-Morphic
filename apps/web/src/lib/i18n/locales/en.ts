@@ -523,6 +523,7 @@ export const en = {
         sendCode: 'Send code to email',
         sending: 'Sending code...',
         sent: 'Code sent. Check your inbox, it is valid for 10 minutes.',
+        stillValid: 'A code was sent less than a minute ago and is still valid. Check your inbox, or wait for the countdown to request a new one.',
         codeLabel: '6-digit code',
         verify: 'Open Admin Panel',
         verifying: 'Checking code...',

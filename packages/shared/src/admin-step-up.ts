@@ -81,13 +81,18 @@ function geoJsonCountry(raw: string): string | null {
 }
 
 /**
- * Country of the request as Netlify's edge resolved it from the client IP: `x-nf-geo` (JSON,
- * normally base64) first, then `x-country`. Returns null when neither yields a valid ISO code.
+ * Country of the request as the hosting edge resolved it from the client IP: Netlify's `x-nf-geo`
+ * (JSON, normally base64) or `x-country`, then Vercel's `x-vercel-ip-country`. Returns null when
+ * none yields a valid ISO code.
  */
 export function parseGeoCountry(headers: Pick<Headers, 'get'>): string | null {
   const geo = headers.get('x-nf-geo');
   const fromGeo = geo ? geoJsonCountry(geo) : null;
-  return fromGeo ?? normalizeCountry(headers.get('x-country'));
+  return (
+    fromGeo ??
+    normalizeCountry(headers.get('x-country')) ??
+    normalizeCountry(headers.get('x-vercel-ip-country'))
+  );
 }
 
 /**
@@ -102,4 +107,17 @@ export function safeAdminNextPath(raw: string | null | undefined): string {
   if (pathOnly.split('/').some((segment) => segment === '..' || segment === '.')) return fallback;
   if (pathOnly === '/admin/verify' || pathOnly.startsWith('/admin/verify/')) return fallback;
   return raw;
+}
+
+/** Minimum gap between two admin-panel code emails for one admin. */
+export const ADMIN_OTP_RESEND_COOLDOWN_MS = 60_000;
+
+/**
+ * Whole seconds left before a new code may be sent, given when the current one was created:
+ * 60 right after sending, 0 once the cooldown is over. A clock skew into the future counts as
+ * "just sent" rather than unlocking early.
+ */
+export function otpResendWaitSeconds(createdAtMs: number, nowMs: number): number {
+  const elapsed = Math.max(0, nowMs - createdAtMs);
+  return Math.max(0, Math.ceil((ADMIN_OTP_RESEND_COOLDOWN_MS - elapsed) / 1000));
 }

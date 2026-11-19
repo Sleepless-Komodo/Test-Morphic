@@ -523,6 +523,7 @@ export const id = {
         sendCode: 'Kirim kode ke email',
         sending: 'Mengirim kode...',
         sent: 'Kode terkirim. Cek inbox, berlaku 10 menit.',
+        stillValid: 'Kode sudah dikirim kurang dari 1 menit lalu dan masih berlaku. Cek inbox, atau tunggu hitungan selesai untuk minta kode baru.',
         codeLabel: 'Kode 6 digit',
         verify: 'Buka Panel Admin',
         verifying: 'Memeriksa kode...',

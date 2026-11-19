@@ -3,8 +3,10 @@ import assert from 'node:assert/strict';
 import {
   ADMIN_STEP_UP_BUMP_MS,
   ADMIN_STEP_UP_IDLE_MS,
+  ADMIN_OTP_RESEND_COOLDOWN_MS,
   evaluateAdminStepUp,
   formatStepUpValue,
+  otpResendWaitSeconds,
   parseGeoCountry,
   parseStepUpValue,
   safeAdminNextPath,
@@ -123,4 +125,22 @@ test('safeAdminNextPath rejects off-site paths', () => {
   for (const bad of [null, undefined, '', '//evil.com', 'https://evil.com/admin', '/dashboard', '/admin/../dashboard', '/adminx', '/admin\\..\\x', '/admin/verify', '/admin/verify?next=%2Fadmin']) {
     assert.equal(safeAdminNextPath(bad), '/admin', String(bad));
   }
+});
+
+test('resend wait counts down from 60 to 0 seconds', () => {
+  assert.equal(ADMIN_OTP_RESEND_COOLDOWN_MS, 60_000);
+  assert.equal(otpResendWaitSeconds(now, now), 60);
+  assert.equal(otpResendWaitSeconds(now - 1, now), 60);
+  assert.equal(otpResendWaitSeconds(now - 18_500, now), 42);
+  assert.equal(otpResendWaitSeconds(now - 59_001, now), 1);
+  assert.equal(otpResendWaitSeconds(now - 60_000, now), 0);
+  assert.equal(otpResendWaitSeconds(now - 3_600_000, now), 0);
+  assert.equal(otpResendWaitSeconds(now + 5_000, now), 60);
+});
+
+test('parseGeoCountry reads the Vercel country header', () => {
+  assert.equal(parseGeoCountry(headersOf({ 'x-vercel-ip-country': 'id' })), 'ID');
+  assert.equal(parseGeoCountry(headersOf({ 'x-vercel-ip-country': 'XX' })), null);
+  const json = JSON.stringify({ country: { code: 'SG' } });
+  assert.equal(parseGeoCountry(headersOf({ 'x-nf-geo': btoa(json), 'x-vercel-ip-country': 'ID' })), 'SG');
 });

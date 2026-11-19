@@ -20,8 +20,10 @@ import {
   type AdminPermission,
 } from '@morphic/shared/admin-rbac';
 import {
+  ADMIN_OTP_RESEND_COOLDOWN_MS,
   ADMIN_STEP_UP_IDLE_MS,
   evaluateAdminStepUp,
+  otpResendWaitSeconds,
   formatStepUpValue,
   parseGeoCountry,
   safeAdminNextPath,
@@ -1177,13 +1179,18 @@ export async function getAdminStepUpStatus(): Promise<{ isAdmin: boolean; requir
 }
 
 /** Sends a 6-digit code to the signed-in admin's email to open the Admin Panel. */
-export async function requestAdminStepUpCode(): Promise<{ ok: true } | { ok: false; error: string }> {
+export type AdminStepUpCodeResult =
+  | { ok: true; retryAfterS: number }
+  | { ok: false; reason: 'cooldown'; retryAfterS: number }
+  | { ok: false; reason: 'send_failed' | 'denied'; error: string };
+
+export async function requestAdminStepUpCode(): Promise<AdminStepUpCodeResult> {
   const check = await adminCheck();
   if (!check) {
-    return { ok: false, error: 'Akses ditolak: akun bukan admin aktif.' };
+    return { ok: false, reason: 'denied', error: 'Akses ditolak: akun bukan admin aktif.' };
   }
   if (!check.user.email) {
-    return { ok: false, error: 'Akun admin tidak memiliki alamat email terdaftar.' };
+    return { ok: false, reason: 'denied', error: 'Akun admin tidak memiliki alamat email terdaftar.' };
   }
 
   const otpId = adminIpOtpId(check.user.id);
@@ -1192,9 +1199,10 @@ export async function requestAdminStepUpCode(): Promise<{ ok: true } | { ok: fal
     .from(s.verifications)
     .where(eq(s.verifications.identifier, otpId))
     .limit(1);
-  if (existing && Date.now() - existing.createdAt.getTime() < 60_000) {
-    return { ok: false, error: 'Tunggu 1 menit sebelum meminta kode baru.' };
-  }
+  // The previous code is still in the inbox and still valid: the dialog shows the input and a
+  // countdown instead of a dead end.
+  const waitS = existing ? otpResendWaitSeconds(existing.createdAt.getTime(), Date.now()) : 0;
+  if (waitS > 0) return { ok: false, reason: 'cooldown', retryAfterS: waitS };
 
   const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
   await db.delete(s.verifications).where(eq(s.verifications.identifier, otpId));
@@ -1206,14 +1214,21 @@ export async function requestAdminStepUpCode(): Promise<{ ok: true } | { ok: fal
 
   const ip = check.clientIp ?? 'tidak diketahui';
   const country = parseGeoCountry(await headers()) ?? 'tidak diketahui';
-  await sendEmail({
-    to: check.user.email,
-    subject: `Kode verifikasi Panel Admin Morphic: ${code}`,
-    text: `Kode untuk membuka Panel Admin Morphic: ${code}\n\nBerlaku 10 menit. Permintaan dari IP ${ip} (negara: ${country}).\n\nJika Anda tidak sedang membuka Panel Admin, segera cabut sesi aktif Anda dan ganti kata sandi.`,
-    html: `<p>Kode untuk membuka <strong>Panel Admin Morphic</strong>:</p><p style="font-size:24px;font-weight:700;letter-spacing:4px">${code}</p><p>Berlaku 10 menit. Permintaan dari IP <code>${ip}</code> (negara: ${country}).</p><p>Jika Anda tidak sedang membuka Panel Admin, segera cabut sesi aktif Anda dan ganti kata sandi.</p>`,
-  });
+  try {
+    await sendEmail({
+      to: check.user.email,
+      subject: `Kode verifikasi Panel Admin Morphic: ${code}`,
+      text: `Kode untuk membuka Panel Admin Morphic: ${code}\n\nBerlaku 10 menit. Permintaan dari IP ${ip} (negara: ${country}).\n\nJika Anda tidak sedang membuka Panel Admin, segera cabut sesi aktif Anda dan ganti kata sandi.`,
+      html: `<p>Kode untuk membuka <strong>Panel Admin Morphic</strong>:</p><p style="font-size:24px;font-weight:700;letter-spacing:4px">${code}</p><p>Berlaku 10 menit. Permintaan dari IP <code>${ip}</code> (negara: ${country}).</p><p>Jika Anda tidak sedang membuka Panel Admin, segera cabut sesi aktif Anda dan ganti kata sandi.</p>`,
+    });
+  } catch (err) {
+    // No email went out, so the stored code is useless and must not hold the resend cooldown.
+    console.error('[requestAdminStepUpCode] email send failed:', err);
+    await db.delete(s.verifications).where(eq(s.verifications.identifier, otpId));
+    return { ok: false, reason: 'send_failed', error: 'Email kode gagal dikirim. Coba lagi sebentar lagi.' };
+  }
 
-  return { ok: true };
+  return { ok: true, retryAfterS: Math.ceil(ADMIN_OTP_RESEND_COOLDOWN_MS / 1000) };
 }
 
 /**
