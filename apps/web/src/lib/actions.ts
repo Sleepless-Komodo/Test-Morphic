@@ -1182,7 +1182,8 @@ export async function getAdminStepUpStatus(): Promise<{ isAdmin: boolean; requir
 export type AdminStepUpCodeResult =
   | { ok: true; retryAfterS: number }
   | { ok: false; reason: 'cooldown'; retryAfterS: number }
-  | { ok: false; reason: 'send_failed' | 'denied'; error: string };
+  | { ok: false; reason: 'send_failed'; error: string; retryAfterS: number }
+  | { ok: false; reason: 'denied'; error: string };
 
 export async function requestAdminStepUpCode(): Promise<AdminStepUpCodeResult> {
   const check = await adminCheck();
@@ -1222,10 +1223,15 @@ export async function requestAdminStepUpCode(): Promise<AdminStepUpCodeResult> {
       html: `<p>Kode untuk membuka <strong>Panel Admin Morphic</strong>:</p><p style="font-size:24px;font-weight:700;letter-spacing:4px">${code}</p><p>Berlaku 10 menit. Permintaan dari IP <code>${ip}</code> (negara: ${country}).</p><p>Jika Anda tidak sedang membuka Panel Admin, segera cabut sesi aktif Anda dan ganti kata sandi.</p>`,
     });
   } catch (err) {
-    // No email went out, so the stored code is useless and must not hold the resend cooldown.
+    // The stored code never reached anyone, but the row stays so the 60-second cooldown also
+    // applies to failed sends: repeated clicks cannot hammer the email provider.
     console.error('[requestAdminStepUpCode] email send failed:', err);
-    await db.delete(s.verifications).where(eq(s.verifications.identifier, otpId));
-    return { ok: false, reason: 'send_failed', error: 'Email kode gagal dikirim. Coba lagi sebentar lagi.' };
+    return {
+      ok: false,
+      reason: 'send_failed',
+      error: 'Email kode gagal dikirim. Coba lagi setelah hitungan selesai.',
+      retryAfterS: Math.ceil(ADMIN_OTP_RESEND_COOLDOWN_MS / 1000),
+    };
   }
 
   return { ok: true, retryAfterS: Math.ceil(ADMIN_OTP_RESEND_COOLDOWN_MS / 1000) };

@@ -67,7 +67,13 @@ export function StepUpDialog({ email, next }: { email: string | null; next: stri
     startTransition(async () => {
       try {
         const res = await requestAdminStepUpCode();
-        if (!res.ok && res.reason !== 'cooldown') {
+        if (!res.ok && res.reason === 'send_failed') {
+          // Nothing reached the inbox: stay on the send button, locked for the cooldown.
+          setError(res.error);
+          setCooldown(res.retryAfterS);
+          return;
+        }
+        if (!res.ok && res.reason === 'denied') {
           setError(res.error);
           return;
         }
@@ -164,10 +170,14 @@ export function StepUpDialog({ email, next }: { email: string | null; next: stri
             ref={sendRef}
             type="button"
             onClick={sendCode}
-            disabled={isPending}
+            disabled={isPending || cooldown > 0}
             className="min-h-11 w-full rounded-xl bg-neutral-950 px-4 text-sm font-semibold text-white transition-colors hover:bg-neutral-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-neutral-500"
           >
-            {isPending ? copy.sending : copy.sendCode}
+            {isPending
+              ? copy.sending
+              : cooldown > 0
+                ? copy.resendIn.replace('{seconds}', String(cooldown))
+                : copy.sendCode}
           </button>
         )}
 
