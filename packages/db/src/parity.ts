@@ -76,6 +76,28 @@ export interface UserBalanceDiff {
   deltaCredits: number;
 }
 
+export interface RecentPaymentSnapshot {
+  id: string;
+  email: string;
+  provider: string;
+  amountCents: number;
+  currency: string;
+  credits: number;
+  status: string;
+  createdAt: string;
+}
+
+export interface RecentLedgerSnapshot {
+  id: string;
+  email: string;
+  entryType: string;
+  amount: number;
+  reference: string | null;
+  createdAt: string;
+}
+
+export type RecentRowPrimaryStatus = 'MATCH' | 'MISMATCH' | 'MISSING' | 'PRIMARY_OFFLINE';
+
 export interface DatabaseParityReport {
   checkedAt: string;
   primaryHost: string;
@@ -105,6 +127,8 @@ export interface DatabaseParityReport {
     activeApiKeysPrimary: number;
     activeApiKeysFallback: number;
   };
+  recentFallbackPayments: Array<RecentPaymentSnapshot & { primaryStatus: RecentRowPrimaryStatus }>;
+  recentFallbackLedger: Array<RecentLedgerSnapshot & { primaryStatus: RecentRowPrimaryStatus }>;
   warnings: string[];
 }
 
@@ -129,6 +153,8 @@ export interface DbSnapshot {
   paidPaymentsCount: number;
   paidAmountCents: number;
   activeApiKeysCount: number;
+  recentPayments?: RecentPaymentSnapshot[];
+  recentLedger?: RecentLedgerSnapshot[];
   error?: string;
 }
 
@@ -321,6 +347,80 @@ async function collectDbSnapshot(connectionString: string | null): Promise<DbSna
       activeApiKeysCount = Number(keyRows[0]?.active_keys ?? 0);
     }
 
+    let recentPayments: RecentPaymentSnapshot[] = [];
+    if (existingSet.has('payments') && existingSet.has('users')) {
+      const rpRows = extractExecuteRows<{
+        id: string;
+        email: string;
+        provider: string;
+        amount_cents: string | number;
+        currency: string;
+        credits: string | number;
+        status: string;
+        created_at: string;
+      }>(
+        await handle.db.execute(sql`
+          SELECT
+            p.id::text AS id,
+            coalesce(u.email, 'unknown') AS email,
+            p.provider,
+            p.amount_cents AS amount_cents,
+            p.currency,
+            p.credits::bigint AS credits,
+            p.status,
+            p.created_at::text AS created_at
+          FROM public.payments p
+          LEFT JOIN public.users u ON u.id = p.user_id
+          ORDER BY p.created_at DESC, p.id DESC
+          LIMIT 20
+        `),
+      );
+      recentPayments = rpRows.map((r) => ({
+        id: r.id,
+        email: r.email,
+        provider: r.provider,
+        amountCents: Number(r.amount_cents ?? 0),
+        currency: r.currency,
+        credits: Number(r.credits ?? 0),
+        status: r.status,
+        createdAt: r.created_at,
+      }));
+    }
+
+    let recentLedger: RecentLedgerSnapshot[] = [];
+    if (existingSet.has('credit_ledger') && existingSet.has('users')) {
+      const rlRows = extractExecuteRows<{
+        id: string;
+        email: string;
+        entry_type: string;
+        amount: string | number;
+        reference: string | null;
+        created_at: string;
+      }>(
+        await handle.db.execute(sql`
+          SELECT
+            l.id::text AS id,
+            coalesce(u.email, 'unknown') AS email,
+            l.entry_type AS entry_type,
+            l.amount::bigint AS amount,
+            l.reference,
+            l.created_at::text AS created_at
+          FROM public.credit_ledger l
+          LEFT JOIN public.users u ON u.id = l.user_id
+          ORDER BY l.created_at DESC, l.id DESC
+          LIMIT 20
+        `),
+      );
+      recentLedger = rlRows.map((r) => ({
+        id: r.id,
+        email: r.email,
+        entryType: r.entry_type,
+        amount: Number(r.amount ?? 0),
+        reference: r.reference ?? null,
+        createdAt: r.created_at,
+      }));
+    }
+
     return {
       reachable: true,
       permissionsOk: conn.permissionsOk,
@@ -331,6 +431,8 @@ async function collectDbSnapshot(connectionString: string | null): Promise<DbSna
       paidPaymentsCount,
       paidAmountCents,
       activeApiKeysCount,
+      recentPayments,
+      recentLedger,
     };
   } catch (err) {
     return emptySnapshot(sanitizeErrorForLog(err));
@@ -475,6 +577,58 @@ export function computeParityDiffFromSnapshots(
 
   const isExactMatch = isCriticalMatch && nonEphemeralOperationalMatch;
 
+  const primaryPaymentsById = new Map<string, RecentPaymentSnapshot>();
+  for (const p of primarySnap.recentPayments ?? []) {
+    primaryPaymentsById.set(p.id, p);
+  }
+  const recentFallbackPayments = (fallbackSnap.recentPayments ?? []).slice(0, 5).map((fp) => {
+    let primaryStatus: RecentRowPrimaryStatus;
+    if (!primarySnap.reachable) {
+      primaryStatus = 'PRIMARY_OFFLINE';
+    } else {
+      const pp = primaryPaymentsById.get(fp.id);
+      if (!pp) {
+        primaryStatus = 'MISSING';
+      } else if (
+        pp.amountCents === fp.amountCents &&
+        pp.credits === fp.credits &&
+        pp.status === fp.status &&
+        pp.currency === fp.currency &&
+        pp.email === fp.email
+      ) {
+        primaryStatus = 'MATCH';
+      } else {
+        primaryStatus = 'MISMATCH';
+      }
+    }
+    return { ...fp, primaryStatus };
+  });
+
+  const primaryLedgerById = new Map<string, RecentLedgerSnapshot>();
+  for (const l of primarySnap.recentLedger ?? []) {
+    primaryLedgerById.set(l.id, l);
+  }
+  const recentFallbackLedger = (fallbackSnap.recentLedger ?? []).slice(0, 5).map((fl) => {
+    let primaryStatus: RecentRowPrimaryStatus;
+    if (!primarySnap.reachable) {
+      primaryStatus = 'PRIMARY_OFFLINE';
+    } else {
+      const pl = primaryLedgerById.get(fl.id);
+      if (!pl) {
+        primaryStatus = 'MISSING';
+      } else if (
+        pl.amount === fl.amount &&
+        pl.entryType === fl.entryType &&
+        pl.email === fl.email
+      ) {
+        primaryStatus = 'MATCH';
+      } else {
+        primaryStatus = 'MISMATCH';
+      }
+    }
+    return { ...fl, primaryStatus };
+  });
+
   return {
     checkedAt: meta?.checkedAt ?? new Date().toISOString(),
     primaryHost: meta?.primaryHost ?? '(primary)',
@@ -504,6 +658,8 @@ export function computeParityDiffFromSnapshots(
       activeApiKeysPrimary: primarySnap.activeApiKeysCount,
       activeApiKeysFallback: fallbackSnap.activeApiKeysCount,
     },
+    recentFallbackPayments,
+    recentFallbackLedger,
     warnings,
   };
 }
@@ -601,6 +757,29 @@ export function formatParityReportCli(report: DatabaseParityReport): string {
     lines.push(
       ` ${t.tableName.padEnd(24)} ${t.category.padEnd(12)} ${String(t.primaryCount).padStart(9)} ${String(t.fallbackCount).padStart(9)} ${String(t.deltaRows).padStart(8)} ${formatDuration(t.lagSeconds).padStart(9)}  ${status}`,
     );
+  }
+
+  if (report.recentFallbackPayments.length > 0) {
+    lines.push('');
+    lines.push(' Recent 5 Payments (Fallback -> Primary check):');
+    for (const p of report.recentFallbackPayments) {
+      const ts = p.createdAt.slice(0, 19).replace(' ', 'T');
+      lines.push(
+        `  * ${ts} | ${p.email} | ${p.amountCents} ${p.currency} (${p.credits} cr) | ${p.provider} | ${p.status} | id=${p.id.slice(0, 8)} | Primary: ${p.primaryStatus}`,
+      );
+    }
+  }
+
+  if (report.recentFallbackLedger.length > 0) {
+    lines.push('');
+    lines.push(' Recent 5 Credit Ledger Entries (Fallback -> Primary check):');
+    for (const l of report.recentFallbackLedger) {
+      const ts = l.createdAt.slice(0, 19).replace(' ', 'T');
+      const signed = l.amount >= 0 ? `+${l.amount}` : String(l.amount);
+      lines.push(
+        `  * ${ts} | ${l.email} | ${l.entryType} | ${signed} cr | id=${l.id.slice(0, 8)} | Primary: ${l.primaryStatus}`,
+      );
+    }
   }
 
   if (report.warnings.length > 0) {

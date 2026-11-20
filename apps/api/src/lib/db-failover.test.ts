@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   computeParityDiffFromSnapshots,
+  formatParityReportCli,
   formatParitySummaryAlert,
   getDbFailoverState,
   isNeonFailoverError,
@@ -223,4 +224,111 @@ test('handleFailoverEvent dispatches ops alert with parity summary', async () =>
   assert.match(alerts[0]!.message, /DRIFT DETECTED/);
   assert.equal(alerts[0]!.payload.type, 'db_failover');
   resetFailoverMonitorForTests();
+});
+
+test('computeParityDiffFromSnapshots includes top 5 recent fallback payments and ledger entries with primary status', () => {
+  const primary = makeBaseSnapshot({
+    recentPayments: [
+      {
+        id: '11111111-1111-1111-1111-111111111111',
+        email: 'alice@example.com',
+        provider: 'duitku',
+        amountCents: 50000,
+        currency: 'IDR',
+        credits: 100000,
+        status: 'paid',
+        createdAt: '2026-11-20T10:00:00Z',
+      },
+      {
+        id: '22222222-2222-2222-2222-222222222222',
+        email: 'bob@example.com',
+        provider: 'paypal',
+        amountCents: 1000,
+        currency: 'USD',
+        credits: 200000,
+        status: 'pending',
+        createdAt: '2026-11-20T09:00:00Z',
+      },
+    ],
+    recentLedger: [
+      {
+        id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+        email: 'alice@example.com',
+        entryType: 'purchase',
+        amount: 100000,
+        reference: 'pay-1',
+        createdAt: '2026-11-20T10:00:01Z',
+      },
+    ],
+  });
+  const fallback = makeBaseSnapshot({
+    recentPayments: [
+      {
+        id: '11111111-1111-1111-1111-111111111111',
+        email: 'alice@example.com',
+        provider: 'duitku',
+        amountCents: 50000,
+        currency: 'IDR',
+        credits: 100000,
+        status: 'paid',
+        createdAt: '2026-11-20T10:00:00Z',
+      },
+      {
+        id: '22222222-2222-2222-2222-222222222222',
+        email: 'bob@example.com',
+        provider: 'paypal',
+        amountCents: 1000,
+        currency: 'USD',
+        credits: 200000,
+        status: 'paid', // differs from primary ('pending')
+        createdAt: '2026-11-20T09:00:00Z',
+      },
+      {
+        id: '33333333-3333-3333-3333-333333333333',
+        email: 'charlie@example.com',
+        provider: 'duitku',
+        amountCents: 25000,
+        currency: 'IDR',
+        credits: 50000,
+        status: 'paid',
+        createdAt: '2026-11-20T08:00:00Z',
+      },
+    ],
+    recentLedger: [
+      {
+        id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+        email: 'alice@example.com',
+        entryType: 'purchase',
+        amount: 100000,
+        reference: 'pay-1',
+        createdAt: '2026-11-20T10:00:01Z',
+      },
+      {
+        id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+        email: 'bob@example.com',
+        entryType: 'usage',
+        amount: -500,
+        reference: 'req-1',
+        createdAt: '2026-11-20T09:30:00Z',
+      },
+    ],
+  });
+
+  const report = computeParityDiffFromSnapshots(primary, fallback);
+  assert.deepEqual(
+    report.recentFallbackPayments.map((p) => p.primaryStatus),
+    ['MATCH', 'MISMATCH', 'MISSING'],
+  );
+  assert.deepEqual(
+    report.recentFallbackLedger.map((l) => l.primaryStatus),
+    ['MATCH', 'MISSING'],
+  );
+
+  const cli = formatParityReportCli(report);
+  assert.match(cli, /Recent 5 Payments \(Fallback -> Primary check\):/);
+  assert.match(cli, /alice@example\.com \| 50000 IDR \(100000 cr\) \| duitku \| paid \| id=11111111 \| Primary: MATCH/);
+  assert.match(cli, /bob@example\.com \| 1000 USD \(200000 cr\) \| paypal \| paid \| id=22222222 \| Primary: MISMATCH/);
+  assert.match(cli, /charlie@example\.com \| 25000 IDR \(50000 cr\) \| duitku \| paid \| id=33333333 \| Primary: MISSING/);
+  assert.match(cli, /Recent 5 Credit Ledger Entries \(Fallback -> Primary check\):/);
+  assert.match(cli, /bob@example\.com \| usage \| -500 cr \| id=bbbbbbbb \| Primary: MISSING/);
 });
