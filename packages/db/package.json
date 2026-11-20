@@ -14,7 +14,7 @@
   },
   "scripts": {
     "generate": "drizzle-kit generate",
-    "migrate": "drizzle-kit migrate",
+    "migrate": "tsx src/cli-migrate.ts",
     "studio": "drizzle-kit studio",
     "seed": "tsx src/seed.ts",
     "make-admin": "tsx src/make-admin.ts",

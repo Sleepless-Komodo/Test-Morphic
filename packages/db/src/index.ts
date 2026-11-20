@@ -1,6 +1,7 @@
 import dns from 'node:dns';
 import http from 'node:http';
 import https from 'node:https';
+import { setDefaultAutoSelectFamilyAttemptTimeout } from 'node:net';
 import { drizzle, type NeonHttpDatabase } from 'drizzle-orm/neon-http';
 import { drizzle as drizzleServerless, type NeonDatabase } from 'drizzle-orm/neon-serverless';
 import { neon, neonConfig, Pool } from '@neondatabase/serverless';
@@ -11,8 +12,9 @@ import * as schema from './schema.ts';
 
 try {
   dns.setDefaultResultOrder('ipv4first');
+  setDefaultAutoSelectFamilyAttemptTimeout(3000);
 } catch {
-  // Ignore in environments without node:dns
+  // Ignore in environments without node:dns / node:net
 }
 
 class IPv4WebSocket extends ws {
@@ -301,7 +303,8 @@ function collectErrorSignals(err: unknown): {
  */
 export function sanitizeErrorForLog(err: unknown, maxLen = 300): string {
   const { messages, codes } = collectErrorSignals(err);
-  const driverMessage = messages.find((m) => !/^failed query/i.test(m));
+  // Skip empty messages (e.g. AggregateError has message="" with real errors in .errors)
+  const driverMessage = messages.find((m) => m.trim().length > 0 && !/^failed query/i.test(m));
   let msg =
     driverMessage ??
     (messages.length > 0 ? 'query failed' : typeof err === 'string' ? err : 'unknown error');
