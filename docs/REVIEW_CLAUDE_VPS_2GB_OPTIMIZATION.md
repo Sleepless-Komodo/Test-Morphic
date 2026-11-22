@@ -403,3 +403,46 @@ Ketiganya dibaca saat start (body) atau per request (global), tapi `process.env`
 
 - Slot TTL Redis (`concurrencySlotTtlSeconds`) dihitung dari `UPSTREAM_TOTAL_TIMEOUT_MS` / `UPSTREAM_TIMEOUT_MS`. Route Anthropic punya timeout sendiri (`ANTHROPIC_TOTAL_TIMEOUT_MS`, default 180 detik). Stream Anthropic yang lebih lama dari TTL slot bisa kehilangan slot-nya lebih awal. Dampaknya kecil, tapi layak dicek terpisah.
 - `/v1/responses` mem-parse body di request luar sebelum slot diambil di request dalam. Hanya relevan jika `RESPONSES_API_ENABLED=true`.
+
+---
+
+## Pembersihan Dead Code `apps/api` (2026-11-22)
+
+Gemini melaporkan banyak yang tidak terpakai di `apps/api`. Setiap klaim dicek ulang ke repo sebelum ada yang dihapus.
+
+### Hasil cek klaim Gemini
+
+| Klaim | Hasil cek | Tindakan |
+|---|---|---|
+| 0 file mati di `src/`, semua route ter-mount | Benar. Semua route di-mount di `app.ts`. | Tidak ada |
+| `openapi.yaml` | Tidak dirujuk di mana pun. Spec yang dipakai di-generate dari Zod (`src/openapi/registry.ts`, `/openapi.json`, OpenAPI 3.1). File YAML ini 3.0.3 dengan server `api.morphic.example.com`. | **Dihapus** |
+| Script `seed:dahl` rusak | Benar. `apps/api/package.json` menunjuk `scripts/seed-dahl.ts` yang tidak ada. Alias root `db:seed:dahl` memanggilnya, jadi ikut rusak. | **Keduanya dihapus** |
+| 7 fungsi export mati | 6 yang benar-benar mati (tidak dipanggil di mana pun, termasuk di file sendiri). | **Dihapus** |
+| `dist/`, `.turbo/` | Hasil build, sudah di-gitignore (`.gitignore:12,16`), tidak ada di repo. | Tidak ada (salah hitung) |
+| `audit-folder/` (5 file) | Arsip audit lama, tidak dipakai kode. | Belum disentuh. Usulan: pindah ke `docs/archive/` |
+| 4 `.md` historis | Ada 5. `AGENTS.md` dan `plan-pooling-providers.md` masih dirujuk (`docs/COMPAT_NOTES.md`, test). `API_DOCUMENTATION.md`, `AUDIT_BACKEND.md`, `OUT_OF_SCOPE_FINDINGS.md` tidak dirujuk kode. | Belum disentuh. Usulan: pindah 3 yang tidak dirujuk ke `docs/archive/` |
+
+### Fungsi yang dihapus
+
+| Fungsi | Lokasi |
+|---|---|
+| `getLastParitySnapshot` | `apps/api/src/lib/db-failover-monitor.ts` |
+| `getDbSyncStatus` | `apps/api/src/lib/db-sync-log.ts` |
+| `flushTargetedSyncQueue` | `apps/api/src/lib/db-sync-queue.ts` |
+| `_resetWarnedLoopback` | `apps/api/src/lib/ip.ts` |
+| `streamThenDestroy`, `openThenDestroy` | `apps/api/src/test-helpers/mock-upstream.ts` |
+
+State yang dipakai fungsi-fungsi itu (`lastParitySnapshot`, `DbSyncStatus`, `warnedLoopback`, `delay`) tetap ada karena masih dipakai kode lain.
+
+### Yang sengaja tidak dihapus
+
+- Sekitar 70 export yang hanya dipakai di file sendiri (definisi route OpenAPI, helper converter). Kodenya terpakai, hanya kata `export`-nya yang tidak perlu.
+- Seam test (`...ForTests`, `reset...`) yang dipakai test.
+- `handleWebhookMock`: dipakai route `/webhooks/mock`, dan mengembalikan 404 di luar dev/test.
+- `scripts/test-local.sh` dan `scripts/quickstart/`: masih dipakai.
+
+### Verifikasi
+
+- Tidak ada rujukan tersisa ke `openapi.yaml`, `seed:dahl`, atau fungsi yang dihapus di kode maupun docs.
+- Typecheck dan ESLint bersih, `pnpm --filter @morphic/api build` sukses.
+- `pnpm --filter @morphic/api test` (dengan `DUITKU_PRIMARY_PAYMENT_METHOD=VC DUITKU_BACKUP_PAYMENT_METHOD=BC`): 574/574 lulus.

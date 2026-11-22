@@ -70,31 +70,6 @@ export async function streamChunks(
   endSse(res, done);
 }
 
-/**
- * Write `payloads`, then abruptly destroy the socket (simulates an upstream that
- * dies mid-stream instead of sending `[DONE]`).
- */
-export async function streamThenDestroy(
-  res: ServerResponse,
-  payloads: unknown[],
-  { intervalMs = 40 }: { intervalMs?: number } = {},
-): Promise<void> {
-  for (const payload of payloads) {
-    if (res.destroyed || res.writableEnded) return;
-    writeSse(res, payload);
-    await delay(intervalMs);
-  }
-  if (!res.destroyed) res.destroy();
-}
-
-/** Open the SSE response with headers and then destroy it without any chunk. */
-export function openThenDestroy(res: ServerResponse): void {
-  openSse(res);
-  setTimeout(() => {
-    if (!res.destroyed) res.destroy();
-  }, 20);
-}
-
 /** A normal non-streaming OpenAI completion body. */
 export function okCompletionBody(content = 'ok'): Record<string, unknown> {
   return {

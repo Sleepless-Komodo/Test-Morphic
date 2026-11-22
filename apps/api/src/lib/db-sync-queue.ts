@@ -270,7 +270,3 @@ const defaultQueue = createTargetedSyncQueue({
 export function scheduleTargetedSync(input: TargetedSyncInput): void {
   defaultQueue.schedule(input);
 }
-
-export function flushTargetedSyncQueue(): Promise<void> {
-  return defaultQueue.flush();
-}

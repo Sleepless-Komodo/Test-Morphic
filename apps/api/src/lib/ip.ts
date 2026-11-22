@@ -8,11 +8,6 @@ export function isLoopbackIp(ip: string): boolean {
   return ip === '127.0.0.1' || ip === '::1' || ip === 'localhost';
 }
 
-/** Reset warning flag (used by unit tests) */
-export function _resetWarnedLoopback(): void {
-  warnedLoopback = false;
-}
-
 /**
  * Number of trusted reverse proxies in front of this process. The client IP is the Nth entry from
  * the right of X-Forwarded-For. Unset: 1 outside production (legacy behaviour), 0 in production

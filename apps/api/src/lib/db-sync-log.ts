@@ -147,5 +147,3 @@ export const dbSyncTracker: SyncTracker = createSyncTracker({
   now: () => Date.now(),
   alertCooldownMs: 10 * 60_000,
 });
-
-export const getDbSyncStatus = (): DbSyncStatus => dbSyncTracker.status();

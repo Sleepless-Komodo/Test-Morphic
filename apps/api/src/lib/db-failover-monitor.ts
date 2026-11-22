@@ -27,10 +27,6 @@ import {
 let lastParitySnapshot: DatabaseParityReport | null = null;
 let unsubscribeFailover: (() => void) | null = null;
 
-export function getLastParitySnapshot(): DatabaseParityReport | null {
-  return lastParitySnapshot;
-}
-
 export function resetFailoverMonitorForTests(): void {
   lastParitySnapshot = null;
   if (unsubscribeFailover) {
