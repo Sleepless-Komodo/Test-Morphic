@@ -3,7 +3,8 @@ import { requireAdmin } from '@/lib/actions';
 import { getServerTranslation } from '@/lib/i18n/server';
 import { Download, History } from 'lucide-react';
 import { PAGE_SIZE, readPageRequest, toPageBoth } from '@/lib/pagination';
-import { Pager } from '@/components/Pager';
+import { KeysetPager } from '@/components/KeysetPager';
+import { keysetLinks } from '@/lib/page-numbers';
 import { listAuditActions, queryAuditLog, readAuditFilters } from './query';
 
 const fieldClass =
@@ -136,13 +137,7 @@ export default async function AdminAudit({
           </div>
         )}
       </div>
-      <Pager
-        path="/admin/audit"
-        params={{ ...filters }}
-        prevCursor={page.prevCursor}
-        nextCursor={page.nextCursor}
-        en={locale === 'en'}
-      />
+      <KeysetPager {...keysetLinks({ path: '/admin/audit', params: { ...filters }, n: params.n, ...page })} en={locale === 'en'} />
     </div>
   );
 }

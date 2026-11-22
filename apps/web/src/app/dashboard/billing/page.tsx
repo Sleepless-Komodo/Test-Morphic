@@ -1,11 +1,13 @@
-import { eq, asc, and, gt } from 'drizzle-orm';
+import { eq, asc } from 'drizzle-orm';
 import { db, schema as s } from '@morphic/db';
-import { getLedgerPageAction, getOwnBalance, getPaymentsPageAction, requireUser } from '@/lib/actions';
+import { getActivePassesPageAction, getLedgerPageAction, getOwnBalance, getPaymentsPageAction, requireUser } from '@/lib/actions';
 import { readyModelIds } from '@morphic/shared/model-readiness';
 import { BillingView } from './billing-view';
 import { hasStoredCredentials, loadPublicModels } from '@/lib/models-data';
 import { memo } from '@/lib/memo';
 import { LIVE_TTL_MS } from '@/lib/refresh';
+
+const EMPTY_PAGE = { items: [], page: 1, lastPage: 1, total: 0, capped: false, hasNext: false };
 
 /** Four routable models spread from cheapest to dearest output, for the "how far do N tokens go" strip.
  *  The same for every user, so one read serves all billing pages for a while. */
@@ -84,32 +86,11 @@ export default async function BillingPage(props: {
         console.warn('[BillingPage] Package catalogue read failed:', err);
         return [] as any[];
       }),
-    db
-      .select({
-        id: s.entitlements.id,
-        allowance: s.entitlements.allowance,
-        remaining: s.entitlements.remaining,
-        unlimited: s.entitlements.unlimited,
-        resetsAt: s.entitlements.resetsAt,
-        expiresAt: s.entitlements.expiresAt,
-        packageName: s.packages.name,
-        displayName: s.models.displayName,
-      })
-      .from(s.entitlements)
-      .leftJoin(s.packages, eq(s.entitlements.packageId, s.packages.id))
-      .leftJoin(s.models, eq(s.entitlements.modelId, s.models.id))
-      .where(
-        and(
-          eq(s.entitlements.userId, user.id),
-          eq(s.entitlements.status, 'active'),
-          gt(s.entitlements.expiresAt, new Date()),
-        ),
-      )
-      .catch((err) => {
-        console.warn('[BillingPage] Entitlement read failed:', err);
-        return [] as any[];
-      }),
-    // Older rows load in the view through the same actions, one list at a time.
+    getActivePassesPageAction().catch((err) => {
+      console.warn('[BillingPage] Entitlement read failed:', err);
+      return EMPTY_PAGE;
+    }),
+    // Page 1 of each list; the view asks the same actions for other pages, one list at a time.
     getPaymentsPageAction().catch((err) => {
       console.warn('[BillingPage] Payment history read failed:', err);
       return { data: [], nextCursor: null };

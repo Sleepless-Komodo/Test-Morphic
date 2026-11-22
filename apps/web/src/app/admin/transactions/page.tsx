@@ -7,17 +7,19 @@ import { AutoRefresh } from '@/components/AutoRefresh';
 import { memo } from '@/lib/memo';
 import { LIVE_TTL_MS } from '@/lib/refresh';
 import { PAGE_SIZE, cursorAt, keyset, readPageRequest, toPageBoth } from '@/lib/pagination';
-import { Pager } from '@/components/Pager';
+import { KeysetPager } from '@/components/KeysetPager';
+import { keysetLinks } from '@/lib/page-numbers';
 import { CreditCard } from 'lucide-react';
 
 export default async function AdminTransactions({
   searchParams,
 }: {
-  searchParams: Promise<{ before?: string; after?: string }>;
+  searchParams: Promise<{ before?: string; after?: string; n?: string }>;
 }) {
   await requireAdmin('finance:read');
   const { t, locale } = await getServerTranslation();
-  const req = readPageRequest(await searchParams);
+  const sp = await searchParams;
+  const req = readPageRequest(sp);
   const ks = keyset(s.payments.createdAt, s.payments.id, req);
 
   const page = await memo(`admin:transactions:${req.dir}:${req.cursor?.at ?? ''}:${req.cursor?.id ?? ''}`, LIVE_TTL_MS, async () => toPageBoth(await db
@@ -115,7 +117,7 @@ export default async function AdminTransactions({
           </div>
         )}
       </div>
-      <Pager path="/admin/transactions" prevCursor={page.prevCursor} nextCursor={page.nextCursor} en={locale === 'en'} />
+      <KeysetPager {...keysetLinks({ path: '/admin/transactions', n: sp.n, ...page })} en={locale === 'en'} />
     </div>
   );
 }

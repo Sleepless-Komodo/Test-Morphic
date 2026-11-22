@@ -12,14 +12,14 @@ import {
   Check,
   Search,
   Filter,
-  ChevronLeft,
-  ChevronRight,
   Loader2,
   Calendar,
   X,
   Download,
 } from 'lucide-react';
 import { getUsageLogsAction } from '@/lib/actions';
+import { KeysetPager } from '@/components/KeysetPager';
+import { keysetNav, keysetPageNumber, latestOnly, type KeysetMove, type KeysetNav } from '@/lib/page-numbers';
 import { downloadCsv } from '@/lib/csv';
 
 interface RecentRecord {
@@ -41,6 +41,8 @@ interface LogsViewProps {
   recent: RecentRecord[];
   initialNextCursor: string | null;
 }
+
+const NEWEST: KeysetNav = { cursor: null, back: [] };
 
 type StatusFilter = 'all' | 'success' | 'error';
 
@@ -95,11 +97,12 @@ export function LogsView({ recent, initialNextCursor }: LogsViewProps) {
   const isId = locale === 'id';
 
   const [items, setItems] = useState<RecentRecord[]>(recent);
-  // Keyset paging: `cursor` loaded the current page (null = newest), `nextCursor` loads the older one,
-  // and `prevCursors` is the way back for "Newer".
-  const [cursor, setCursor] = useState<string | null>(null);
+  // Logs only grow and are read newest first, so they page Newer/Older: one indexed query per page.
+  // `nav` holds the cursor of the page on screen and the ones above it; `nextCursor` loads the older one.
+  const [nav, setNav] = useState<KeysetNav>(NEWEST);
   const [nextCursor, setNextCursor] = useState<string | null>(initialNextCursor);
-  const [prevCursors, setPrevCursors] = useState<(string | null)[]>([]);
+  // Only the newest fetch lands, so a slow page can never show under a newer filter.
+  const [latest] = useState(latestOnly);
   const [dateFilter, setDateFilter] = useState<DateRangePreset>('all');
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
@@ -110,8 +113,7 @@ export function LogsView({ recent, initialNextCursor }: LogsViewProps) {
   const [exportError, setExportError] = useState<string | null>(null);
 
   const fetchUsage = async (
-    before: string | null,
-    stack: (string | null)[],
+    target: KeysetNav,
     range: DateRangePreset,
     status: StatusFilter,
     rangeFrom?: string,
@@ -120,16 +122,14 @@ export function LogsView({ recent, initialNextCursor }: LogsViewProps) {
     setIsLoadingPage(true);
     try {
       const { from, to } = rangeBounds(range, rangeFrom, rangeTo);
-      const res = await getUsageLogsAction({ before, from, to, status });
-      if (res?.data && Array.isArray(res.data)) {
-        setItems(res.data.map(toRecord));
-        setCursor(before);
-        setNextCursor(res.nextCursor ?? null);
-        setPrevCursors(stack);
-      }
+      const res = await latest.run(getUsageLogsAction({ before: target.cursor, from, to, status }));
+      if (!res.current) return;
+      setItems(Array.isArray(res.value?.data) ? res.value.data.map(toRecord) : []);
+      setNextCursor(res.value?.nextCursor ?? null);
+      setNav(target);
+      setIsLoadingPage(false);
     } catch {
       // Keep the rows already on screen; the next page change retries.
-    } finally {
       setIsLoadingPage(false);
     }
   };
@@ -164,20 +164,15 @@ export function LogsView({ recent, initialNextCursor }: LogsViewProps) {
     return { from, to };
   };
 
-  const handleOlder = () => {
-    if (!nextCursor || isLoadingPage) return;
-    fetchUsage(nextCursor, [...prevCursors, cursor], dateFilter, statusFilter);
-  };
-
-  const handleNewer = () => {
-    if (prevCursors.length === 0 || isLoadingPage) return;
-    fetchUsage(prevCursors[prevCursors.length - 1], prevCursors.slice(0, -1), dateFilter, statusFilter);
+  const handleMove = (to: KeysetMove) => {
+    const target = keysetNav(nav, to, nextCursor);
+    if (target !== nav) fetchUsage(target, dateFilter, statusFilter);
   };
 
   const handleDateFilterChange = (range: DateRangePreset) => {
     setDateFilter(range);
     if (range !== 'custom') {
-      fetchUsage(null, [], range, statusFilter);
+      fetchUsage(NEWEST, range, statusFilter);
     }
   };
 
@@ -185,20 +180,20 @@ export function LogsView({ recent, initialNextCursor }: LogsViewProps) {
     if (e) e.preventDefault();
     if (!customFrom && !customTo) return;
     setDateFilter('custom');
-    fetchUsage(null, [], 'custom', statusFilter, customFrom, customTo);
+    fetchUsage(NEWEST, 'custom', statusFilter, customFrom, customTo);
   };
 
   const handleResetCustomDates = () => {
     setCustomFrom('');
     setCustomTo('');
     setDateFilter('all');
-    fetchUsage(null, [], 'all', statusFilter);
+    fetchUsage(NEWEST, 'all', statusFilter);
   };
 
   const handleStatusFilterChange = (status: StatusFilter) => {
     if (status === statusFilter) return;
     setStatusFilter(status);
-    fetchUsage(null, [], dateFilter, status);
+    fetchUsage(NEWEST, dateFilter, status);
   };
 
   // The search box filters the rows already loaded; status and date filters run in the query.
@@ -212,7 +207,6 @@ export function LogsView({ recent, initialNextCursor }: LogsViewProps) {
     );
   };
   const filteredRecent = items.filter(matchesSearch);
-  const hasPages = prevCursors.length > 0 || nextCursor !== null;
 
   // Exports up to EXPORT_CAP rows in the active date range and status (not just the visible
   // page), with the same search filter as the table. ponytail: move to a server-side CSV stream
@@ -565,32 +559,16 @@ export function LogsView({ recent, initialNextCursor }: LogsViewProps) {
           </>
         )}
 
-        {hasPages && (
-          <div className="flex items-center justify-between px-6 py-3.5 border-t border-neutral-100 bg-neutral-50/50">
-            <div className="text-xs text-neutral-500 font-mono flex items-center gap-2">
-              {isLoadingPage && <Loader2 className="h-3.5 w-3.5 animate-spin text-neutral-500" />}
-              <span>{prevCursors.length === 0 ? (locale === 'en' ? 'Newest' : 'Terbaru') : (locale === 'en' ? 'Older requests' : 'Request lebih lama')}</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                onClick={handleNewer}
-                disabled={prevCursors.length === 0 || isLoadingPage}
-                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-neutral-200 bg-white hover:bg-neutral-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-xs font-semibold text-neutral-700 cursor-pointer shadow-2xs"
-              >
-                <ChevronLeft className="h-4 w-4" aria-hidden="true" />
-                {locale === 'en' ? 'Newer' : 'Lebih baru'}
-              </button>
-              <button
-                type="button"
-                onClick={handleOlder}
-                disabled={!nextCursor || isLoadingPage}
-                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-neutral-200 bg-white hover:bg-neutral-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-xs font-semibold text-neutral-700 cursor-pointer shadow-2xs"
-              >
-                {locale === 'en' ? 'Older' : 'Lebih lama'}
-                <ChevronRight className="h-4 w-4" aria-hidden="true" />
-              </button>
-            </div>
+        {(nav.back.length > 0 || nextCursor) && (
+          <div className="border-t border-neutral-100 px-4 pb-3.5 sm:px-6">
+            <KeysetPager
+              page={keysetPageNumber(nav)}
+              hasNewer={nav.back.length > 0}
+              hasOlder={!!nextCursor}
+              en={locale === 'en'}
+              onMove={handleMove}
+              disabled={isLoadingPage}
+            />
           </div>
         )}
         </div>

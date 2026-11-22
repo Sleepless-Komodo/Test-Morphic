@@ -6,7 +6,8 @@ import { formatCredits } from '@/lib/utils';
 import { memo } from '@/lib/memo';
 import { LIVE_TTL_MS, SLOW_TTL_MS } from '@/lib/refresh';
 import { PAGE_SIZE, cursorAt, keyset, readPageRequest, toPageBoth } from '@/lib/pagination';
-import { Pager } from '@/components/Pager';
+import { KeysetPager } from '@/components/KeysetPager';
+import { keysetLinks } from '@/lib/page-numbers';
 import { Activity } from 'lucide-react';
 
 const BY_MODEL_DAYS = 30;
@@ -14,12 +15,13 @@ const BY_MODEL_DAYS = 30;
 export default async function AdminUsage({
   searchParams,
 }: {
-  searchParams: Promise<{ before?: string; after?: string }>;
+  searchParams: Promise<{ before?: string; after?: string; n?: string }>;
 }) {
   await requireAdmin('finance:read');
   const { t, locale } = await getServerTranslation();
   const en = locale === 'en';
-  const req = readPageRequest(await searchParams);
+  const sp = await searchParams;
+  const req = readPageRequest(sp);
   const ks = keyset(s.usageRecords.createdAt, s.usageRecords.id, req);
 
   const usageByModel = db
@@ -190,7 +192,7 @@ export default async function AdminUsage({
           </div>
         )}
       </div>
-      <Pager path="/admin/usage" prevCursor={page.prevCursor} nextCursor={page.nextCursor} en={en} />
+      <KeysetPager {...keysetLinks({ path: '/admin/usage', n: sp.n, ...page })} en={en} />
     </div>
   );
 }

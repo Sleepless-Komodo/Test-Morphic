@@ -1,50 +1,53 @@
-import { eq } from 'drizzle-orm';
+import { desc, eq } from 'drizzle-orm';
 import { db, schema as s } from '@morphic/db';
 import { requireAdmin } from '@/lib/actions';
 import { toggleRedeemCode } from '@/lib/admin-actions';
 import { RedeemCodeGenerator } from '@/components/RedeemCodeGenerator';
 import { getServerTranslation } from '@/lib/i18n/server';
 import { formatCredits } from '@/lib/utils';
-import { PAGE_SIZE, cursorAt, keyset, readPageRequest, toPageBoth } from '@/lib/pagination';
+import { loadPage, readPage } from '@/lib/page-numbers';
+import { cappedCount } from '@/lib/capped-count';
 import { Pager } from '@/components/Pager';
 import { Ticket, Plus } from 'lucide-react';
 
 export default async function AdminCodes({
   searchParams,
 }: {
-  searchParams: Promise<{ before?: string; after?: string }>;
+  searchParams: Promise<{ page?: string }>;
 }) {
   await requireAdmin('codes:read');
   const { t, locale } = await getServerTranslation();
-  const req = readPageRequest(await searchParams);
-  const ks = keyset(s.redeemCodes.createdAt, s.redeemCodes.id, req);
+  const pageNo = readPage((await searchParams).page);
 
-  const [codeRows, packages] = await Promise.all([
-    db
-      .select({
-        id: s.redeemCodes.id,
-        code: s.redeemCodes.code,
-        rewardType: s.redeemCodes.rewardType,
-        creditAmount: s.redeemCodes.creditAmount,
-        durationHours: s.redeemCodes.durationHours,
-        packageName: s.packages.name,
-        redeemedCount: s.redeemCodes.redeemedCount,
-        maxRedemptions: s.redeemCodes.maxRedemptions,
-        expiresAt: s.redeemCodes.expiresAt,
-        active: s.redeemCodes.active,
-        cursorAt: cursorAt(s.redeemCodes.createdAt),
-      })
-      .from(s.redeemCodes)
-      .leftJoin(s.packages, eq(s.redeemCodes.packageId, s.packages.id))
-      .where(ks.where)
-      .orderBy(...ks.orderBy)
-      .limit(PAGE_SIZE + 1),
+  const [page, packages] = await Promise.all([
+    loadPage(
+      pageNo,
+      (offset, limit) =>
+        db
+          .select({
+            id: s.redeemCodes.id,
+            code: s.redeemCodes.code,
+            rewardType: s.redeemCodes.rewardType,
+            creditAmount: s.redeemCodes.creditAmount,
+            durationHours: s.redeemCodes.durationHours,
+            packageName: s.packages.name,
+            redeemedCount: s.redeemCodes.redeemedCount,
+            maxRedemptions: s.redeemCodes.maxRedemptions,
+            expiresAt: s.redeemCodes.expiresAt,
+            active: s.redeemCodes.active,
+          })
+          .from(s.redeemCodes)
+          .leftJoin(s.packages, eq(s.redeemCodes.packageId, s.packages.id))
+          .orderBy(desc(s.redeemCodes.createdAt), desc(s.redeemCodes.id))
+          .limit(limit)
+          .offset(offset),
+      () => cappedCount(db.select({ id: s.redeemCodes.id }).from(s.redeemCodes).$dynamic()),
+    ),
     db
       .select({ id: s.packages.id, name: s.packages.name, creditAllowance: s.packages.creditAllowance })
       .from(s.packages)
       .where(eq(s.packages.status, 'active')),
   ]);
-  const page = toPageBoth(codeRows, req);
   const codes = page.items;
 
   return (
@@ -131,7 +134,7 @@ export default async function AdminCodes({
           </div>
         )}
       </div>
-      <Pager path="/admin/codes" prevCursor={page.prevCursor} nextCursor={page.nextCursor} en={locale === 'en'} />
+      <Pager {...page} en={locale === 'en'} href={(p) => (p > 1 ? `/admin/codes?page=${p}` : '/admin/codes')} />
     </div>
   );
 }

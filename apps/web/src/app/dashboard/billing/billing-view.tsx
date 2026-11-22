@@ -10,8 +10,8 @@ import { Download, Loader2, FileText } from 'lucide-react';
 import { TOKEN_PACK_HOURS, multiplier, packagePriceIdr, packagePriceUsdCents } from '@morphic/shared/credits';
 import { fmtBalance, fmtCompact, fmtDuration, fmtMultiplier, fmtPrice, fmtTokens, type BillingPackage, type PackageKind } from '@/lib/billing-format';
 import { ModelProviderLogo } from '@/components/ProviderLogos';
-import { getLedgerExportPageAction, getLedgerPageAction, getPaymentsExportPageAction, getPaymentsPageAction } from '@/lib/actions';
-import { LoadMoreButton, useLoadMore } from '../load-more';
+import { getActivePassesPageAction, getLedgerExportPageAction, getLedgerPageAction, getPaymentsExportPageAction, getPaymentsPageAction } from '@/lib/actions';
+import { KeysetListPager, NumberedPager, useKeysetPages, useNumberedPages } from '../numbered-pages';
 
 // Only needed once a package is picked; keeps the payment UI (and PayPal's SDK) out of the page load.
 const CheckoutModal = dynamic(() => import('./checkout-modal').then((m) => m.CheckoutModal), { ssr: false });
@@ -20,8 +20,8 @@ const CheckoutModal = dynamic(() => import('./checkout-modal').then((m) => m.Che
 interface BillingViewProps {
   balance: number;
   packages: any[];
-  entitlements: any[];
-  /** Newest page of each list; older pages are appended in place by "Load more". */
+  /** First page of each list; the pagers swap in other pages through the same actions. */
+  entitlements: Awaited<ReturnType<typeof getActivePassesPageAction>>;
   payments: Awaited<ReturnType<typeof getPaymentsPageAction>>;
   ledger: Awaited<ReturnType<typeof getLedgerPageAction>>;
   /** Real output multipliers of a few popular models, cheap to expensive. */
@@ -49,7 +49,7 @@ const LEDGER_TYPE_LABELS: Record<string, { en: string; id: string }> = {
 export function BillingView({
   balance: initialBalance,
   packages: initialPackages,
-  entitlements,
+  entitlements: initialEntitlements,
   payments: initialPayments,
   ledger: initialLedger,
   showcase,
@@ -60,10 +60,14 @@ export function BillingView({
   const [balance, setBalance] = useState(initialBalance);
   const [selectedPkg, setSelectedPkg] = useState<any>(null);
   const [resumePayment, setResumePayment] = useState<any>(null);
-  const paymentsMore = useLoadMore(initialPayments, getPaymentsPageAction);
-  const ledgerMore = useLoadMore(initialLedger, getLedgerPageAction);
-  const payments = paymentsMore.rows;
-  const ledger = ledgerMore.rows;
+  const passesPages = useNumberedPages(initialEntitlements, getActivePassesPageAction);
+  // Payments and the ledger only grow and are read newest first, so they page Newer/Older (one
+  // query per page); active passes are few and get numbered pages.
+  const paymentsPages = useKeysetPages(initialPayments, getPaymentsPageAction);
+  const ledgerPages = useKeysetPages(initialLedger, getLedgerPageAction);
+  const entitlements = passesPages.items;
+  const payments = paymentsPages.items;
+  const ledger = ledgerPages.items;
   const [exporting, setExporting] = useState<'payments' | 'ledger' | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'packages' | 'payments' | 'ledger'>(initialTab);
@@ -170,13 +174,10 @@ export function BillingView({
     setBalance((prev) => prev + creditsAdded);
   };
 
-  // Rows loaded so far, "+" while older rows remain.
-  const pageCount = (rows: unknown[], next: string | null) =>
-    rows.length === 0 ? undefined : `${rows.length}${next ? '+' : ''}`;
   const tabs: ['packages' | 'payments' | 'ledger', string, string?][] = [
     ['packages', en ? 'Plans' : 'Paket'],
-    ['payments', t.dashboard.qrisHistoryTitle, pageCount(payments, paymentsMore.nextCursor)],
-    ['ledger', t.dashboard.ledgerHistoryTitle, pageCount(ledger, ledgerMore.nextCursor)],
+    ['payments', t.dashboard.qrisHistoryTitle],
+    ['ledger', t.dashboard.ledgerHistoryTitle],
   ];
   const segment = (active: boolean) =>
     cn(
@@ -354,6 +355,7 @@ export function BillingView({
                   );
                 })}
               </ul>
+              <NumberedPager list={passesPages} en={en} />
             </section>
           )}
 
@@ -566,13 +568,7 @@ export function BillingView({
               </div>
             )}
           </div>
-          <LoadMoreButton
-            nextCursor={paymentsMore.nextCursor}
-            loading={paymentsMore.loading}
-            failed={paymentsMore.failed}
-            onClick={paymentsMore.loadMore}
-            en={en}
-          />
+          <KeysetListPager list={paymentsPages} en={en} />
         </div>
       )}
 
@@ -644,13 +640,7 @@ export function BillingView({
               </div>
             )}
           </div>
-          <LoadMoreButton
-            nextCursor={ledgerMore.nextCursor}
-            loading={ledgerMore.loading}
-            failed={ledgerMore.failed}
-            onClick={ledgerMore.loadMore}
-            en={en}
-          />
+          <KeysetListPager list={ledgerPages} en={en} />
         </div>
       )}
 

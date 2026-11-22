@@ -10,14 +10,13 @@ import { useTranslation } from '@/lib/i18n';
 import { useCurrency } from '@/lib/currency';
 import { CurrencyToggle } from '@/components/CurrencyToggle';
 import { formatCredits, formatTokenEstimate } from '@/lib/utils';
-import { getGiftHistoryPageAction, redeemCodeDirect } from '@/lib/actions';
-import { LoadMoreButton, useLoadMore } from '../load-more';
+import { getCouponsPageAction, getGiftHistoryPageAction, redeemCodeDirect } from '@/lib/actions';
+import { NumberedPager, useNumberedPages } from '../numbered-pages';
+import { formatPageTotal, type NumberedPage } from '@/lib/page-numbers';
 
 // Only needed once a package is picked; keeps the payment UI (and PayPal's SDK) out of the page load.
 const CheckoutModal = dynamic(() => import('../billing/checkout-modal').then((m) => m.CheckoutModal), { ssr: false });
 
-
-const COUPON_PREVIEW = 5;
 
 type CouponSource = 'purchase' | 'redeem' | 'admin' | 'promotion';
 
@@ -92,19 +91,19 @@ const btnPrimary = `inline-flex items-center justify-center h-10 px-5 rounded-lg
 const isAvailable = (c: Coupon) => c.status === 'active' && c.remaining > 0 && new Date(c.expiresAt) > new Date();
 
 export function RedeemView({
-  coupons,
+  coupons: initialCoupons,
   giftPackages,
   transactions: initialTransactions,
 }: {
-  coupons: Coupon[];
+  /** Page 1 of every coupon, unfiltered; filters and other pages come from getCouponsPageAction. */
+  coupons: NumberedPage<Coupon>;
   giftPackages: GiftPackage[];
-  /** Newest gift card page; older ones are appended by "Load more". */
-  transactions: { data: GiftTransaction[]; nextCursor: string | null };
+  /** Page 1 of the gift card history; other pages come from getGiftHistoryPageAction. */
+  transactions: NumberedPage<GiftTransaction>;
 }) {
   const { t, locale } = useTranslation();
   const en = locale === 'en';
   const [code, setCode] = useState('');
-  const [showAllCoupons, setShowAllCoupons] = useState(false);
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [reward, setReward] = useState<any>(null);
@@ -128,8 +127,15 @@ export function RedeemView({
   const [giftPaid, setGiftPaid] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const router = useRouter();
-  const history = useLoadMore(initialTransactions, getGiftHistoryPageAction);
-  const transactions = history.rows;
+  const history = useNumberedPages(initialTransactions, getGiftHistoryPageAction);
+  const transactions = history.items;
+  const couponPages = useNumberedPages(initialCoupons, (p) => getCouponsPageAction({ ...p, type: typeFilter, state: stateFilter }));
+  // A filter change reloads page 1 with the new filter values (state updates land after this render).
+  const filterCoupons = (type: typeof typeFilter, state: typeof stateFilter) => {
+    setTypeFilter(type);
+    setStateFilter(state);
+    void couponPages.load(() => getCouponsPageAction({ page: 1, type, state }));
+  };
   const giftPkg = displayedGiftPackages.find((p) => p.id === activeGiftPkgId);
 
   const openGift = () => {
@@ -169,13 +175,14 @@ export function RedeemView({
     admin: en ? 'Granted' : 'Dari admin',
   };
 
-  const visibleCoupons = coupons.filter(
-    (c) =>
-      (typeFilter === 'all' || c.source === typeFilter) &&
-      (stateFilter === 'all' || (stateFilter === 'available') === isAvailable(c)),
-  );
-  // Five at a time; the filters above still see every coupon.
-  const shownCoupons = showAllCoupons ? visibleCoupons : visibleCoupons.slice(0, COUPON_PREVIEW);
+  // router.refresh hands a new unfiltered page 1, which the hook shows, so the filters reset with it.
+  const [couponBase, setCouponBase] = useState(initialCoupons);
+  if (couponBase !== initialCoupons) {
+    setCouponBase(initialCoupons);
+    setTypeFilter('all');
+    setStateFilter('all');
+  }
+  const visibleCoupons = couponPages.items;
 
   const errorText = (code: string | undefined, fallback: string, retryInMinutes?: number) => {
     switch (code) {
@@ -309,12 +316,12 @@ export function RedeemView({
       <section className="pt-4">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
           <h2 className="text-lg font-semibold text-neutral-950">
-            {en ? 'Coupons' : 'Kupon'} · <span className="tabular-nums">{coupons.length}</span>
+            {en ? 'Coupons' : 'Kupon'} · <span className="tabular-nums">{formatPageTotal(initialCoupons)}</span>
           </h2>
           <div className="flex flex-wrap items-center gap-3">
             <select
               value={typeFilter}
-              onChange={(e) => setTypeFilter(e.target.value as typeof typeFilter)}
+              onChange={(e) => filterCoupons(e.target.value as typeof typeFilter, stateFilter)}
               aria-label={en ? 'Filter by type' : 'Filter jenis'}
               className={`h-9 w-44 rounded-lg border border-neutral-200 bg-white px-3 text-sm text-neutral-900 cursor-pointer ${focusRing}`}
             >
@@ -332,7 +339,7 @@ export function RedeemView({
                 <button
                   key={value}
                   type="button"
-                  onClick={() => setStateFilter(value)}
+                  onClick={() => filterCoupons(typeFilter, value)}
                   aria-pressed={stateFilter === value}
                   className={`h-8 px-3 rounded-md text-sm pointer-coarse:min-h-11 transition-colors cursor-pointer ${focusRing} ${
                     stateFilter === value ? 'bg-white text-neutral-950 font-semibold shadow-xs' : 'text-neutral-600 hover:text-neutral-950'
@@ -347,7 +354,7 @@ export function RedeemView({
 
         {visibleCoupons.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-neutral-300 px-6 py-10 text-center text-sm text-neutral-600">
-            {coupons.length === 0
+            {initialCoupons.total === 0
               ? en
                 ? 'No coupons yet. Redeem a code or buy a package and it shows up here.'
                 : 'Belum ada kupon. Tukar kode atau beli paket, nanti muncul di sini.'
@@ -357,7 +364,7 @@ export function RedeemView({
           </div>
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            {shownCoupons.map((c) => {
+            {visibleCoupons.map((c) => {
               const available = isAvailable(c);
               const allowance = c.allowance || 1;
               const usedPct = Math.min(100, Math.max(0, ((allowance - Math.max(0, c.remaining)) / allowance) * 100));
@@ -415,19 +422,7 @@ export function RedeemView({
             })}
           </div>
         )}
-        {visibleCoupons.length > COUPON_PREVIEW && (
-          <div className="mt-4 text-center">
-            <button
-              type="button"
-              onClick={() => setShowAllCoupons((v) => !v)}
-              className="h-9 rounded-full border border-neutral-300 bg-white px-4 text-sm font-semibold text-neutral-950 hover:border-neutral-950 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 focus-visible:ring-offset-2"
-            >
-              {showAllCoupons
-                ? en ? 'Show fewer' : 'Tampilkan lebih sedikit'
-                : en ? `Show all ${visibleCoupons.length}` : `Lihat semua ${visibleCoupons.length}`}
-            </button>
-          </div>
-        )}
+        <NumberedPager list={couponPages} en={en} />
       </section>
 
       {/* Gift card transactions */}
@@ -496,13 +491,7 @@ export function RedeemView({
             </tbody>
           </table>
         </div>
-        <LoadMoreButton
-          nextCursor={history.nextCursor}
-          loading={history.loading}
-          failed={history.failed}
-          onClick={history.loadMore}
-          en={en}
-        />
+        <NumberedPager list={history} en={en} />
       </section>
 
       {/* Buy gift card dialog */}

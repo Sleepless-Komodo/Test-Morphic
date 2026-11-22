@@ -1,7 +1,9 @@
-import { and, eq, desc, gt, isNull } from 'drizzle-orm';
+import { and, eq, gt, isNull } from 'drizzle-orm';
 import { db, schema as s } from '@morphic/db';
-import { getGiftHistoryPageAction, requireUser } from '@/lib/actions';
+import { getCouponsPageAction, getGiftHistoryPageAction, requireUser } from '@/lib/actions';
 import { RedeemView } from './redeem-view';
+
+const EMPTY_PAGE = { items: [], page: 1, lastPage: 1, total: 0, capped: false, hasNext: false };
 
 // Same view for every role. Admins create codes in the admin panel (/admin/codes).
 export default async function RedeemPage() {
@@ -13,24 +15,10 @@ export default async function RedeemPage() {
 
   const [coupons, giftPackages, gifts] = await Promise.all([
     // Every entitlement the user ever held, so the coupon list can show used/expired ones too.
-    db
-      .select({
-        id: s.entitlements.id,
-        allowance: s.entitlements.allowance,
-        remaining: s.entitlements.remaining,
-        source: s.entitlements.source,
-        status: s.entitlements.status,
-        expiresAt: s.entitlements.expiresAt,
-        packageName: s.packages.name,
-        modelName: s.models.displayName,
-      })
-      .from(s.entitlements)
-      .leftJoin(s.packages, eq(s.entitlements.packageId, s.packages.id))
-      .leftJoin(s.models, eq(s.entitlements.modelId, s.models.id))
-      .where(eq(s.entitlements.userId, user.id))
-      .orderBy(desc(s.entitlements.createdAt))
-      .limit(100)
-      .catch(warnEmpty('Entitlement')),
+    getCouponsPageAction().catch((err) => {
+      console.warn('[RedeemPage] Entitlement read failed:', err);
+      return EMPTY_PAGE;
+    }),
     // Gift card amounts = priced credit packages (model passes cannot become credit codes).
     db
       .select({
@@ -46,13 +34,13 @@ export default async function RedeemPage() {
       .catch(warnEmpty('Gift package')),
     getGiftHistoryPageAction().catch((err) => {
       console.warn('[RedeemPage] Gift history read failed:', err);
-      return { data: [], nextCursor: null };
+      return EMPTY_PAGE;
     }),
   ]);
 
   return (
     <RedeemView
-      coupons={coupons.map((c) => ({ ...c, expiresAt: c.expiresAt.toISOString() }))}
+      coupons={coupons}
       giftPackages={giftPackages.map((p) => ({ ...p, priceCents: p.priceCents ?? 0 }))}
       transactions={gifts}
     />
