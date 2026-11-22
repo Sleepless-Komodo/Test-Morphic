@@ -12,7 +12,7 @@ import { redeem } from './routes/redeem';
 import { catalog } from './routes/catalog';
 import { quickstart, wellKnown } from './routes/quickstart';
 import { requestId } from './middleware/request-id';
-import { jsonBodyLimit } from './middleware/body-limit';
+import { formatBodyLimit, jsonBodyLimit } from './middleware/body-limit';
 import { ipRateLimit } from './middleware/auth';
 import { MAX_BODY_BYTES } from './handlers/v1';
 import { getTrustedClientIp, isLoopbackIp } from './lib/ip';
@@ -121,7 +121,7 @@ if (process.env.ANTHROPIC_ENABLED === 'true') app.route('/v1', anthropic);
 app.route('/v1', v1);
 
 if (process.env.RESPONSES_API_ENABLED === 'true') {
-  app.use('/v1/responses', jsonBodyLimit(MAX_BODY_BYTES, '10MB'), ipRateLimit);
+  app.use('/v1/responses', jsonBodyLimit(MAX_BODY_BYTES, formatBodyLimit(MAX_BODY_BYTES)), ipRateLimit);
   app.post('/v1/responses', (c) => {
     const internalEnv = createInternalCallEnv({
       requestId: c.get('requestId'),

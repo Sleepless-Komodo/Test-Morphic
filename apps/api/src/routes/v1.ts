@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { apiKeyAuth, gatewayGuards, ipRateLimit } from '../middleware/auth';
+import { formatBodyLimit } from '../middleware/body-limit';
 import {
   handleListModels,
   handleGetModel,
@@ -17,7 +18,7 @@ v1.use(
     maxSize: MAX_BODY_BYTES,
     onError: (c) =>
       c.json(
-        { error: { message: 'payload too large, maximum allowed size is 10MB', type: 'invalid_request_error', code: 'payload_too_large' } },
+        { error: { message: `payload too large, maximum allowed size is ${formatBodyLimit(MAX_BODY_BYTES)}`, type: 'invalid_request_error', code: 'payload_too_large' } },
         413,
       ),
   }),

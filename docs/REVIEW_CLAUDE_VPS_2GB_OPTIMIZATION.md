@@ -222,6 +222,7 @@ effective_cache_size = 256MB   # planner hint only
 2. **Tahap 1 (Poin 1):** Gabungkan query auth jadi `JOIN`. Tambahkan bounded cache khusus key valid (TTL 30 detik, maks 2.000 entri) dengan `lastTouchedAt` di entri yang sama. Debounce `lastUsedAt` 60 detik. Hapus cache by `keyId` di `handlers/keys.ts:232` dan `:266`.
    - **Status: selesai (2026-11-22).** `apps/api/src/middleware/auth.ts` (`lookupKeyAuth`, `invalidateApiKeyAuthCache`), env `API_KEY_AUTH_CACHE_TTL_MS` (default `30000`, `0` = cache mati). Test: `apps/api/src/middleware/auth-cache.test.ts`. Dua test di `routes/security.test.ts` yang menulis DB langsung sekarang memanggil `invalidateApiKeyAuthCache()`. Suite API 570 test lulus. `P1-04` sempat gagal sekali karena flaky: 121 request melewati batas jendela menit rate limit.
 3. **Tahap 2 (Poin 2):** Tambahkan global concurrency cap (20–30 slot, via env) untuk v1, Anthropic, dan `/v1/responses`. Buat `MAX_BODY_BYTES` configurable via env beserta label error 413-nya. Di VPS 2 GB set `ANTHROPIC_MAX_BODY_BYTES` setara v1.
+   - **Status: selesai (2026-11-22).** Termasuk perbaikan bug slot concurrency per key yang dilepas sebelum stream selesai (projectmem issue #0004). Detail di bagian "Implementasi Tahap 2" di bawah.
 4. **Tahap 3 (Poin 4):** Tambahkan `displayName` ke router snapshot lalu arahkan `/v1/models` & `/v1/models/:id` membaca dari snapshot.
 5. **Tahap 4 (Poin 3):** Buat `max` koneksi fallback/lokal configurable via env (default 10, set 5 di VPS) dan terapkan tuning `postgresql.conf` lokal di atas.
 
@@ -292,3 +293,113 @@ Rekomendasi VPS 2 GB: biarkan default. Set `0` sementara kalau suspend harus ins
 - `pnpm --filter @morphic/api typecheck`: bersih.
 - `pnpm --filter @morphic/api test` (dengan `DUITKU_PRIMARY_PAYMENT_METHOD=VC DUITKU_BACKUP_PAYMENT_METHOD=BC`): 570/570 lulus.
 - Catatan flaky: `P1-04: per-key 429` di `routes/gateway.test.ts:115` sempat gagal sekali. Rate limit memakai jendela menit tetap, jadi 121 request yang melewati pergantian menit akan reset. Lulus saat dijalankan ulang. Tidak terkait perubahan ini.
+
+---
+
+## Implementasi Tahap 2: Batas Concurrency dan Body (2026-11-22)
+
+### Bug yang ditemukan: slot concurrency per key dilepas sebelum stream selesai
+
+Ditemukan saat menelusuri flow tahap 2. Bug ini sudah ada sebelum tahap 1 dan tercatat di projectmem sebagai issue #0004.
+
+- `gatewayGuards` (`apps/api/src/middleware/auth.ts`) melepas slot di blok `finally` setelah `await next()`.
+- `streamSSE` (`hono/dist/helper/streaming/sse.js:53-54`) menjalankan callback stream tanpa `await`, lalu langsung mengembalikan `Response`.
+- Akibatnya `next()` selesai begitu header stream terkirim, dan slot langsung dilepas walaupun token masih mengalir 10–120 detik lagi.
+- Batas "5 concurrent per key" hanya berlaku di fase sebelum stream, sekitar 1–3 detik.
+
+**Dampak.** Batas yang masih berlaku hanya 120 request/menit per key, sementara satu stream bisa hidup sampai 2 menit (`UPSTREAM_TIMEOUT_MS=120000`). Jadi satu key bisa menahan sekitar 240 stream bersamaan, bukan 5. Request tetap memotong kredit (`reserve`), jadi tidak gratis. Risikonya:
+
+1. RAM VPS 2 GB habis, karena setiap stream menahan body request di memori. Semua user ikut kena.
+2. Kuota atau rate limit provider upstream habis, sehingga user lain ikut gagal.
+3. Lebih parah lagi kalau satu user memakai beberapa key.
+
+Bug ini juga bisa terpicu tanpa niat jahat, misalnya dari aplikasi user dengan bug retry atau batch job paralel.
+
+**Bukti.** Test `per-key slot stays held for the whole stream` di `apps/api/src/middleware/concurrency.test.ts` gagal di kode lama (`200 !== 429`) dan lulus setelah perbaikan.
+
+### Flow as-is dan to-be (request streaming `/v1/chat/completions`)
+
+**As-is:**
+
+```
+1. bodyLimit        Content-Length > 10 MB (hardcoded)? → 413 "10MB" (hardcoded)
+2. ipRateLimit      300/menit per IP
+3. apiKeyAuth       cek key (cache tahap 1)
+4. gatewayGuards    120/menit per key, ambil slot per key (maks 5)
+5. handler          c.req.json(), Zod, reserve, fetch provider, return streamSSE(...)
+   gatewayGuards    finally: slot dilepas            ← terlalu cepat
+6. streaming        10–120 detik, body masih di RAM, tanpa batas jumlah stream
+```
+
+**To-be:**
+
+```
+1. bodyLimit        batas dari GATEWAY_MAX_BODY_BYTES (default 10 MB), label 413 mengikuti nilai
+2. ipRateLimit      sama
+3. apiKeyAuth       sama
+4. gatewayGuards    120/menit per key, ambil slot per key (maks 5)
+                    ambil slot global (GATEWAY_GLOBAL_CONCURRENCY, jika > 0)
+                    penuh → 503 server_overloaded + Retry-After: 1 (slot per key dikembalikan)
+5. handler          sama
+6. streaming        sama
+   selesai / client putus / upstream error → slot per key dan global dilepas
+```
+
+### Perbandingan
+
+| Aspek | As-is | To-be |
+|---|---|---|
+| Batas body v1 dan `/v1/responses` | 10 MB hardcoded | `GATEWAY_MAX_BODY_BYTES`, default tetap 10 MB |
+| Label pesan 413 | `"10MB"` dan `"32MB"` hardcoded | Dihitung dari nilai batas (`formatBodyLimit`) |
+| Batas body Anthropic | `ANTHROPIC_MAX_BODY_BYTES`, default 32 MiB | Sama. Hanya labelnya yang sekarang mengikuti nilai. |
+| Slot per key (5) | Dilepas saat header stream terkirim | Dilepas saat stream selesai, client cancel, atau error |
+| Batas global per proses | Tidak ada | `GATEWAY_GLOBAL_CONCURRENCY`, default `0` (mati) |
+| Saat batas global penuh | Tidak ada pengecekan | `503`, kode `server_overloaded` (Anthropic: `overloaded_error`), `Retry-After: 1` |
+| `/v1/responses` | Melewati chain v1 lewat request internal | Sama. Hanya chain dalam yang mengambil slot, jadi tidak dihitung dua kali. |
+
+### Keputusan desain
+
+- **Pelepasan slot mengikuti umur response.** Middleware `releaseWhenResponseDone` membungkus body response `text/event-stream`. Slot dilepas sekali saja: saat stream selesai dibaca, saat client cancel, atau saat stream error. Response non-stream (JSON) dilepas langsung, karena handler sudah selesai bekerja. `@hono/node-server` memanggil `reader.cancel()` saat socket client tertutup (`dist/utils.mjs:6-11`), jadi client yang putus juga melepas slot.
+- **Batas global di memori proses, bukan Redis.** Yang dilindungi adalah RAM node itu sendiri. Dengan multi-node, setiap node punya batas sendiri.
+- **Map sinkron untuk slot global.** Cek dan tambah slot terjadi tanpa `await`, jadi dua request tidak bisa sama-sama lolos di slot terakhir. Slot juga punya TTL pengaman yang sama dengan slot per key (`concurrencySlotTtlSeconds`), supaya slot yang gagal dilepas tidak mengurangi kapasitas selamanya.
+- **503, bukan 429.** Ini kondisi server, bukan kesalahan user. OpenAI SDK otomatis retry untuk 503.
+- **Default batas global mati.** Deployment lain tidak berubah perilakunya. Nilai diset di VPS.
+- **Default body tetap 10 MB** (`PRD §14.1`, dokumen PRD tidak ada di repo). Nilai diturunkan lewat env di VPS saja.
+
+### Perubahan perilaku untuk user
+
+User yang benar-benar menjalankan lebih dari 5 stream bersamaan per key sekarang mendapat `429 concurrency_limit_exceeded`. Sebelumnya mereka lolos karena bug.
+
+### Env baru
+
+| Env | Default | Rekomendasi VPS 2 GB | Keterangan |
+|---|---|---|---|
+| `GATEWAY_MAX_BODY_BYTES` | `10485760` (10 MB) | `4194304` (4 MB) | `/v1/chat/completions` dan `/v1/responses`. Nilai tidak valid jatuh ke default. |
+| `GATEWAY_GLOBAL_CONCURRENCY` | `0` (mati) | `25` | Maksimum request gateway in-flight per proses API. |
+| `ANTHROPIC_MAX_BODY_BYTES` (sudah ada) | `33554432` (32 MB) | `4194304` (4 MB) | Samakan dengan v1. Hanya relevan jika `ANTHROPIC_ENABLED=true`. |
+
+Ketiganya dibaca saat start (body) atau per request (global), tapi `process.env` tidak berubah selama proses jalan. Perubahan nilai berlaku setelah API di-restart.
+
+**Estimasi RAM terburuk** dengan body 4 MB (sekitar 12 MB tertahan per request: teks mentah di cache body Hono, object hasil parse, output Zod): 25 slot sekitar 300 MB, masih muat di heap 384–512 MB. 50 slot sekitar 600 MB, terlalu besar.
+
+### File yang diubah
+
+| File | Perubahan |
+|---|---|
+| `apps/api/src/middleware/auth.ts` | `gatewayGuards`: slot global, `serverOverloaded()`, `releaseWhenResponseDone()`, `acquireGlobalSlot()`, `resolveGlobalConcurrency()`. |
+| `apps/api/src/middleware/body-limit.ts` | `formatBodyLimit()` untuk label 413. |
+| `apps/api/src/handlers/v1.ts` | `MAX_BODY_BYTES` dari `GATEWAY_MAX_BODY_BYTES`, default 10 MB. |
+| `apps/api/src/routes/v1.ts`, `apps/api/src/app.ts`, `apps/api/src/routes/anthropic.ts` | Label 413 dihitung dari batas. |
+| `apps/api/src/middleware/concurrency.test.ts` | Test baru: slot per key ditahan sepanjang stream; slot dilepas saat client cancel; response non-stream langsung lepas; batas global memberi 503 lintas key lalu bebas saat stream selesai. |
+| `.env.development.example`, `.env.production.example` | Tambah `GATEWAY_MAX_BODY_BYTES`, `GATEWAY_GLOBAL_CONCURRENCY`. Contoh production juga memuat `ANTHROPIC_MAX_BODY_BYTES` dengan nilai rekomendasi VPS. |
+
+### Verifikasi
+
+- `pnpm --filter @morphic/api typecheck`: bersih. ESLint pada file yang diubah: bersih.
+- Test baru di kode lama: 2 test slot per key gagal (`200 !== 429`). Di kode baru: 4/4 lulus.
+- `pnpm --filter @morphic/api test` (dengan `DUITKU_PRIMARY_PAYMENT_METHOD=VC DUITKU_BACKUP_PAYMENT_METHOD=BC`): 574/574 lulus.
+
+### Belum dikerjakan
+
+- Slot TTL Redis (`concurrencySlotTtlSeconds`) dihitung dari `UPSTREAM_TOTAL_TIMEOUT_MS` / `UPSTREAM_TIMEOUT_MS`. Route Anthropic punya timeout sendiri (`ANTHROPIC_TOTAL_TIMEOUT_MS`, default 180 detik). Stream Anthropic yang lebih lama dari TTL slot bisa kehilangan slot-nya lebih awal. Dampaknya kecil, tapi layak dicek terpisah.
+- `/v1/responses` mem-parse body di request luar sebelum slot diambil di request dalam. Hanya relevan jika `RESPONSES_API_ENABLED=true`.

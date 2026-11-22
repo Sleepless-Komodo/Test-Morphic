@@ -7,6 +7,7 @@ import { anthropicError } from '@morphic/shared/anthropic';
 import { checkRateLimit, trackConcurrency, releaseConcurrency } from '../ratelimit';
 import { getTrustedClientIp } from '../lib/ip';
 import { getInternalCallContext } from '../lib/internal-context';
+import { concurrencySlotTtlSeconds } from '../lib/redis-store';
 
 export interface AuthedKey {
   keyId: string;
@@ -232,10 +233,99 @@ export function gatewayGuards(limit: {
     if (!slot.acquired) {
       return rateLimited(c, 'concurrency limit exceeded', 'concurrency_limit_exceeded', 1, format);
     }
+
+    const globalMax = resolveGlobalConcurrency();
+    const holdsGlobal = globalMax > 0;
+    if (holdsGlobal && !acquireGlobalSlot(slot.token, globalMax)) {
+      await releaseConcurrency(keyId, slot.token);
+      return serverOverloaded(c, format);
+    }
+
+    const release = async () => {
+      if (holdsGlobal) globalSlots.delete(slot.token);
+      await releaseConcurrency(keyId, slot.token);
+    };
     try {
       await next();
-    } finally {
-      await releaseConcurrency(keyId, slot.token);
+    } catch (error) {
+      await release();
+      throw error;
     }
+    releaseWhenResponseDone(c, release);
   };
+}
+
+// Per-process cap on in-flight gateway requests: it protects this node's RAM, so it is
+// deliberately not shared through Redis. 0 (default) disables it.
+function resolveGlobalConcurrency(): number {
+  const n = Number(process.env.GATEWAY_GLOBAL_CONCURRENCY ?? 0);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+}
+
+/** token -> acquiredAt. Synchronous, so check-and-add cannot interleave. */
+const globalSlots = new Map<string, number>();
+
+function acquireGlobalSlot(token: string, max: number): boolean {
+  const now = Date.now();
+  // Same safety TTL as the per-key slots, so a slot whose release never ran cannot shrink capacity forever.
+  const minAcquiredAt = now - concurrencySlotTtlSeconds() * 1000;
+  for (const [t, acquiredAt] of globalSlots) {
+    if (acquiredAt < minAcquiredAt) globalSlots.delete(t);
+  }
+  if (globalSlots.size >= max) return false;
+  globalSlots.set(token, now);
+  return true;
+}
+
+function serverOverloaded(c: Context, format: ErrorEnvelopeFormat) {
+  const message = 'server is at capacity, please retry shortly';
+  c.header('Retry-After', '1');
+  if (format === 'anthropic') {
+    return c.json(anthropicError('overloaded_error', message), 503);
+  }
+  return c.json({ error: { message, type: 'server_error', code: 'server_overloaded' } }, 503);
+}
+
+/**
+ * Run `release` once the client has the whole response. `streamSSE` returns its Response
+ * before the stream body is written, so releasing right after `next()` would free the slot
+ * while the stream (and the request body it holds) is still alive. Streams release on
+ * completion, upstream error, or client cancel; everything else releases immediately.
+ */
+function releaseWhenResponseDone(c: Context, release: () => Promise<void>): void {
+  let released = false;
+  const once = () => {
+    if (released) return;
+    released = true;
+    release().catch(() => {});
+  };
+
+  const res = c.res;
+  if (!res.body || !res.headers.get('content-type')?.includes('text/event-stream')) {
+    once();
+    return;
+  }
+
+  const reader = res.body.getReader();
+  const body = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        const { done, value } = await reader.read();
+        if (done) {
+          controller.close();
+          once();
+          return;
+        }
+        controller.enqueue(value);
+      } catch (error) {
+        controller.error(error);
+        once();
+      }
+    },
+    async cancel(reason) {
+      once();
+      await reader.cancel(reason);
+    },
+  });
+  c.res = new Response(body, res);
 }

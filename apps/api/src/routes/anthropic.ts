@@ -14,6 +14,7 @@ import {
   type AnthropicMessagesRequest,
 } from '@morphic/shared/anthropic';
 import { apiKeyAuth, createIpRateLimit, gatewayGuards } from '../middleware/auth';
+import { formatBodyLimit } from '../middleware/body-limit';
 import { appFromRequest } from '../lib/app-attribution';
 import {
   buildPromptText,
@@ -69,7 +70,7 @@ anthropic.use(
     maxSize: MAX_BODY_BYTES,
     onError: (c) =>
       c.json(
-        anthropicError('invalid_request_error', 'payload too large, maximum allowed size is 32MB'),
+        anthropicError('invalid_request_error', `payload too large, maximum allowed size is ${formatBodyLimit(MAX_BODY_BYTES)}`),
         413,
       ),
   }),

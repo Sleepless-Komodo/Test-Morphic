@@ -13,7 +13,12 @@ import { createSseSanitizer } from '../lib/sse-sanitize';
 import { alertProviderProblem } from '../lib/alert';
 import { rejectMultiplierParams, unifyOutputCap } from '../domain/request-guards';
 
-export const MAX_BODY_BYTES = 10 * 1024 * 1024; // PRD §14.1
+const DEFAULT_MAX_BODY_BYTES = 10 * 1024 * 1024; // PRD §14.1
+// GATEWAY_MAX_BODY_BYTES lowers it on small hosts (e.g. a 2 GB VPS); the default stays 10 MB.
+export const MAX_BODY_BYTES = (() => {
+  const value = Number(process.env.GATEWAY_MAX_BODY_BYTES ?? DEFAULT_MAX_BODY_BYTES);
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : DEFAULT_MAX_BODY_BYTES;
+})();
 
 export const MAX_MESSAGES = (() => {
   const value = Number(process.env.MAX_MESSAGES ?? 2000);
