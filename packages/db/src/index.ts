@@ -492,11 +492,20 @@ let _localDb: PostgresJsDatabase<typeof schema> | null = null;
 let _fallbackDb: NeonHttpDatabase<typeof schema> | PostgresJsDatabase<typeof schema> | null = null;
 let _fallbackUrlCached: string | null = null;
 
+/**
+ * Max connections per postgres-js pool (local primary and fallback). Every connection is a
+ * Postgres backend process (~5-10 MB), so small hosts running Postgres locally lower it.
+ */
+function postgresPoolMax(): number {
+  const n = Number(process.env.DB_POOL_MAX ?? 10);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 10;
+}
+
 function getLocalDb(): PostgresJsDatabase<typeof schema> {
   if (_localDb) return _localDb;
 
   const client = postgres(getConnectionString(), {
-    max: 10,
+    max: postgresPoolMax(),
     idle_timeout: 20,
     connect_timeout: 10,
   });
@@ -519,7 +528,7 @@ function getFallbackDb(): NeonHttpDatabase<typeof schema> {
     _fallbackDb = drizzle(neon(fallbackUrl), { schema });
   } else {
     const client = postgres(fallbackUrl, {
-      max: 10,
+      max: postgresPoolMax(),
       idle_timeout: 20,
       connect_timeout: 10,
     });

@@ -225,6 +225,7 @@ effective_cache_size = 256MB   # planner hint only
    - **Status: selesai (2026-11-22).** Termasuk perbaikan bug slot concurrency per key yang dilepas sebelum stream selesai (projectmem issue #0004). Detail di bagian "Implementasi Tahap 2" di bawah.
 4. **Tahap 3 (Poin 4):** Tambahkan `displayName` ke router snapshot lalu arahkan `/v1/models` & `/v1/models/:id` membaca dari snapshot.
 5. **Tahap 4 (Poin 3):** Buat `max` koneksi fallback/lokal configurable via env (default 10, set 5 di VPS) dan terapkan tuning `postgresql.conf` lokal di atas.
+   - **Status: kode selesai (2026-11-22).** Env `DB_POOL_MAX`. Tuning `postgresql.conf` diterapkan manual di server. Detail di bagian "Implementasi Poin 3" di bawah.
 
 ---
 
@@ -445,4 +446,66 @@ State yang dipakai fungsi-fungsi itu (`lastParitySnapshot`, `DbSyncStatus`, `war
 
 - Tidak ada rujukan tersisa ke `openapi.yaml`, `seed:dahl`, atau fungsi yang dihapus di kode maupun docs.
 - Typecheck dan ESLint bersih, `pnpm --filter @morphic/api build` sukses.
+- `pnpm --filter @morphic/api test` (dengan `DUITKU_PRIMARY_PAYMENT_METHOD=VC DUITKU_BACKUP_PAYMENT_METHOD=BC`): 574/574 lulus.
+
+---
+
+## Implementasi Poin 3: Pool Koneksi Postgres Lokal (2026-11-22)
+
+### Konteks
+
+API memakai Neon sebagai database utama (`DATABASE_URL`) dan Postgres lokal di perangkat yang sama sebagai cadangan (`DATABASE_URL_FALLBACK=...@127.0.0.1:5432`). Setiap koneksi ke Postgres lokal adalah satu proses backend, sekitar 5–10 MB RSS, ditambah `work_mem` per operasi sort/hash.
+
+### As-is dan to-be
+
+| Kondisi | As-is | To-be |
+|---|---|---|
+| Normal (Neon jalan) | Postgres lokal hanya dipakai sync periodik: maksimal 4 koneksi (`packages/db/src/sync.ts:327`), lalu ditutup | Sama |
+| Failover (Neon down) | Pool `getFallbackDb()` sampai 10 koneksi, hardcoded | `DB_POOL_MAX`, default 10, di VPS 5 |
+| `DATABASE_URL` bukan Neon | Pool `getLocalDb()` sampai 10 koneksi, hardcoded | `DB_POOL_MAX` |
+| Pool Neon WebSocket (transaksi) | `max: 5` | Tidak diubah. Koneksinya keluar ke cloud, bukan backend Postgres lokal. |
+| `neonAgent` (`maxSockets: 32`) | Socket HTTP keluar ke Neon | Tidak diubah. Bukan masalah RAM. |
+
+Dengan `DB_POOL_MAX=5`, koneksi API ke Postgres lokal saat failover turun dari maksimal 10 ke 5. Hematnya sekitar 25–50 MB RSS di Postgres.
+
+**Tradeoff:** saat failover, request bisa sedikit antre menunggu koneksi. Batas `GATEWAY_GLOBAL_CONCURRENCY` (tahap 2) menjaga antrean tetap pendek.
+
+**Dampak:** lebih kecil dari tahap 1 dan 2, dan hanya terasa saat failover.
+
+### Env baru: `DB_POOL_MAX`
+
+| Nilai | Efek |
+|---|---|
+| Tidak diset | `10` (sama seperti sebelumnya) |
+| Angka positif | Maksimal koneksi per pool postgres-js |
+| `0`, negatif, bukan angka | Jatuh ke `10` |
+
+Rekomendasi VPS 2 GB: `DB_POOL_MAX=5`. Nilai dibaca saat pool pertama kali dibuat, jadi perubahan berlaku setelah API di-restart.
+
+### Tuning Postgres lokal (manual, bukan kode)
+
+Terapkan di `postgresql.conf` Postgres lokal (Termux biasanya `$PREFIX/var/lib/postgresql/postgresql.conf`), lalu restart Postgres. Nilai dan koreksinya ada di bagian verifikasi Poin 3 di atas.
+
+```conf
+max_connections = 20
+shared_buffers = 128MB
+work_mem = 4MB
+maintenance_work_mem = 32MB
+autovacuum_max_workers = 2
+effective_cache_size = 256MB   # planner hint only, does not save RAM
+```
+
+`max_connections = 20` cukup untuk API (`DB_POOL_MAX=5`) ditambah sync (maksimal 4) ditambah koneksi admin atau `psql`. Kalau `apps/web` juga berjalan di perangkat yang sama dan memakai Postgres lokal, hitung pool-nya juga.
+
+### File yang diubah
+
+| File | Perubahan |
+|---|---|
+| `packages/db/src/index.ts` | `postgresPoolMax()` membaca `DB_POOL_MAX`. Dipakai di `getLocalDb()` dan `getFallbackDb()`. |
+| `.env.development.example`, `.env.production.example` | Tambah `DB_POOL_MAX` (dikomentari; production dengan nilai rekomendasi VPS `5`). |
+
+### Verifikasi
+
+- Typecheck `@morphic/db` dan `@morphic/api`: bersih.
+- Uji langsung ke Postgres lokal, 3 query `pg_sleep(0.3)` paralel: `DB_POOL_MAX=1` selesai dalam 963 ms (antre), `DB_POOL_MAX=3` dalam 349 ms (paralel). Env terbukti membatasi pool.
 - `pnpm --filter @morphic/api test` (dengan `DUITKU_PRIMARY_PAYMENT_METHOD=VC DUITKU_BACKUP_PAYMENT_METHOD=BC`): 574/574 lulus.
