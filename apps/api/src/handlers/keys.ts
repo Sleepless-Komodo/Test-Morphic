@@ -4,6 +4,7 @@ import { db, schema as s } from '@morphic/db';
 import { eq, and, or, isNull, gt, desc, sql } from 'drizzle-orm';
 import { getTrustedClientIp } from '../lib/ip';
 import { notifyKeyRevoked } from '../lib/notify';
+import { invalidateApiKeyAuthCache } from '../middleware/auth';
 
 export const GRACE_SECONDS = new Set([3600, 86_400, 604_800]);
 
@@ -230,6 +231,7 @@ export async function handleRotateKey(c: Context): Promise<Response> {
 
   const minted = await mintKey(userId, old.name, newExpiresAt);
   await db.update(s.apiKeys).set({ expiresAt: oldExpiresAt }).where(eq(s.apiKeys.id, old.id));
+  invalidateApiKeyAuthCache(old.id);
   await auditKey(c, 'key.rotated', old.id, old.keyPrefix, { newKeyId: minted.id, oldExpiresAt: oldExpiresAt.toISOString() });
 
   return c.json({ ...minted, rotated_from: { id: old.id, expires_at: oldExpiresAt.toISOString() } }, 201);
@@ -264,6 +266,7 @@ export async function handleDeleteKey(c: Context): Promise<Response> {
   // Hard delete: auth looks keys up by hash, so the key stops working on its next request.
   // Usage and request logs keep their rows (api_key_id is set null by the FK).
   await db.delete(s.apiKeys).where(and(eq(s.apiKeys.id, keyId), eq(s.apiKeys.userId, userId)));
+  invalidateApiKeyAuthCache(keyId);
   await auditKey(c, 'key.revoked', keyId, key.keyPrefix);
   void notifyKeyRevoked(userId, { name: key.name, keyPrefix: key.keyPrefix });
 

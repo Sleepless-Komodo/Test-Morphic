@@ -5,6 +5,7 @@
 import { test, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import { app } from '../app';
+import { invalidateApiKeyAuthCache } from '../middleware/auth';
 import { db, schema as s } from '@morphic/db';
 import { eq, sql } from 'drizzle-orm';
 
@@ -416,6 +417,8 @@ test('key rotation mints a replacement and puts the old key on a grace period', 
 
   // Once the grace period is over the old key is rejected.
   await db.update(s.apiKeys).set({ expiresAt: new Date(Date.now() - 1000) }).where(eq(s.apiKeys.id, created.id));
+  // Direct DB writes bypass this process; drop the auth cache as if its TTL had lapsed.
+  invalidateApiKeyAuthCache();
   const expired = await app.request('/v1/models', { headers: { Authorization: `Bearer ${created.key}` } });
   assert.equal(expired.status, 401);
   const again = await app.request(`/v1/keys/${created.id}/rotate`, { method: 'POST', headers: auth, body: '{}' });
@@ -440,6 +443,7 @@ test('P5-4: suspended accounts cannot authenticate via API key (403 account_susp
 
   // Case A & B: Set users.suspended = true
   await db.update(s.users).set({ suspended: true }).where(eq(s.users.id, user.id));
+  invalidateApiKeyAuthCache();
 
   // Assert the key row itself is still 'active' (suspension alone must block)
   const [keyRow] = await db.select({ status: s.apiKeys.status }).from(s.apiKeys).where(eq(s.apiKeys.id, created.id));
@@ -463,6 +467,7 @@ test('P5-4: suspended accounts cannot authenticate via API key (403 account_susp
 
   // Case C: Un-suspend -> the same key works again
   await db.update(s.users).set({ suspended: false }).where(eq(s.users.id, user.id));
+  invalidateApiKeyAuthCache();
   const postUnsuspend = await app.request('/v1/models', { headers: keyAuth });
   assert.equal(postUnsuspend.status, 200);
 });

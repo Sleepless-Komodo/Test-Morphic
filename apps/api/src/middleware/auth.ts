@@ -42,6 +42,74 @@ function authFailed(
   return c.json({ error: { message, type: 'auth_error', code } }, status);
 }
 
+interface CachedKeyAuth {
+  keyId: string;
+  userId: string;
+  expiresAt: Date | null;
+  suspended: boolean;
+  cachedAt: number;
+  touchedAt: number;
+}
+
+// Valid keys only, keyed by SHA-256 hash, so random-key floods never evict real entries.
+// Suspend/revoke written by apps/web (another process) take effect within the TTL.
+const AUTH_CACHE_MAX_ENTRIES = 2000;
+const LAST_USED_DEBOUNCE_MS = 60_000;
+const authCache = new Map<string, CachedKeyAuth>();
+
+function authCacheTtlMs(): number {
+  const n = Number(process.env.API_KEY_AUTH_CACHE_TTL_MS ?? 30_000);
+  return Number.isFinite(n) && n >= 0 ? n : 30_000;
+}
+
+/** Drop cached auth for one key (rotate/delete in this process), or everything. */
+export function invalidateApiKeyAuthCache(keyId?: string): void {
+  if (keyId === undefined) {
+    authCache.clear();
+    return;
+  }
+  for (const [hash, entry] of authCache) {
+    if (entry.keyId === keyId) authCache.delete(hash);
+  }
+}
+
+async function lookupKeyAuth(hash: string): Promise<CachedKeyAuth | null> {
+  const now = Date.now();
+  const cached = authCache.get(hash);
+  if (cached && now - cached.cachedAt < authCacheTtlMs()) return cached;
+
+  const [row] = await db
+    .select({
+      id: s.apiKeys.id,
+      userId: s.apiKeys.userId,
+      expiresAt: s.apiKeys.expiresAt,
+      suspended: s.users.suspended,
+    })
+    .from(s.apiKeys)
+    .leftJoin(s.users, eq(s.users.id, s.apiKeys.userId))
+    .where(and(eq(s.apiKeys.keyHash, hash), eq(s.apiKeys.status, 'active')))
+    .limit(1);
+
+  authCache.delete(hash);
+  if (!row) return null;
+
+  const entry: CachedKeyAuth = {
+    keyId: row.id,
+    userId: row.userId,
+    expiresAt: row.expiresAt,
+    // A missing user row is treated like a suspended account, as before.
+    suspended: row.suspended ?? true,
+    cachedAt: now,
+    touchedAt: cached?.keyId === row.id ? cached.touchedAt : 0,
+  };
+  if (authCache.size >= AUTH_CACHE_MAX_ENTRIES) {
+    const oldest = authCache.keys().next().value;
+    if (oldest !== undefined) authCache.delete(oldest);
+  }
+  authCache.set(hash, entry);
+  return entry;
+}
+
 /** mp-* key (Bearer, or `x-api-key` when allowed) → SHA-256 lookup → user. */
 export function apiKeyAuth(options: ApiKeyAuthOptions = {}) {
   const format = options.errorFormat ?? 'openai';
@@ -60,16 +128,7 @@ export function apiKeyAuth(options: ApiKeyAuthOptions = {}) {
 
     const hash = createHash('sha256').update(raw).digest('hex');
 
-    const [key] = await db
-      .select({
-        id: s.apiKeys.id,
-        userId: s.apiKeys.userId,
-        status: s.apiKeys.status,
-        expiresAt: s.apiKeys.expiresAt,
-      })
-      .from(s.apiKeys)
-      .where(and(eq(s.apiKeys.keyHash, hash), eq(s.apiKeys.status, 'active')))
-      .limit(1);
+    const key = await lookupKeyAuth(hash);
 
     if (!key) {
       return authFailed(c, 401, 'invalid or revoked api key', 'invalid_api_key', format);
@@ -79,22 +138,21 @@ export function apiKeyAuth(options: ApiKeyAuthOptions = {}) {
       return authFailed(c, 401, 'api key has expired', 'api_key_expired', format);
     }
 
-    const [user] = await db
-      .select({ suspended: s.users.suspended })
-      .from(s.users)
-      .where(eq(s.users.id, key.userId))
-      .limit(1);
-    if (!user || user.suspended) {
+    if (key.suspended) {
       return authFailed(c, 403, 'account suspended', 'account_suspended', format);
     }
 
-    // touch last_used_at (blocking to ensure connection is released before next)
-    await db.update(s.apiKeys)
-      .set({ lastUsedAt: new Date() })
-      .where(eq(s.apiKeys.id, key.id))
-      .catch(() => {});
+    // Debounced and not awaited: at most one write per key per minute keeps pending writes bounded.
+    const now = Date.now();
+    if (now - key.touchedAt >= LAST_USED_DEBOUNCE_MS) {
+      key.touchedAt = now;
+      db.update(s.apiKeys)
+        .set({ lastUsedAt: new Date(now) })
+        .where(eq(s.apiKeys.id, key.keyId))
+        .catch(() => {});
+    }
 
-    c.set('apiKey', { keyId: key.id, userId: key.userId });
+    c.set('apiKey', { keyId: key.keyId, userId: key.userId });
     await next();
   };
 }
