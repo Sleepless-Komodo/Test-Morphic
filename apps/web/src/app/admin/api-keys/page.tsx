@@ -1,16 +1,18 @@
 import Link from 'next/link';
-import { and, eq, gt, isNotNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, ilike, isNotNull, or, sql, type SQL } from 'drizzle-orm';
 import { db, schema as s } from '@morphic/db';
 import { requireAdmin } from '@/lib/actions';
 import { getServerTranslation } from '@/lib/i18n/server';
 import { formatCredits, formatTokenEstimate, timeAgo } from '@/lib/utils';
 import { AutoRefresh } from '@/components/AutoRefresh';
 import { memo } from '@/lib/memo';
-import { LIVE_TTL_MS } from '@/lib/refresh';
+import { LIVE_TTL_MS, SLOW_TTL_MS } from '@/lib/refresh';
 import { KeyRound, Search } from 'lucide-react';
 import { UserCell } from '../user-cell';
 import { PERIODS, parsePeriod, keyStatus } from './period';
-import { PAGE_SIZE } from '@/lib/pagination';
+import { loadPage, readPage } from '@/lib/page-numbers';
+import { cappedCount } from '@/lib/capped-count';
+import { Pager } from '@/components/Pager';
 
 export const dynamic = 'force-dynamic';
 
@@ -28,91 +30,121 @@ export default async function AdminApiKeys({ searchParams }: { searchParams: Pro
   const sort: Sort = SORTS.includes(params.sort as Sort) ? (params.sort as Sort) : 'requests';
   const status = ['active', 'revoked'].includes(params.status ?? '') ? params.status! : 'all';
   const q = (params.q ?? '').trim();
-  const page = Math.max(1, Number(params.page) || 1);
+  const pageNo = readPage(params.page);
 
-  // Both reads are independent of q/sort/status/page: per-key stats are cached once per period and
-  // the key list once, then filtered, sorted and paged in memory (bounded by the number of keys).
-  const [keys, stats] = await Promise.all([
-    memo('admin:apikeys:keys', LIVE_TTL_MS, () =>
-      db
-        .select({
-          id: s.apiKeys.id,
-          name: s.apiKeys.name,
-          keyPrefix: s.apiKeys.keyPrefix,
-          status: s.apiKeys.status,
-          expiresAt: s.apiKeys.expiresAt,
-          lastUsedAt: s.apiKeys.lastUsedAt,
-          createdAt: s.apiKeys.createdAt,
-          userName: s.users.name,
-          userEmail: s.users.email,
-          userImage: s.users.image,
-          userRole: s.users.role,
-        })
-        .from(s.apiKeys)
-        .innerJoin(s.users, eq(s.users.id, s.apiKeys.userId)),
-    ),
-    memo(`admin:apikeys:stats:${period.key}`, LIVE_TTL_MS, () =>
-      db
-        .select({
-          apiKeyId: s.requestLogs.apiKeyId,
-          requests: sql<number>`count(*)::int`,
-          errors: sql<number>`count(*) filter (where ${s.requestLogs.status} <> 'success')::int`,
-          promptTokens: sql<number>`coalesce(sum(${s.requestLogs.promptTokens}), 0)::float8`,
-          completionTokens: sql<number>`coalesce(sum(${s.requestLogs.completionTokens}), 0)::float8`,
-          credits: sql<number>`coalesce(sum(${s.requestLogs.creditsConsumed}), 0)::float8`,
-        })
-        .from(s.requestLogs)
-        .where(and(isNotNull(s.requestLogs.apiKeyId), since ? gt(s.requestLogs.createdAt, since) : undefined))
-        .groupBy(s.requestLogs.apiKeyId),
-    ),
-  ]);
-
+  // Per-key stats for the period: the only read of request_logs on this page, aggregated once per
+  // period and cached (all time for longer), so paging, sorting and searching never scan the log table.
+  const statsRows = await memo(`admin:apikeys:stats:${period.key}`, period.ms ? LIVE_TTL_MS : SLOW_TTL_MS, () =>
+    db
+      .select({
+        apiKeyId: s.requestLogs.apiKeyId,
+        requests: sql<number>`count(*)::int`,
+        errors: sql<number>`count(*) filter (where ${s.requestLogs.status} <> 'success')::int`,
+        promptTokens: sql<number>`coalesce(sum(${s.requestLogs.promptTokens}), 0)::float8`,
+        completionTokens: sql<number>`coalesce(sum(${s.requestLogs.completionTokens}), 0)::float8`,
+        credits: sql<number>`coalesce(sum(${s.requestLogs.creditsConsumed}), 0)::float8`,
+      })
+      .from(s.requestLogs)
+      .where(and(isNotNull(s.requestLogs.apiKeyId), since ? gt(s.requestLogs.createdAt, since) : undefined))
+      .groupBy(s.requestLogs.apiKeyId),
+  );
   // Groups include keys deleted since, exactly like the old count(distinct api_key_id).
-  const activity = { keys: stats.length, requests: 0, tokens: 0 };
-  const statsByKey = new Map<string, (typeof stats)[number]>();
-  for (const r of stats) {
+  const activity = { keys: statsRows.length, requests: 0, tokens: 0 };
+  for (const r of statsRows) {
     activity.requests += r.requests;
     activity.tokens += r.promptTokens + r.completionTokens;
-    if (r.apiKeyId) statsByKey.set(r.apiKeyId, r);
   }
-  const summary = { total: keys.length, active: keys.filter((k) => k.status === 'active').length };
+  // The cached stats go to the page query as one JSON parameter, joined like a table.
+  const statsJson = JSON.stringify(
+    statsRows.flatMap((r) =>
+      r.apiKeyId ? [{ k: r.apiKeyId, r: r.requests, e: r.errors, p: r.promptTokens, c: r.completionTokens, cr: r.credits }] : [],
+    ),
+  );
+  const stats = sql`jsonb_to_recordset(${statsJson}::jsonb) as key_stats(k uuid, r int, e int, p float8, c float8, cr float8)`;
 
-  const needle = q.toLowerCase();
-  const matched = keys
-    .filter((k) => status === 'all' || k.status === status)
-    .filter(
-      (k) =>
-        !needle ||
-        [k.name, k.keyPrefix, k.userEmail, k.userName].some((v) => v?.toLowerCase().includes(needle)),
-    )
-    .map((k) => {
-      const st = statsByKey.get(k.id);
-      return {
-        ...k,
-        requests: st?.requests ?? 0,
-        errors: st?.errors ?? 0,
-        promptTokens: st?.promptTokens ?? 0,
-        completionTokens: st?.completionTokens ?? 0,
-        credits: st?.credits ?? 0,
-      };
-    });
-  type Row = (typeof matched)[number];
-  const time = (d: Date | null) => d?.getTime() ?? -Infinity;
-  const metric: Record<Sort, (r: Row) => number> = {
-    requests: (r) => r.requests,
-    tokens: (r) => r.promptTokens + r.completionTokens,
-    credits: (r) => r.credits,
-    errors: (r) => r.errors,
-    last_used: (r) => time(r.lastUsedAt),
-    created: (r) => r.createdAt.getTime(),
+  const like = q ? `%${q.replace(/[%_\\]/g, '\\$&')}%` : null;
+  const where = and(
+    status === 'all' ? undefined : eq(s.apiKeys.status, status as 'active' | 'revoked'),
+    like
+      ? or(ilike(s.apiKeys.name, like), ilike(s.apiKeys.keyPrefix, like), ilike(s.users.email, like), ilike(s.users.name, like))
+      : undefined,
+  );
+
+  const requests = sql<number>`coalesce(key_stats.r, 0)`;
+  const errors = sql<number>`coalesce(key_stats.e, 0)`;
+  const promptTokens = sql<number>`coalesce(key_stats.p, 0)`;
+  const completionTokens = sql<number>`coalesce(key_stats.c, 0)`;
+  const credits = sql<number>`coalesce(key_stats.cr, 0)`;
+  // Highest first, ties by id, the same order the in-memory sort used. Keys never used sort last.
+  const orderBy: Record<Sort, SQL> = {
+    requests: desc(requests),
+    tokens: desc(sql`${promptTokens} + ${completionTokens}`),
+    credits: desc(credits),
+    errors: desc(errors),
+    last_used: sql`${s.apiKeys.lastUsedAt} desc nulls last`,
+    created: desc(s.apiKeys.createdAt),
   };
-  const by = metric[sort];
-  matched.sort((a, b) => by(b) - by(a) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-  const rows = matched.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-  const pages = Math.max(1, Math.ceil(matched.length / PAGE_SIZE));
+  const loadKeys = () =>
+    loadPage(
+      pageNo,
+      (offset, limit) =>
+        db
+          .select({
+            id: s.apiKeys.id,
+            name: s.apiKeys.name,
+            keyPrefix: s.apiKeys.keyPrefix,
+            status: s.apiKeys.status,
+            expiresAt: s.apiKeys.expiresAt,
+            lastUsedAt: s.apiKeys.lastUsedAt,
+            createdAt: s.apiKeys.createdAt,
+            userName: s.users.name,
+            userEmail: s.users.email,
+            userImage: s.users.image,
+            userRole: s.users.role,
+            requests: sql<number>`${requests}::int`,
+            errors: sql<number>`${errors}::int`,
+            promptTokens: sql<number>`${promptTokens}::float8`,
+            completionTokens: sql<number>`${completionTokens}::float8`,
+            credits: sql<number>`${credits}::float8`,
+          })
+          .from(s.apiKeys)
+          .innerJoin(s.users, eq(s.users.id, s.apiKeys.userId))
+          .leftJoin(stats, sql`key_stats.k = ${s.apiKeys.id}`)
+          .where(where)
+          .orderBy(orderBy[sort], asc(s.apiKeys.id))
+          .limit(limit)
+          .offset(offset),
+      () =>
+        cappedCount(
+          db
+            .select({ id: s.apiKeys.id })
+            .from(s.apiKeys)
+            .innerJoin(s.users, eq(s.users.id, s.apiKeys.userId))
+            .where(where)
+            .$dynamic(),
+        ),
+    );
+
+  const [page, summary] = await Promise.all([
+    // Cached per period, status, sort, page and search term. An uncached read touches only
+    // api_keys and users; the stats come from the cached JSON above.
+    memo(`admin:apikeys:page:${period.key}:${status}:${sort}:${pageNo}:${q}`, LIVE_TTL_MS, loadKeys),
+    memo('admin:apikeys:summary', LIVE_TTL_MS, async () => {
+      const [r] = await db
+        .select({
+          total: sql<number>`count(*)::int`,
+          active: sql<number>`count(*) filter (where ${s.apiKeys.status} = 'active')::int`,
+        })
+        .from(s.apiKeys)
+        .innerJoin(s.users, eq(s.users.id, s.apiKeys.userId));
+      return r ?? { total: 0, active: 0 };
+    }),
+  ]);
+  const rows = page.items;
+
   const href = (patch: Partial<Params>) => {
-    const n = { period: period.key, q, sort, status, page: String(page), ...patch };
+    const n = { period: period.key, q, sort, status, page: String(pageNo), ...patch };
     const sp = new URLSearchParams({ period: n.period });
     if (n.q) sp.set('q', n.q);
     if (n.sort !== 'requests') sp.set('sort', n.sort);
@@ -279,25 +311,7 @@ export default async function AdminApiKeys({ searchParams }: { searchParams: Pro
         </div>
       </div>
 
-      {pages > 1 && (
-        <nav aria-label={en ? 'Pages' : 'Halaman'} className="flex items-center justify-between text-xs">
-          <span className="text-neutral-500">
-            {en ? 'Page' : 'Halaman'} {page} / {pages} · {formatCredits(matched.length)} key
-          </span>
-          <div className="flex gap-2">
-            {page > 1 && (
-              <Link href={href({ page: String(page - 1) })} className="rounded-xl border border-neutral-200 bg-white px-3 py-1.5 font-semibold hover:bg-neutral-100">
-                {en ? 'Previous' : 'Sebelumnya'}
-              </Link>
-            )}
-            {page < pages && (
-              <Link href={href({ page: String(page + 1) })} className="rounded-xl border border-neutral-200 bg-white px-3 py-1.5 font-semibold hover:bg-neutral-100">
-                {en ? 'Next' : 'Berikutnya'}
-              </Link>
-            )}
-          </div>
-        </nav>
-      )}
+      <Pager {...page} en={en} href={(p) => href({ page: String(p) })} />
     </div>
   );
 }

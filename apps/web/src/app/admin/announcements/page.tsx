@@ -3,24 +3,34 @@ import { db, schema as s } from '@morphic/db';
 import { requireAdmin } from '@/lib/actions';
 import { getServerTranslation } from '@/lib/i18n/server';
 import { createAnnouncement, deleteAnnouncement } from '@/lib/admin-actions';
+import { loadPage, readPage } from '@/lib/page-numbers';
+import { cappedCount } from '@/lib/capped-count';
+import { Pager } from '@/components/Pager';
 
 export const dynamic = 'force-dynamic';
 
-export default async function AdminAnnouncements() {
+export default async function AdminAnnouncements({ searchParams }: { searchParams: Promise<{ page?: string }> }) {
   await requireAdmin('announcements:read');
   const { locale } = await getServerTranslation();
   const en = locale === 'en';
-  const rows = await db
-    .select({
-      id: s.announcements.id,
-      title: s.announcements.title,
-      body: s.announcements.body,
-      linkUrl: s.announcements.linkUrl,
-      publishedAt: s.announcements.publishedAt,
-    })
-    .from(s.announcements)
-    .orderBy(desc(s.announcements.publishedAt))
-    .limit(100);
+  const page = await loadPage(
+    readPage((await searchParams).page),
+    (offset, limit) =>
+      db
+        .select({
+          id: s.announcements.id,
+          title: s.announcements.title,
+          body: s.announcements.body,
+          linkUrl: s.announcements.linkUrl,
+          publishedAt: s.announcements.publishedAt,
+        })
+        .from(s.announcements)
+        .orderBy(desc(s.announcements.publishedAt), desc(s.announcements.id))
+        .limit(limit)
+        .offset(offset),
+    () => cappedCount(db.select({ id: s.announcements.id }).from(s.announcements).$dynamic()),
+  );
+  const rows = page.items;
 
   const input = 'w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-950 placeholder:text-neutral-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950';
 
@@ -73,6 +83,7 @@ export default async function AdminAnnouncements() {
           ))
         )}
       </section>
+      <Pager {...page} en={en} href={(p) => (p > 1 ? `/admin/announcements?page=${p}` : '/admin/announcements')} />
     </div>
   );
 }

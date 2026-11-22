@@ -1,8 +1,9 @@
-import { eq } from 'drizzle-orm';
+import { desc, eq } from 'drizzle-orm';
 import { db, schema as s } from '@morphic/db';
 import { requireAdmin } from '@/lib/actions';
 import { getServerTranslation } from '@/lib/i18n/server';
-import { PAGE_SIZE, cursorAt, keyset, readPageRequest, toPageBoth } from '@/lib/pagination';
+import { formatPageTotal, loadPage, readPage } from '@/lib/page-numbers';
+import { cappedCount } from '@/lib/capped-count';
 import { Pager } from '@/components/Pager';
 import { Users as UsersIcon } from 'lucide-react';
 import { UsersTable, type UserItem } from './users-table';
@@ -12,29 +13,32 @@ export const dynamic = 'force-dynamic';
 export default async function AdminUsers({
   searchParams,
 }: {
-  searchParams: Promise<{ before?: string; after?: string }>;
+  searchParams: Promise<{ page?: string }>;
 }) {
   const admin = await requireAdmin('users:read');
   const { t, locale } = await getServerTranslation();
-  const req = readPageRequest(await searchParams);
-  const ks = keyset(s.users.createdAt, s.users.id, req);
+  const pageNo = readPage((await searchParams).page);
 
-  const page = toPageBoth(await db
-    .select({
-      id: s.users.id,
-      email: s.users.email,
-      name: s.users.name,
-      role: s.users.role,
-      suspended: s.users.suspended,
-      createdAt: s.users.createdAt,
-      credits: s.balances.credits,
-      cursorAt: cursorAt(s.users.createdAt),
-    })
-    .from(s.users)
-    .leftJoin(s.balances, eq(s.users.id, s.balances.userId))
-    .where(ks.where)
-    .orderBy(...ks.orderBy)
-    .limit(PAGE_SIZE + 1), req);
+  const page = await loadPage(
+    pageNo,
+    (offset, limit) =>
+      db
+        .select({
+          id: s.users.id,
+          email: s.users.email,
+          name: s.users.name,
+          role: s.users.role,
+          suspended: s.users.suspended,
+          createdAt: s.users.createdAt,
+          credits: s.balances.credits,
+        })
+        .from(s.users)
+        .leftJoin(s.balances, eq(s.users.id, s.balances.userId))
+        .orderBy(desc(s.users.createdAt), desc(s.users.id))
+        .limit(limit)
+        .offset(offset),
+    () => cappedCount(db.select({ id: s.users.id }).from(s.users).$dynamic()),
+  );
   const users = page.items;
 
   const formattedUsers: UserItem[] = users.map((u) => ({
@@ -57,14 +61,14 @@ export default async function AdminUsers({
             {t.admin.users.title}
           </h1>
           <p className="text-xs sm:text-sm text-neutral-500 mt-0.5">
-            {t.admin.users.desc} ({users.length})
+            {t.admin.users.desc} ({formatPageTotal(page)})
           </p>
         </div>
       </div>
 
       {/* Interactive Users Table with Delete and Adjust capabilities */}
       <UsersTable users={formattedUsers} currentAdminId={admin.id} currentAdminRole={admin.role} />
-      <Pager path="/admin/users" prevCursor={page.prevCursor} nextCursor={page.nextCursor} en={locale === 'en'} />
+      <Pager {...page} en={locale === 'en'} href={(p) => (p > 1 ? `/admin/users?page=${p}` : '/admin/users')} />
     </div>
   );
 }

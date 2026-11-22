@@ -35,6 +35,9 @@ import { fetchBackendApi } from './api-client';
 import { softDeleteUser } from './account-deletion';
 import { loadNotifications } from './notifications';
 import { PAGE_SIZE, cursorAt, decodeCursor, olderThan, toPage } from './pagination';
+import { COUNT_CAP, loadPage, readPage, type NumberedPage } from './page-numbers';
+import { unionAll } from 'drizzle-orm/pg-core';
+import { cappedCount } from './capped-count';
 import type { GiftTransaction } from '@/app/dashboard/redeem/redeem-view';
 
 import { cache } from 'react';
@@ -786,56 +789,65 @@ export async function getLedgerPageAction(params: { before?: string | null } = {
   };
 }
 
+/** One numbered page of the signed-in user's active, unexpired passes for the billing Plans tab. */
+export async function getActivePassesPageAction(params: { page?: number } = {}) {
+  const user = await requireUser();
+  const active = and(
+    eq(s.entitlements.userId, user.id),
+    eq(s.entitlements.status, 'active'),
+    gt(s.entitlements.expiresAt, new Date()),
+  );
+  return loadPage(
+    readPage(String(params.page ?? 1)),
+    (offset, limit) =>
+      db
+        .select({
+          id: s.entitlements.id,
+          allowance: s.entitlements.allowance,
+          remaining: s.entitlements.remaining,
+          unlimited: s.entitlements.unlimited,
+          resetsAt: s.entitlements.resetsAt,
+          expiresAt: s.entitlements.expiresAt,
+          packageName: s.packages.name,
+          displayName: s.models.displayName,
+        })
+        .from(s.entitlements)
+        .leftJoin(s.packages, eq(s.entitlements.packageId, s.packages.id))
+        .leftJoin(s.models, eq(s.entitlements.modelId, s.models.id))
+        .where(active)
+        .orderBy(desc(s.entitlements.createdAt), desc(s.entitlements.id))
+        .limit(limit)
+        .offset(offset),
+    () => cappedCount(db.select({ id: s.entitlements.id }).from(s.entitlements).where(active).$dynamic()),
+  );
+}
+
 const GIFT_OPEN = ['pending', 'pending_paypal', 'capturing'];
 const GIFT_FAILED = ['failed', 'expired'];
 
-type SentGiftRow = {
+type GiftRow = {
+  kind: string;
   id: string;
-  cursorAt: string;
   createdAt: Date;
   design: string;
   recipientEmail: string | null;
-  amountCents: number;
-  currency: string;
+  amountCents: number | null;
+  currency: string | null;
   credits: number;
-  paymentStatus: string;
+  paymentStatus: string | null;
   code: string | null;
   redeemedCount: number | null;
+  fromEmail: string | null;
 };
-type ReceivedGiftRow = { id: string; cursorAt: string; createdAt: Date; design: string; credits: number; fromEmail: string };
 
-/** Sent cards and received redemptions as one newest-first list; `at` is the row's cursor timestamp. */
-function toGiftTransactions(sent: SentGiftRow[], received: ReceivedGiftRow[]): (GiftTransaction & { at: string; ms: number })[] {
-  return [
-    ...sent.map((g) => ({
-      id: g.id,
-      at: g.cursorAt,
-      ms: g.createdAt.getTime(),
-      date: g.createdAt.toISOString(),
-      direction: 'sent' as const,
-      design: g.design,
-      credits: g.credits,
-      amountCents: g.amountCents,
-      currency: g.currency,
-      from: null,
-      to: g.recipientEmail,
-      code: g.paymentStatus === 'paid' ? g.code : null,
-      status: GIFT_OPEN.includes(g.paymentStatus)
-        ? ('pending' as const)
-        : GIFT_FAILED.includes(g.paymentStatus)
-          ? ('failed' as const)
-          : g.paymentStatus !== 'paid'
-            ? ('on_hold' as const)
-            : (g.redeemedCount ?? 0) > 0
-              ? ('redeemed' as const)
-              : ('ready' as const),
-    })),
-    ...received.map((g) => ({
+/** A sent card or a received redemption, shaped for the gift history list. */
+function toGiftTransaction(g: GiftRow): GiftTransaction {
+  const date = g.createdAt instanceof Date ? g.createdAt.toISOString() : new Date(g.createdAt).toISOString();
+  if (g.kind === 'received') {
+    return {
       id: `r-${g.id}`,
-      at: g.cursorAt,
-      ms: g.createdAt.getTime(),
-      date: g.createdAt.toISOString(),
-      direction: 'received' as const,
+      date,
+      direction: 'received',
       design: g.design,
       credits: g.credits,
       amountCents: null,
@@ -843,74 +855,149 @@ function toGiftTransactions(sent: SentGiftRow[], received: ReceivedGiftRow[]): (
       from: g.fromEmail,
       to: null,
       code: null,
-      status: 'redeemed' as const,
-    })),
-  ].sort((a, b) => b.ms - a.ms || b.at.localeCompare(a.at));
+      status: 'redeemed',
+    };
+  }
+  const paid = g.paymentStatus ?? '';
+  return {
+    id: g.id,
+    date,
+    direction: 'sent',
+    design: g.design,
+    credits: g.credits,
+    amountCents: g.amountCents,
+    currency: g.currency,
+    from: null,
+    to: g.recipientEmail,
+    code: paid === 'paid' ? g.code : null,
+    status: GIFT_OPEN.includes(paid)
+      ? 'pending'
+      : GIFT_FAILED.includes(paid)
+        ? 'failed'
+        : paid !== 'paid'
+          ? 'on_hold'
+          : (g.redeemedCount ?? 0) > 0
+            ? 'redeemed'
+            : 'ready',
+  };
 }
 
 /**
- * One page of gift cards the signed-in user bought or received, newest first. `before` is the
- * created_at text of the last row shown; each table returns at most PAGE_SIZE + 1 rows older than it.
+ * One numbered page of gift cards the signed-in user bought or received, newest first. Both tables
+ * go through one UNION ALL, so the database sorts and slices them and only one page comes back.
  */
-export async function getGiftHistoryPageAction(params: { before?: string | null } = {}): Promise<{
-  data: GiftTransaction[];
-  nextCursor: string | null;
-}> {
+export async function getGiftHistoryPageAction(params: { page?: number } = {}): Promise<NumberedPage<GiftTransaction>> {
   const user = await requireUser();
-  const before = typeof params.before === 'string' && params.before.length <= 64 && !Number.isNaN(Date.parse(params.before))
-    ? params.before
-    : null;
-  const [sent, received] = await Promise.all([
+  const sentWhere = eq(s.giftCards.purchaserId, user.id);
+  const receivedWhere = and(eq(s.redemptions.userId, user.id), ne(s.giftCards.purchaserId, user.id));
+  const sent = () =>
     db
       .select({
+        kind: sql<string>`'sent'`.as('kind'),
         id: s.giftCards.id,
-        cursorAt: cursorAt(s.giftCards.createdAt),
         createdAt: s.giftCards.createdAt,
         design: s.giftCards.design,
         recipientEmail: s.giftCards.recipientEmail,
-        amountCents: s.payments.amountCents,
-        currency: s.payments.currency,
+        amountCents: sql<number | null>`${s.payments.amountCents}`.as('amount_cents'),
+        currency: sql<string | null>`${s.payments.currency}`.as('currency'),
         credits: s.payments.credits,
-        paymentStatus: s.payments.status,
+        paymentStatus: sql<string | null>`${s.payments.status}::text`.as('payment_status'),
         code: s.redeemCodes.code,
-        redeemedCount: s.redeemCodes.redeemedCount,
+        redeemedCount: sql<number | null>`${s.redeemCodes.redeemedCount}`.as('redeemed_count'),
+        fromEmail: sql<string | null>`null::text`.as('from_email'),
       })
       .from(s.giftCards)
       .innerJoin(s.payments, eq(s.payments.id, s.giftCards.paymentId))
       .leftJoin(s.redeemCodes, eq(s.redeemCodes.id, s.giftCards.redeemCodeId))
-      .where(and(eq(s.giftCards.purchaserId, user.id), before ? sql`${s.giftCards.createdAt} < ${before}::timestamptz` : undefined))
-      .orderBy(desc(s.giftCards.createdAt))
-      .limit(PAGE_SIZE + 1),
+      .where(sentWhere);
+  const received = () =>
     db
       .select({
+        kind: sql<string>`'received'`.as('kind'),
         id: s.giftCards.id,
-        cursorAt: cursorAt(s.redemptions.createdAt),
         createdAt: s.redemptions.createdAt,
         design: s.giftCards.design,
+        recipientEmail: sql<string | null>`null::text`.as('recipient_email'),
+        amountCents: sql<number | null>`null::integer`.as('amount_cents'),
+        currency: sql<string | null>`null::text`.as('currency'),
         credits: s.payments.credits,
-        fromEmail: s.users.email,
+        paymentStatus: sql<string | null>`null::text`.as('payment_status'),
+        code: sql<string | null>`null::text`.as('code'),
+        redeemedCount: sql<number | null>`null::integer`.as('redeemed_count'),
+        fromEmail: sql<string | null>`${s.users.email}`.as('from_email'),
       })
       .from(s.redemptions)
       .innerJoin(s.giftCards, eq(s.giftCards.redeemCodeId, s.redemptions.codeId))
       .innerJoin(s.payments, eq(s.payments.id, s.giftCards.paymentId))
       .innerJoin(s.users, eq(s.users.id, s.giftCards.purchaserId))
-      .where(
-        and(
-          eq(s.redemptions.userId, user.id),
-          ne(s.giftCards.purchaserId, user.id),
-          before ? sql`${s.redemptions.createdAt} < ${before}::timestamptz` : undefined,
+      .where(receivedWhere);
+
+  const page = await loadPage(
+    readPage(String(params.page ?? 1)),
+    (offset, limit) =>
+      unionAll(sent(), received())
+        .orderBy(sql`created_at desc`, sql`id desc`)
+        .limit(limit)
+        .offset(offset) as Promise<GiftRow[]>,
+    async () => {
+      const [a, b] = await Promise.all([
+        cappedCount(db.select({ id: s.giftCards.id }).from(s.giftCards).where(sentWhere).$dynamic()),
+        cappedCount(
+          db
+            .select({ id: s.redemptions.id })
+            .from(s.redemptions)
+            .innerJoin(s.giftCards, eq(s.giftCards.redeemCodeId, s.redemptions.codeId))
+            .where(receivedWhere)
+            .$dynamic(),
         ),
-      )
-      .orderBy(desc(s.redemptions.createdAt))
-      .limit(PAGE_SIZE + 1),
-  ]);
-  const merged = toGiftTransactions(sent, received);
-  const page = merged.slice(0, PAGE_SIZE);
-  return {
-    data: page.map(({ at: _a, ms: _m, ...tx }) => tx),
-    // More than a page across both tables means older rows remain below the last one shown.
-    nextCursor: merged.length > PAGE_SIZE ? page.at(-1)!.at : null,
-  };
+      ]);
+      const sum = a.total + b.total;
+      return { total: Math.min(sum, COUNT_CAP), capped: a.capped || b.capped || sum > COUNT_CAP };
+    },
+  );
+  return { ...page, items: page.items.map(toGiftTransaction) };
+}
+
+const COUPON_SOURCES = ['purchase', 'redeem', 'admin', 'promotion'] as const;
+
+/**
+ * One numbered page of every entitlement the signed-in user ever held, for the redeem page's coupon
+ * list, filtered by source and by available vs used/expired in SQL.
+ */
+export async function getCouponsPageAction(params: { page?: number; type?: string; state?: string } = {}) {
+  const user = await requireUser();
+  const type = COUPON_SOURCES.find((t) => t === params.type);
+  // Same rule as the view's isAvailable: active, something left, not expired.
+  const available = sql`(${s.entitlements.status} = 'active' and ${s.entitlements.remaining} > 0 and ${s.entitlements.expiresAt} > now())`;
+  const where = and(
+    eq(s.entitlements.userId, user.id),
+    type ? eq(s.entitlements.source, type) : undefined,
+    params.state === 'available' ? available : params.state === 'inactive' ? sql`not coalesce(${available}, false)` : undefined,
+  );
+  const page = await loadPage(
+    readPage(String(params.page ?? 1)),
+    (offset, limit) =>
+      db
+        .select({
+          id: s.entitlements.id,
+          allowance: s.entitlements.allowance,
+          remaining: s.entitlements.remaining,
+          source: s.entitlements.source,
+          status: s.entitlements.status,
+          expiresAt: s.entitlements.expiresAt,
+          packageName: s.packages.name,
+          modelName: s.models.displayName,
+        })
+        .from(s.entitlements)
+        .leftJoin(s.packages, eq(s.entitlements.packageId, s.packages.id))
+        .leftJoin(s.models, eq(s.entitlements.modelId, s.models.id))
+        .where(where)
+        .orderBy(desc(s.entitlements.createdAt), desc(s.entitlements.id))
+        .limit(limit)
+        .offset(offset),
+    () => cappedCount(db.select({ id: s.entitlements.id }).from(s.entitlements).where(where).$dynamic()),
+  );
+  return { ...page, items: page.items.map((c) => ({ ...c, expiresAt: c.expiresAt.toISOString() })) };
 }
 
 const exportBatch = (limit?: number) => Math.min(500, Math.max(1, Math.trunc(Number(limit)) || 500));

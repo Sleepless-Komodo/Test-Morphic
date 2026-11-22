@@ -1,13 +1,16 @@
-// Keyset pagination shared by every history list. One indexed query per page and no count(*):
-// fetch PAGE_SIZE + 1 rows, show PAGE_SIZE, and the extra row only says whether an older page exists.
+// Keyset (Next/Prev) pagination for the lists that keep growing (logs, payments, ledger, audit) and
+// for the CSV exports. One indexed query per page and no count(*): fetch PAGE_SIZE + 1 rows, show
+// PAGE_SIZE, and the extra row only says whether an older page exists. Small lists that people search
+// or jump around in use numbered pages instead (page-numbers.ts).
 // Cursors carry created_at as Postgres text, so microseconds survive the round trip (a JS Date keeps
 // milliseconds only, which can skip or repeat rows created in the same millisecond).
 import { asc, desc, sql, type SQL, type AnyColumn } from 'drizzle-orm';
+import { PAGE_SIZE } from './page-numbers.ts';
+
+export { PAGE_SIZE };
 
 /** Cards and widgets that preview a few recent rows. */
 export const PREVIEW_LIMIT = 5;
-/** Rows per page in every dashboard and admin list. Kept small on purpose: each page is one cheap query. */
-export const PAGE_SIZE = 5;
 
 // Every keyset-paginated table uses uuid primary keys; anything else in a cursor is tampering.
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
