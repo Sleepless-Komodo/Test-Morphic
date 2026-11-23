@@ -1,4 +1,4 @@
-import { desc, eq } from 'drizzle-orm';
+import { desc, eq, sql } from 'drizzle-orm';
 import { db, schema as s } from '@morphic/db';
 import { requireAdmin } from '@/lib/actions';
 import { getServerTranslation } from '@/lib/i18n/server';
@@ -31,6 +31,12 @@ export default async function AdminUsers({
           suspended: s.users.suspended,
           createdAt: s.users.createdAt,
           credits: s.balances.credits,
+          // Bought token packs are entitlements, not balance credits; show them beside the wallet.
+          packTokens: sql<number>`(
+            select coalesce(sum(${s.entitlements.remaining}), 0)::bigint from ${s.entitlements}
+            where ${s.entitlements.userId} = ${s.users.id} and ${s.entitlements.status} = 'active'
+              and ${s.entitlements.unlimited} = false and ${s.entitlements.expiresAt} > now()
+          )`,
         })
         .from(s.users)
         .leftJoin(s.balances, eq(s.users.id, s.balances.userId))
@@ -49,6 +55,7 @@ export default async function AdminUsers({
     suspended: u.suspended,
     createdAt: u.createdAt.toISOString(),
     credits: u.credits ?? 0,
+    packTokens: Number(u.packTokens ?? 0),
   }));
 
   return (

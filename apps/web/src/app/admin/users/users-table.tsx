@@ -24,6 +24,7 @@ export interface UserItem {
   suspended: boolean;
   createdAt: string;
   credits: number;
+  packTokens: number;
 }
 
 interface UsersTableProps {
@@ -184,6 +185,9 @@ export function UsersTable({ users, currentAdminId, currentAdminRole }: UsersTab
                     </td>
                     <td className="py-3 px-3 text-right font-mono font-semibold text-neutral-950">
                       {formatCredits(u.credits ?? 0)}
+                      {u.packTokens > 0 && (
+                        <div className="text-[11px] font-medium text-neutral-500">+{formatCredits(u.packTokens)} token pack</div>
+                      )}
                     </td>
                     <td className="py-3 px-3 font-mono text-neutral-500 text-[11px] whitespace-nowrap">
                       {new Date(u.createdAt).toLocaleDateString()}
