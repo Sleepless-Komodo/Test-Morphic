@@ -84,6 +84,28 @@ export const getOwnBalance = cache(async (): Promise<{ credits: number; updatedA
   return { credits: bal?.credits ?? 0, updatedAt: bal?.updatedAt ? bal.updatedAt.toISOString() : null };
 });
 
+/**
+ * Tokens left on the signed-in user's active any-model token packs. Bought packs land in
+ * entitlements, not the balances row, so the navbar adds this to the wallet figure.
+ * Unlimited passes are per-model daily quotas and are left out.
+ */
+export const getOwnTokenPackRemaining = cache(async (): Promise<number> => {
+  const session = await getSessionWithRetry();
+  if (!session) return 0;
+  const [row] = await db
+    .select({ total: sql<number>`coalesce(sum(${s.entitlements.remaining}), 0)::bigint` })
+    .from(s.entitlements)
+    .where(
+      and(
+        eq(s.entitlements.userId, session.user.id),
+        eq(s.entitlements.status, 'active'),
+        eq(s.entitlements.unlimited, false),
+        gt(s.entitlements.expiresAt, new Date()),
+      ),
+    );
+  return Number(row?.total ?? 0);
+});
+
 async function requireUser() {
   const session = await getSessionWithRetry();
   if (!session) redirect('/login');
