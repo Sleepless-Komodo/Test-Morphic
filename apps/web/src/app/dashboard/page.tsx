@@ -1,7 +1,7 @@
 // apps/web/src/app/dashboard/page.tsx
 // TypeScript React / Next.js Server Component / Node.js / Linux x86_64
 import { eq, sql, desc, and, or, gt, isNull } from 'drizzle-orm';
-import { getOwnBalance, getSessionWithRetry } from '@/lib/actions';
+import { getOwnBalance, getOwnTokenPackRemaining, getSessionWithRetry } from '@/lib/actions';
 import { db, schema as s } from '@morphic/db';
 import { readyModelIds } from '@morphic/shared/model-readiness';
 import { memo } from '@/lib/memo';
@@ -159,7 +159,7 @@ export default async function DashboardPage() {
   const userId = session?.user?.id;
 
   // Every load below is independent of the others and shared via short TTL caches where possible.
-  const [balance, activeKeys, usage, recentRequests, modelStats, dailySpend] = await Promise.all([
+  const [balance, activeKeys, usage, recentRequests, modelStats, dailySpend, packTokens] = await Promise.all([
     userId ? loadBalance() : Promise.resolve<BalanceSnapshot>({ credits: 0, updatedAt: null }),
     userId ? loadActiveKeyCount(userId) : Promise.resolve(0),
     userId
@@ -168,6 +168,13 @@ export default async function DashboardPage() {
     userId ? loadRecentRequests(userId) : Promise.resolve<any[]>([]),
     loadModelStats(),
     userId ? loadDailySpend(userId) : Promise.resolve([]),
+    // cache()d per request: the layout navbar reads the same sum.
+    userId
+      ? getOwnTokenPackRemaining().catch((err) => {
+          console.warn('[DashboardPage] Token pack read failed:', err);
+          return 0;
+        })
+      : Promise.resolve(0),
   ]);
 
   return (
@@ -176,6 +183,7 @@ export default async function DashboardPage() {
       <AutoRefresh />
       <DeveloperGateway
         userBalance={balance.credits}
+        packTokens={packTokens}
         balanceUpdatedAt={balance.updatedAt}
         recentRequests={recentRequests}
         serverModelCount={modelStats.modelCount}

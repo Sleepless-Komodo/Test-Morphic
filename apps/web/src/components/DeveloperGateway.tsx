@@ -46,6 +46,8 @@ export interface RecentRequestItem {
  */
 interface DeveloperGatewayProps {
   userBalance?: number;
+  /** Tokens left on active any-model token packs (entitlements), spent before the wallet. */
+  packTokens?: number;
   balanceUpdatedAt?: string | null;
   recentRequests?: RecentRequestItem[];
   /** Pre-computed server-side model stats to avoid client-side string parsing */
@@ -61,6 +63,7 @@ interface DeveloperGatewayProps {
 
 export default function DeveloperGateway({
   userBalance = 0,
+  packTokens = 0,
   balanceUpdatedAt,
   recentRequests: initialRecentRequests = [],
   serverModelCount,
@@ -196,11 +199,16 @@ export default function DeveloperGateway({
               <div suppressHydrationWarning className="text-3xl font-mono font-bold text-neutral-950 tabular-nums">
                 {fmtBalance(balance, !isId)}
               </div>
+              {packTokens > 0 && (
+                <div suppressHydrationWarning className="mt-1 font-mono text-sm font-semibold text-neutral-950">
+                  + {fmtTokens(packTokens, !isId)} {isId ? 'dari token pack' : 'from token packs'}
+                </div>
+              )}
               {balance > 0 && avgCreditsPer1m > 0 ? (
                 <div className="mt-1 font-mono text-sm font-semibold text-emerald-700">
                   ≈ {formatTokenEstimate(estimatedTokens)} {t.dashboard.tokenCapacityUnit}
                 </div>
-              ) : (
+              ) : packTokens > 0 ? null : (
                 <p suppressHydrationWarning className="mt-1 text-sm text-neutral-500 leading-relaxed">
                   {t.dashboard.zeroBalance}
                 </p>
