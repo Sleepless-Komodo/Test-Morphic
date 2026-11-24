@@ -42,12 +42,21 @@ export function fmtDuration(hours: number, en: boolean): string {
   return en ? `${hours} hours` : `${hours} jam`;
 }
 
-/** Price in the viewer's currency, as the gateway will charge it (PayPal floor included). */
-export function fmtPrice(pkg: Pick<BillingPackage, 'priceCents' | 'currency'>, en: boolean): string {
+/** The price as a number plus how to print it, so a price can be animated and still read "$1.00" or "Rp4.000". */
+export function priceParts(
+  pkg: Pick<BillingPackage, 'priceCents' | 'currency'>,
+  en: boolean,
+): { value: number; format: (value: number) => string } {
   const cents = pkg.priceCents ?? 0;
   return en
-    ? `$${(packagePriceUsdCents(cents, pkg.currency) / 100).toFixed(2)}`
-    : `Rp${packagePriceIdr(cents, pkg.currency).toLocaleString('id-ID')}`;
+    ? { value: packagePriceUsdCents(cents, pkg.currency) / 100, format: (value) => `$${value.toFixed(2)}` }
+    : { value: packagePriceIdr(cents, pkg.currency), format: (value) => `Rp${Math.round(value).toLocaleString('id-ID')}` };
+}
+
+/** Price in the viewer's currency, as the gateway will charge it (PayPal floor included). */
+export function fmtPrice(pkg: Pick<BillingPackage, 'priceCents' | 'currency'>, en: boolean): string {
+  const { value, format } = priceParts(pkg, en);
+  return format(value);
 }
 
 /** One line on what the buyer gets and how it is charged. */
@@ -70,6 +79,150 @@ export function packageSummary(pkg: BillingPackage, en: boolean): string {
   return en
     ? `${money} added to your balance, spent at each model's per-token price. Never expires.`
     : `${money} masuk ke saldo, terpakai sesuai harga per token tiap model. Tidak hangus.`;
+}
+
+/** Per-account gateway limits shown next to a package; see `gateway-limits.ts` for the values. */
+export interface GatewayLimits {
+  maxKeys: number;
+  rpmPerKey: number;
+  concurrentPerKey: number;
+}
+
+/** The big figure on a pricing card and the unit under it. */
+export function packageHeadline(pkg: BillingPackage, en: boolean): { amount: string; unit: string } {
+  if (pkg.kind === 'unlimited') {
+    const perDay = fmtTokens(pkg.creditAllowance, en);
+    return {
+      amount: fmtDuration(pkg.durationHours ?? 24, en),
+      unit: en ? `up to ${perDay} a day` : `maks ${perDay} per hari`,
+    };
+  }
+  if (pkg.kind === 'tokens') return { amount: fmtCompact(pkg.creditAllowance, en), unit: en ? 'tokens' : 'token' };
+  return { amount: fmtBalance(pkg.creditAllowance, en), unit: en ? 'balance' : 'saldo' };
+}
+
+function limitFeatures(limits: GatewayLimits, en: boolean): string[] {
+  return en
+    ? [`${limits.maxKeys} API keys per account`, `${limits.rpmPerKey} requests/min, ${limits.concurrentPerKey} at once, per key`]
+    : [`${limits.maxKeys} API key per akun`, `${limits.rpmPerKey} request/menit, ${limits.concurrentPerKey} bersamaan, per key`];
+}
+
+/** Short bullet list for a pricing card: what this kind of package does, then the limits every account has. */
+export function packageFeatures(pkg: BillingPackage, en: boolean, limits: GatewayLimits): string[] {
+  const tokens = fmtTokens(pkg.creditAllowance, en);
+  if (pkg.kind === 'unlimited') {
+    const model = pkg.modelDisplayName ?? (en ? 'one model' : 'satu model');
+    const span = fmtDuration(pkg.durationHours ?? 24, en);
+    return [
+      en ? `${model} only` : `Khusus ${model}`,
+      en ? 'No multiplier' : 'Tanpa multiplier',
+      en ? `Fair use up to ${tokens} a day` : `Fair use hingga ${tokens} per hari`,
+      en ? `Active for ${span}` : `Aktif ${span}`,
+      ...limitFeatures(limits, en),
+    ];
+  }
+  if (pkg.kind === 'tokens') {
+    const span = fmtDuration(pkg.durationHours ?? TOKEN_PACK_HOURS, en);
+    return [
+      en ? `${tokens} for any model` : `${tokens} untuk semua model`,
+      en ? "Charged by each model's multiplier" : 'Dipotong sesuai multiplier model',
+      en ? `Valid ${span}` : `Berlaku ${span}`,
+      ...limitFeatures(limits, en),
+    ];
+  }
+  return [
+    en ? "Spent at each model's per-token price" : 'Terpakai sesuai harga per token tiap model',
+    en ? 'Never expires' : 'Tidak hangus',
+    ...limitFeatures(limits, en),
+  ];
+}
+
+export interface PricingColumn {
+  kind: PackageKind;
+  title: string;
+  /** The cheapest package of this kind, which the column's button opens. */
+  packageId: string;
+  price: string;
+}
+
+export interface PricingMatrix {
+  columns: PricingColumn[];
+  groups: { title: string; rows: { name: string; cells: (string | boolean)[] }[] }[];
+}
+
+const MATRIX_KINDS: PackageKind[] = ['balance', 'tokens', 'unlimited'];
+
+/**
+ * Comparison of the kinds of package that are really on sale. Only facts we can back: what each
+ * kind delivers (from the package rows) and the limits that apply to every account alike.
+ */
+export function buildPricingMatrix(packages: BillingPackage[], en: boolean, limits: GatewayLimits): PricingMatrix {
+  const cheapestByKind = new Map<PackageKind, BillingPackage>();
+  for (const pkg of [...packages].sort((a, b) => (a.priceCents ?? 0) - (b.priceCents ?? 0))) {
+    if (!cheapestByKind.has(pkg.kind)) cheapestByKind.set(pkg.kind, pkg);
+  }
+  const kinds = MATRIX_KINDS.filter((kind) => cheapestByKind.has(kind));
+  const pick = <T,>(by: Record<PackageKind, T>): T[] => kinds.map((kind) => by[kind]);
+  const sameForAll = (value: string | boolean) => kinds.map(() => value);
+
+  const titles: Record<PackageKind, string> = {
+    balance: en ? 'Balance top-up' : 'Isi saldo',
+    tokens: en ? 'Token pack' : 'Token pack',
+    unlimited: en ? 'Unlimited pass' : 'Pass unlimited',
+  };
+  const columns = kinds.map((kind): PricingColumn => {
+    const pkg = cheapestByKind.get(kind)!;
+    return { kind, title: titles[kind], packageId: pkg.id, price: fmtPrice(pkg, en) };
+  });
+
+  const headline = (kind: PackageKind) => {
+    const { amount, unit } = packageHeadline(cheapestByKind.get(kind)!, en);
+    return `${amount} ${unit}`;
+  };
+  const validity = (kind: PackageKind) => {
+    const hours = cheapestByKind.get(kind)!.durationHours;
+    if (kind === 'balance') return en ? 'Never expires' : 'Tidak hangus';
+    return fmtDuration(hours ?? (kind === 'tokens' ? TOKEN_PACK_HOURS : 24), en);
+  };
+  const passModels = [...new Set(packages.filter((p) => p.kind === 'unlimited').map((p) => p.modelDisplayName).filter(Boolean))];
+  const allModels = en ? 'All models' : 'Semua model';
+
+  return {
+    columns,
+    groups: [
+      {
+        title: en ? 'What you buy' : 'Yang Anda beli',
+        rows: [
+          { name: en ? 'Starting at' : 'Mulai dari', cells: columns.map((c) => c.price) },
+          { name: en ? 'You get (smallest)' : 'Yang didapat (terkecil)', cells: kinds.map(headline) },
+          { name: en ? 'Valid for' : 'Berlaku', cells: kinds.map(validity) },
+          {
+            name: en ? 'Models' : 'Model',
+            cells: pick({ balance: allModels, tokens: allModels, unlimited: passModels.length ? passModels.join(', ') : en ? 'One model per pass' : 'Satu model per pass' }),
+          },
+          {
+            name: en ? 'Charged by' : 'Dipotong menurut',
+            cells: pick({
+              balance: en ? 'Per-token price of each model' : 'Harga per token tiap model',
+              tokens: en ? 'Model multiplier' : 'Multiplier model',
+              unlimited: en ? 'No multiplier (daily fair use)' : 'Tanpa multiplier (fair use harian)',
+            }),
+          },
+        ],
+      },
+      {
+        title: en ? 'Same on every package' : 'Sama di semua paket',
+        rows: [
+          { name: en ? 'API keys per account' : 'API key per akun', cells: sameForAll(String(limits.maxKeys)) },
+          { name: en ? 'Rate limit per key' : 'Batas per key', cells: sameForAll(`${limits.rpmPerKey} RPM`) },
+          { name: en ? 'Requests at once per key' : 'Request bersamaan per key', cells: sameForAll(String(limits.concurrentPerKey)) },
+          { name: en ? 'OpenAI-compatible API (/v1)' : 'API kompatibel OpenAI (/v1)', cells: sameForAll(true) },
+          { name: en ? 'Streaming (SSE)' : 'Streaming (SSE)', cells: sameForAll(true) },
+          { name: en ? 'Payment' : 'Pembayaran', cells: sameForAll(en ? 'PayPal (USD)' : 'QRIS (Rupiah)') },
+        ],
+      },
+    ],
+  };
 }
 
 /** A model price (credits per 1M) as its token multiplier: "520x", "5,2x". */

@@ -6,6 +6,8 @@ import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { signIn, signOut, useSession } from '@/lib/auth-client';
 import { useTranslation } from '@/lib/i18n';
+import { useNextPath } from '@/lib/use-next-path';
+import { withNext } from '@/lib/safe-next';
 import {
   ArrowLeft,
   CheckCircle2,
@@ -27,6 +29,7 @@ export default function LoginView({ googleConfigured, githubConfigured }: LoginV
   const { t, locale, setLocale } = useTranslation();
   const router = useRouter();
   const { data: session, isPending } = useSession();
+  const nextPath = useNextPath();
 
   const [loadingProvider, setLoadingProvider] = useState<'google' | 'github' | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
@@ -47,7 +50,7 @@ export default function LoginView({ googleConfigured, githubConfigured }: LoginV
       setLoadingProvider(provider);
       const res = await signIn.social({
         provider,
-        callbackURL: '/dashboard',
+        callbackURL: nextPath,
       });
       if (res?.error) {
         // The "not configured" case is already handled above, so anything landing here is a
@@ -135,7 +138,7 @@ export default function LoginView({ googleConfigured, githubConfigured }: LoginV
 
               <div className="space-y-3">
                 <Link
-                  href="/dashboard"
+                  href={nextPath}
                   className="w-full py-3 px-5 rounded-full bg-neutral-950 hover:bg-neutral-800 text-white text-xs sm:text-sm font-semibold flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm"
                 >
                   <LayoutDashboard className="h-4 w-4" />
@@ -226,7 +229,7 @@ export default function LoginView({ googleConfigured, githubConfigured }: LoginV
 
                 {/* Continue with Email Button (leads to /login/email) */}
                 <Link
-                  href="/login/email"
+                  href={withNext('/login/email', nextPath)}
                   className="w-full py-3 px-5 rounded-full border border-neutral-300 bg-white hover:bg-neutral-50 hover:border-neutral-400 text-neutral-800 text-xs sm:text-sm font-semibold flex items-center justify-center gap-2.5 transition-all cursor-pointer shadow-xs"
                 >
                   <Mail className="h-4 w-4 text-neutral-600" />

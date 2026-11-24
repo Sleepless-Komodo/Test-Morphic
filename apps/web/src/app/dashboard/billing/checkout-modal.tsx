@@ -23,11 +23,11 @@ import { formatCredits, API_BASE_URL, cn } from '@/lib/utils';
 import dynamic from 'next/dynamic';
 import { provisionPostPaymentKey } from '@/lib/actions';
 import { packageSummary, type BillingPackage } from '@/lib/billing-format';
+import { apiFetch, isSessionExpiredError } from '@/lib/browser-api';
 import { packagePriceIdr, packagePriceUsdCents } from '@morphic/shared/credits';
 
 const PayPalButton = dynamic(() => import('@/components/PayPalButton').then((m) => m.PayPalButton), { ssr: false });
 
-const API_URL = '/api/backend';
 const POLL_INTERVAL_MS = 3000;
 const MAX_POLL_ATTEMPTS = 60; // ~6 min with backoff, past the 5-minute invoice lifetime
 
@@ -284,11 +284,10 @@ export function CheckoutModal({ pkg, existingPayment, provider, giftCard, sample
       }
 
       try {
-        const url = paymentProvider === 'paypal'
-          ? `${API_URL}/v1/payments/paypal/verify/${pid}`
-          : `${API_URL}/v1/payments/${pid}`;
-        const res = await fetch(url, {
-          credentials: 'include',
+        const path = paymentProvider === 'paypal'
+          ? `/v1/payments/paypal/verify/${pid}`
+          : `/v1/payments/${pid}`;
+        const res = await apiFetch(path, {
           headers: { 'Content-Type': 'application/json' },
         });
         if (!res.ok) throw new Error('poll failed');
@@ -310,8 +309,11 @@ export function CheckoutModal({ pkg, existingPayment, provider, giftCard, sample
         } else if (data.status === 'pending_paypal') {
           setStatus('pending_paypal');
         }
-      } catch {
-        // Non-fatal, keep polling
+      } catch (err) {
+        // The session is gone and apiFetch is already sending the user to /login. Stop here so the
+        // payment is not reported as "timed out"; it resumes from `existingPayment` after sign-in.
+        if (isSessionExpiredError(err)) return;
+        // Anything else is non-fatal, keep polling
       }
 
       if (mountedRef.current) {
@@ -337,9 +339,7 @@ export function CheckoutModal({ pkg, existingPayment, provider, giftCard, sample
   useEffect(() => {
     if (existingPayment) {
       if (existingPayment.provider === 'paypal') {
-        fetch(`${API_URL}/v1/payments/paypal/verify/${existingPayment.id}`, {
-          credentials: 'include',
-        })
+        apiFetch(`/v1/payments/paypal/verify/${existingPayment.id}`)
           .then((res) => res.json())
           .then((data: { status?: string; credits?: number }) => {
             if (!mountedRef.current) return;
@@ -361,12 +361,10 @@ export function CheckoutModal({ pkg, existingPayment, provider, giftCard, sample
               startPolling(existingPayment.id);
             }
           })
-          .catch(() => { });
+          .catch(() => { /* session expiry is handled by apiFetch; other failures leave the modal as is */ });
       } else {
         // Verify current status from API first before resuming
-        fetch(`${API_URL}/v1/payments/${existingPayment.id}`, {
-          credentials: 'include',
-        })
+        apiFetch(`/v1/payments/${existingPayment.id}`)
           .then((res) => res.json())
           .then((data: { status?: string; expiresAt?: string }) => {
             if (!mountedRef.current) return;
@@ -386,7 +384,8 @@ export function CheckoutModal({ pkg, existingPayment, provider, giftCard, sample
               startPolling(existingPayment.id);
             }
           })
-          .catch(() => {
+          .catch((err) => {
+            if (isSessionExpiredError(err)) return;
             if (mountedRef.current) setStatus('idle');
           });
       }
@@ -401,9 +400,8 @@ export function CheckoutModal({ pkg, existingPayment, provider, giftCard, sample
     setErrorMsg(null);
 
     try {
-      const res = await fetch(`${API_URL}/v1/payments/create`, {
+      const res = await apiFetch('/v1/payments/create', {
         method: 'POST',
-        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           packageId: pkg.id,
@@ -440,6 +438,7 @@ export function CheckoutModal({ pkg, existingPayment, provider, giftCard, sample
       startPolling(data.paymentId);
     } catch (err: any) {
       if (newWindow) newWindow.close();
+      if (isSessionExpiredError(err)) return;
       setStatus('error');
       setErrorMsg(err?.message ?? 'Terjadi kesalahan, coba lagi.');
     }

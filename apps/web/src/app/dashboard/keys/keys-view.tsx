@@ -6,6 +6,8 @@ import { useRouter } from 'next/navigation';
 import { useTranslation } from '@/lib/i18n';
 import { deleteApiKey } from '@/lib/actions';
 import { timeAgo } from '@/lib/utils';
+import { apiFetch, isSessionExpiredError } from '@/lib/browser-api';
+import { MAX_API_KEYS_PER_USER } from '@/lib/gateway-limits';
 import {
   ArrowUpRight,
   KeyRound,
@@ -62,7 +64,7 @@ export function KeysView({ initialKeys }: KeysViewProps) {
     setIsRotating(true);
     setRotateError(null);
     try {
-      const res = await fetch(`/api/backend/v1/keys/${id}/rotate`, {
+      const res = await apiFetch(`/v1/keys/${id}/rotate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ gracePeriodSeconds: rotateGrace }),
@@ -88,7 +90,8 @@ export function KeysView({ initialKeys }: KeysViewProps) {
       setRotatingIds((prev) => new Set(prev).add(id));
       setRotateId(null);
       window.scrollTo({ top: 0, behavior: 'smooth' });
-    } catch {
+    } catch (err) {
+      if (isSessionExpiredError(err)) return;
       setRotateError(isId ? 'Tidak bisa menghubungi server.' : 'Could not reach the server.');
     } finally {
       setIsRotating(false);
@@ -98,7 +101,7 @@ export function KeysView({ initialKeys }: KeysViewProps) {
   const hoursLeft = (d: Date) => Math.max(1, Math.ceil((new Date(d).getTime() - Date.now()) / 3_600_000));
 
 
-  const MAX_KEYS = 5;
+  const MAX_KEYS = MAX_API_KEYS_PER_USER;
   const isAtLimit = keys.length >= MAX_KEYS;
 
   // Minting goes straight to the gateway through the /api/backend proxy instead of a
@@ -131,7 +134,7 @@ export function KeysView({ initialKeys }: KeysViewProps) {
     setCreateError(null);
     setIsCreating(true);
     try {
-      const res = await fetch('/api/backend/v1/keys', {
+      const res = await apiFetch('/v1/keys', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, expiresIn }),
@@ -160,7 +163,8 @@ export function KeysView({ initialKeys }: KeysViewProps) {
         ...prev,
       ]);
       setNewKeyName('');
-    } catch {
+    } catch (err) {
+      if (isSessionExpiredError(err)) return;
       setCreateError(
         isId
           ? 'Tidak bisa menghubungi server. Cek koneksi lalu coba lagi.'

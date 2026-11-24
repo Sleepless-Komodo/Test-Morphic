@@ -16,36 +16,48 @@ import {
 } from 'framer-motion';
 import { ArrowUpRight, Check } from 'lucide-react';
 import { useTranslation } from '@/lib/i18n';
+import {
+  fmtDuration,
+  packageFeatures,
+  packageHeadline,
+  packageSummary,
+  priceParts,
+  type BillingPackage,
+  type PackageKind,
+} from '@/lib/billing-format';
+import { GATEWAY_LIMITS } from '@/lib/gateway-limits';
+import { loginUrl } from '@/lib/safe-next';
 
 const EASE = [0.16, 1, 0.3, 1] as const;
 const STACK_SPRING = { type: 'spring' as const, stiffness: 260, damping: 28, mass: 0.8 };
 const TILT_SPRING = { stiffness: 150, damping: 18, mass: 0.5 };
 
 interface PricingPlansProps {
+  /** Active packages from the database; the cards and prices come from here. */
+  packages: BillingPackage[];
   isLoggedIn?: boolean;
   showPricingHubLink?: boolean;
 }
 
-type Mode = 'credits' | 'daily';
+type Mode = 'credits' | 'passes';
 type Plan = {
+  id: string;
+  kindLabel: string;
   name: string;
-  price: string;
+  price: ReturnType<typeof priceParts>;
+  /** What a pass costs per, e.g. "/ 1 day"; empty for balance and token packs. */
+  priceSuffix: string;
   amount: string; // the big figure on the card
   unit: string;
   desc: string;
-  note?: string;
-  noteLabel?: string;
   features: string[];
-  badge?: string;
   cta: string;
 };
 
-/** Counts the numeric part of a formatted price ("Rp 49,000") to its new value. */
-function RollingPrice({ price, locale }: { price: string; locale: string }) {
-  const target = Number(price.replace(/\D/g, ''));
-  const prefix = price.match(/^\D*/)?.[0] ?? '';
+/** Counts a price to its new value; `format` keeps it reading "Rp4.000" or "$1.00" all the way. */
+function RollingPrice({ value: target, format }: ReturnType<typeof priceParts>) {
   const value = useMotionValue(target);
-  const text = useTransform(value, (v) => prefix + Math.round(v).toLocaleString(locale === 'en' ? 'en-US' : 'id-ID'));
+  const text = useTransform(value, format);
 
   useEffect(() => {
     const c = animate(value, target, { duration: 0.7, ease: EASE });
@@ -69,139 +81,77 @@ interface TierMaterial {
   priceClass: string;
 }
 
-function getTierMaterial(mode: Mode, index: number, name: string): TierMaterial {
-  const n = name.toLowerCase();
-
-  if (mode === 'credits') {
-    // 1. Starter Dev: Cool Titanium Silver
-    if (n.includes('starter') || index === 0) {
-      return {
-        background: 'linear-gradient(145deg, #161c24 0%, #0d1117 100%)',
-        borderColor: 'rgba(203, 213, 225, 0.22)',
-        radialHighlight: 'radial-gradient(ellipse 70% 60% at 0% 0%, rgba(226, 232, 240, 0.18), transparent 70%)',
-        sheenOverlay:
-          'linear-gradient(115deg, transparent 0%, rgba(255, 255, 255, 0.02) 40%, rgba(255, 255, 255, 0.07) 50%, rgba(255, 255, 255, 0.01) 60%, transparent 100%)',
-        kindClass: 'text-slate-300 border-slate-400/25 bg-slate-400/10',
-        brandTextClass: 'text-slate-100',
-        logoRing: 'ring-1 ring-slate-400/25',
-        titleClass: 'text-slate-100',
-        amountClass: 'text-white',
-        unitClass: 'text-slate-400',
-        priceClass: 'text-slate-300',
-      };
-    }
-    // 2. Pro Agent: Champagne Obsidian Gold
-    if (n.includes('pro') || index === 1) {
-      return {
-        background: 'linear-gradient(145deg, #1b1610 0%, #0d0a07 100%)',
-        borderColor: 'rgba(245, 158, 11, 0.28)',
-        radialHighlight: 'radial-gradient(ellipse 70% 60% at 0% 0%, rgba(251, 191, 36, 0.18), transparent 70%)',
-        sheenOverlay:
-          'linear-gradient(115deg, transparent 0%, rgba(245, 158, 11, 0.03) 40%, rgba(251, 191, 36, 0.08) 50%, rgba(245, 158, 11, 0.02) 60%, transparent 100%)',
-        kindClass: 'text-amber-300 border-amber-500/25 bg-amber-500/10',
-        brandTextClass: 'text-amber-100',
-        logoRing: 'ring-1 ring-amber-500/30',
-        titleClass: 'text-amber-100',
-        amountClass: 'text-amber-50',
-        unitClass: 'text-amber-200/70',
-        priceClass: 'text-amber-200/90',
-      };
-    }
-    // 3. Heavy Coder: Void Onyx Black
-    return {
-      background: 'linear-gradient(145deg, #0e0e11 0%, #050506 100%)',
-      borderColor: 'rgba(255, 255, 255, 0.16)',
-      radialHighlight: 'radial-gradient(ellipse 70% 60% at 0% 0%, rgba(255, 255, 255, 0.12), transparent 70%)',
-      sheenOverlay:
-        'linear-gradient(115deg, transparent 0%, rgba(255, 255, 255, 0.02) 40%, rgba(255, 255, 255, 0.06) 50%, rgba(255, 255, 255, 0.01) 60%, transparent 100%)',
-      kindClass: 'text-neutral-300 border-white/10 bg-white/5',
-      brandTextClass: 'text-neutral-100',
-      logoRing: 'ring-1 ring-white/15',
-      titleClass: 'text-neutral-100',
-      amountClass: 'text-white',
-      unitClass: 'text-neutral-400',
-      priceClass: 'text-neutral-300',
-    };
-  }
-
-  // Daily pass tiers
-  if (n.includes('all-access') || index === 3) {
-    return {
-      background: 'linear-gradient(145deg, #1b1610 0%, #0d0a07 100%)',
-      borderColor: 'rgba(245, 158, 11, 0.28)',
-      radialHighlight: 'radial-gradient(ellipse 70% 60% at 0% 0%, rgba(251, 191, 36, 0.18), transparent 70%)',
-      sheenOverlay:
-        'linear-gradient(115deg, transparent 0%, rgba(245, 158, 11, 0.03) 40%, rgba(251, 191, 36, 0.08) 50%, rgba(245, 158, 11, 0.02) 60%, transparent 100%)',
-      kindClass: 'text-amber-300 border-amber-500/25 bg-amber-500/10',
-      brandTextClass: 'text-amber-100',
-      logoRing: 'ring-1 ring-amber-500/30',
-      titleClass: 'text-amber-100',
-      amountClass: 'text-amber-50',
-      unitClass: 'text-amber-200/70',
-      priceClass: 'text-amber-200/90',
-    };
-  }
-  if (n.includes('r1') || index === 2) {
-    return {
-      background: 'linear-gradient(145deg, #0e1715 0%, #060d0b 100%)',
-      borderColor: 'rgba(20, 184, 166, 0.22)',
-      radialHighlight: 'radial-gradient(ellipse 70% 60% at 0% 0%, rgba(20, 184, 166, 0.14), transparent 70%)',
-      sheenOverlay:
-        'linear-gradient(115deg, transparent 0%, rgba(20, 184, 166, 0.03) 40%, rgba(20, 184, 166, 0.06) 50%, transparent 100%)',
-      kindClass: 'text-teal-300 border-teal-500/20 bg-teal-500/10',
-      brandTextClass: 'text-teal-100',
-      logoRing: 'ring-1 ring-teal-500/25',
-      titleClass: 'text-teal-100',
-      amountClass: 'text-teal-50',
-      unitClass: 'text-teal-200/70',
-      priceClass: 'text-teal-200/90',
-    };
-  }
-  if (n.includes('qwen') || index === 1) {
-    return {
-      background: 'linear-gradient(145deg, #14121d 0%, #0a0912 100%)',
-      borderColor: 'rgba(168, 85, 247, 0.22)',
-      radialHighlight: 'radial-gradient(ellipse 70% 60% at 0% 0%, rgba(168, 85, 247, 0.14), transparent 70%)',
-      sheenOverlay:
-        'linear-gradient(115deg, transparent 0%, rgba(168, 85, 247, 0.03) 40%, rgba(168, 85, 247, 0.06) 50%, transparent 100%)',
-      kindClass: 'text-purple-300 border-purple-500/20 bg-purple-500/10',
-      brandTextClass: 'text-purple-100',
-      logoRing: 'ring-1 ring-purple-500/25',
-      titleClass: 'text-purple-100',
-      amountClass: 'text-purple-50',
-      unitClass: 'text-purple-200/70',
-      priceClass: 'text-purple-200/90',
-    };
-  }
-  return {
-    background: 'linear-gradient(145deg, #101622 0%, #080c14 100%)',
-    borderColor: 'rgba(148, 163, 184, 0.22)',
-    radialHighlight: 'radial-gradient(ellipse 70% 60% at 0% 0%, rgba(148, 163, 184, 0.14), transparent 70%)',
+// Packages have no tier names to key a finish on, so the cards take the finishes in turn.
+const MATERIALS: TierMaterial[] = [
+  // Cool titanium silver
+  {
+    background: 'linear-gradient(145deg, #161c24 0%, #0d1117 100%)',
+    borderColor: 'rgba(203, 213, 225, 0.22)',
+    radialHighlight: 'radial-gradient(ellipse 70% 60% at 0% 0%, rgba(226, 232, 240, 0.18), transparent 70%)',
     sheenOverlay:
-      'linear-gradient(115deg, transparent 0%, rgba(148, 163, 184, 0.03) 40%, rgba(148, 163, 184, 0.06) 50%, transparent 100%)',
-    kindClass: 'text-slate-300 border-slate-400/20 bg-slate-400/10',
+      'linear-gradient(115deg, transparent 0%, rgba(255, 255, 255, 0.02) 40%, rgba(255, 255, 255, 0.07) 50%, rgba(255, 255, 255, 0.01) 60%, transparent 100%)',
+    kindClass: 'text-slate-300 border-slate-400/25 bg-slate-400/10',
     brandTextClass: 'text-slate-100',
     logoRing: 'ring-1 ring-slate-400/25',
     titleClass: 'text-slate-100',
     amountClass: 'text-white',
     unitClass: 'text-slate-400',
     priceClass: 'text-slate-300',
-  };
+  },
+  // Champagne obsidian gold
+  {
+    background: 'linear-gradient(145deg, #1b1610 0%, #0d0a07 100%)',
+    borderColor: 'rgba(245, 158, 11, 0.28)',
+    radialHighlight: 'radial-gradient(ellipse 70% 60% at 0% 0%, rgba(251, 191, 36, 0.18), transparent 70%)',
+    sheenOverlay:
+      'linear-gradient(115deg, transparent 0%, rgba(245, 158, 11, 0.03) 40%, rgba(251, 191, 36, 0.08) 50%, rgba(245, 158, 11, 0.02) 60%, transparent 100%)',
+    kindClass: 'text-amber-300 border-amber-500/25 bg-amber-500/10',
+    brandTextClass: 'text-amber-100',
+    logoRing: 'ring-1 ring-amber-500/30',
+    titleClass: 'text-amber-100',
+    amountClass: 'text-amber-50',
+    unitClass: 'text-amber-200/70',
+    priceClass: 'text-amber-200/90',
+  },
+  // Void onyx black
+  {
+    background: 'linear-gradient(145deg, #0e0e11 0%, #050506 100%)',
+    borderColor: 'rgba(255, 255, 255, 0.16)',
+    radialHighlight: 'radial-gradient(ellipse 70% 60% at 0% 0%, rgba(255, 255, 255, 0.12), transparent 70%)',
+    sheenOverlay:
+      'linear-gradient(115deg, transparent 0%, rgba(255, 255, 255, 0.02) 40%, rgba(255, 255, 255, 0.06) 50%, rgba(255, 255, 255, 0.01) 60%, transparent 100%)',
+    kindClass: 'text-neutral-300 border-white/10 bg-white/5',
+    brandTextClass: 'text-neutral-100',
+    logoRing: 'ring-1 ring-white/15',
+    titleClass: 'text-neutral-100',
+    amountClass: 'text-white',
+    unitClass: 'text-neutral-400',
+    priceClass: 'text-neutral-300',
+  },
+  // Deep teal
+  {
+    background: 'linear-gradient(145deg, #0e1715 0%, #060d0b 100%)',
+    borderColor: 'rgba(20, 184, 166, 0.22)',
+    radialHighlight: 'radial-gradient(ellipse 70% 60% at 0% 0%, rgba(20, 184, 166, 0.14), transparent 70%)',
+    sheenOverlay:
+      'linear-gradient(115deg, transparent 0%, rgba(20, 184, 166, 0.03) 40%, rgba(20, 184, 166, 0.06) 50%, transparent 100%)',
+    kindClass: 'text-teal-300 border-teal-500/20 bg-teal-500/10',
+    brandTextClass: 'text-teal-100',
+    logoRing: 'ring-1 ring-teal-500/25',
+    titleClass: 'text-teal-100',
+    amountClass: 'text-teal-50',
+    unitClass: 'text-teal-200/70',
+    priceClass: 'text-teal-200/90',
+  },
+];
+
+function getTierMaterial(index: number): TierMaterial {
+  return MATERIALS[index % MATERIALS.length]!;
 }
 
 /** The plan as a physical metallic pass with tier-specific finishes. */
-function PassCard({
-  plan,
-  kind,
-  mode,
-  index,
-}: {
-  plan: Plan;
-  kind: string;
-  mode: Mode;
-  index: number;
-}) {
-  const mat = getTierMaterial(mode, index, plan.name);
+function PassCard({ plan, index }: { plan: Plan; index: number }) {
+  const mat = getTierMaterial(index);
 
   return (
     <div
@@ -231,7 +181,7 @@ function PassCard({
         <span
           className={`font-mono text-[10px] sm:text-[11px] tracking-[0.14em] uppercase font-medium px-2.5 py-0.5 rounded-full border backdrop-blur-sm ${mat.kindClass}`}
         >
-          {kind}
+          {plan.kindLabel}
         </span>
       </div>
 
@@ -248,7 +198,7 @@ function PassCard({
           <span className="block text-[10px] font-mono tracking-wider text-neutral-400 uppercase">Authorized Pass</span>
         </div>
         <span className={`font-mono text-sm sm:text-base font-semibold tabular-nums whitespace-nowrap ${mat.priceClass}`}>
-          {plan.price}
+          {plan.price.format(plan.price.value)}
         </span>
       </div>
     </div>
@@ -293,13 +243,41 @@ function FanSlot({ offset, zIndex, enter, children }: { offset: number; zIndex: 
   );
 }
 
-export default function PricingPlans({ isLoggedIn = false, showPricingHubLink = true }: PricingPlansProps) {
+const KIND_LABELS: Record<PackageKind, string> = {
+  balance: 'BALANCE',
+  tokens: 'TOKEN PACK',
+  unlimited: 'UNLIMITED PASS',
+};
+
+function toPlan(pkg: BillingPackage, en: boolean, ctaLabel: string): Plan {
+  const isPass = pkg.kind === 'unlimited';
+  const name = isPass ? (pkg.modelDisplayName ?? pkg.name) : pkg.name;
+  return {
+    id: pkg.id,
+    kindLabel: KIND_LABELS[pkg.kind],
+    name,
+    price: priceParts(pkg, en),
+    priceSuffix: isPass ? `/ ${fmtDuration(pkg.durationHours ?? 24, en)}` : '',
+    ...packageHeadline(pkg, en),
+    desc: packageSummary(pkg, en),
+    features: packageFeatures(pkg, en, GATEWAY_LIMITS),
+    cta: `${ctaLabel} ${name}`,
+  };
+}
+
+export default function PricingPlans({ packages, isLoggedIn = false, showPricingHubLink = true }: PricingPlansProps) {
   const { t, locale } = useTranslation();
   const en = locale === 'en';
-  const [mode, setMode] = useState<Mode>('credits');
-  // Index the user picked; null falls back to the tier the copy marks popular.
+  const creditPlans = packages.filter((p) => p.kind !== 'unlimited').map((p) => toPlan(p, en, t.pricing.choosePlan));
+  const passPlans = packages.filter((p) => p.kind === 'unlimited').map((p) => toPlan(p, en, t.pricing.activatePass));
+  const [mode, setMode] = useState<Mode>(creditPlans.length || !passPlans.length ? 'credits' : 'passes');
+  // Index the user picked; null falls back to the first (cheapest) card.
   const [picked, setPicked] = useState<number | null>(null);
-  const targetUrl = isLoggedIn ? '/dashboard/billing' : '/login';
+  // The button opens that package's checkout in Billing; a guest signs in first and lands there.
+  const checkoutUrl = (packageId: string) => {
+    const billing = `/dashboard/billing?pkg=${packageId}`;
+    return isLoggedIn ? billing : loginUrl(billing);
+  };
 
   // Scroll-linked entrance: 0 as the section's top meets the bottom of the screen, 1 once it is well in.
   const sectionRef = useRef<HTMLElement>(null);
@@ -334,48 +312,30 @@ export default function PricingPlans({ isLoggedIn = false, showPricingHubLink = 
     py.set(0.5);
   };
 
-  const plans: Plan[] =
-    mode === 'credits'
-      ? t.pricing.tiers.map((tier) => {
-          const [, amount = tier.credits, unit = ''] = tier.credits.match(/^([\d.,]+)\s*(.*)$/) ?? [];
-          return {
-            name: tier.name,
-            price: tier.price,
-            amount,
-            unit,
-            desc: tier.desc,
-            noteLabel: t.pricing.estimateLabel,
-            note: tier.estimate,
-            features: tier.features,
-            badge: tier.popular ? t.pricing.popularBadge : undefined,
-            cta: `${t.pricing.choosePlan} ${tier.name}`,
-          };
-        })
-      : t.pricing.dailyTiers.map((pass) => ({
-          name: pass.name,
-          price: pass.price,
-          amount: t.pricing.dailyAmount,
-          unit: t.pricing.dailyUnit,
-          desc: pass.desc,
-          features: t.pricing.dailyFeatures,
-          badge: pass.popular ? t.pricing.bestValueBadge : undefined,
-          cta: t.pricing.activatePass,
-        }));
-
-  const popularIdx = Math.max(0, plans.findIndex((p) => p.badge));
-  const active = picked ?? popularIdx;
+  const plans = mode === 'credits' ? creditPlans : passPlans;
+  const active = Math.min(picked ?? 0, Math.max(0, plans.length - 1));
   const plan = plans[active];
-  const kind = mode === 'credits' ? 'CREDIT PASS' : 'DAY PASS';
 
   const switchMode = (m: Mode) => {
     setMode(m);
     setPicked(null);
   };
 
+  // A tab only shows when there is something behind it.
   const tabs: { id: Mode; label: string }[] = [
-    { id: 'credits', label: t.pricing.tabCredits },
-    { id: 'daily', label: t.pricing.tabDaily },
-  ];
+    { id: 'credits' as const, label: t.pricing.tabCredits, count: creditPlans.length },
+    { id: 'passes' as const, label: t.pricing.tabDaily, count: passPlans.length },
+  ].filter((tab) => tab.count > 0);
+
+  if (!plan) {
+    return (
+      <section id="pricing" className="relative z-10 bg-[#fafafa] px-4 pt-28 pb-20 sm:px-6 sm:pt-36">
+        <p suppressHydrationWarning className="mx-auto max-w-xl text-center text-neutral-600">
+          {t.pricing.empty}
+        </p>
+      </section>
+    );
+  }
 
   return (
     <section
@@ -401,6 +361,7 @@ export default function PricingPlans({ isLoggedIn = false, showPricingHubLink = 
             </motion.p>
           </div>
 
+          {tabs.length > 1 && (
           <div role="tablist" aria-label={t.pricing.billingModeAria} className="inline-flex shrink-0 self-start rounded-full border border-neutral-200 bg-white p-1 md:self-auto">
             {tabs.map((tab) => (
               <button
@@ -425,6 +386,7 @@ export default function PricingPlans({ isLoggedIn = false, showPricingHubLink = 
               </button>
             ))}
           </div>
+          )}
         </div>
 
         <div
@@ -439,9 +401,9 @@ export default function PricingPlans({ isLoggedIn = false, showPricingHubLink = 
                   const rel = (i - active + plans.length) % plans.length;
                   const front = rel === 0;
                   return (
-                    <FanSlot key={`${mode}-${p.name}`} zIndex={10 - rel} offset={i - (plans.length - 1) / 2} enter={enter}>
+                    <FanSlot key={`${mode}-${p.id}`} zIndex={10 - rel} offset={i - (plans.length - 1) / 2} enter={enter}>
                     <motion.button
-                      key={`${mode}-${p.name}`}
+                      key={`${mode}-${p.id}`}
                       type="button"
                       tabIndex={-1}
                       aria-hidden={!front}
@@ -459,7 +421,7 @@ export default function PricingPlans({ isLoggedIn = false, showPricingHubLink = 
                         front ? 'shadow-[0_30px_60px_-24px_rgba(10,10,10,0.55)]' : 'shadow-[0_12px_28px_-10px_rgba(0,0,0,0.4)]'
                       } rounded-[22px]`}
                     >
-                      <PassCard plan={p} kind={kind} mode={mode} index={i} />
+                      <PassCard plan={p} index={i} />
                       {front && (
                         <motion.span
                           aria-hidden="true"
@@ -480,7 +442,7 @@ export default function PricingPlans({ isLoggedIn = false, showPricingHubLink = 
                 const on = i === active;
                 return (
                   <button
-                    key={`${mode}-pick-${p.name}`}
+                    key={`${mode}-pick-${p.id}`}
                     type="button"
                     role="radio"
                     aria-checked={on}
@@ -507,31 +469,23 @@ export default function PricingPlans({ isLoggedIn = false, showPricingHubLink = 
           <motion.div id="pricing-panel" role="tabpanel" aria-live="polite" style={{ x: panelX, opacity: panelOpacity }}>
             <div className="flex items-center gap-3">
               <span className="text-lg font-bold text-neutral-950">{plan.name}</span>
-              {plan.badge && <span className="rounded-md bg-neutral-950 px-2 py-0.5 text-xs font-semibold text-white">{plan.badge}</span>}
             </div>
             <div className="mt-2 flex items-baseline gap-2">
               <span className="font-heading text-5xl sm:text-6xl font-extrabold tracking-tight text-neutral-950">
-                <RollingPrice price={plan.price} locale={locale} />
+                <RollingPrice {...plan.price} />
               </span>
-              {mode === 'daily' && <span className="text-neutral-500">{t.pricing.perDay}</span>}
+              {plan.priceSuffix && <span className="text-neutral-500">{plan.priceSuffix}</span>}
             </div>
 
             <AnimatePresence mode="wait" initial={false}>
               <motion.div
-                key={`${mode}-${plan.name}`}
+                key={`${mode}-${plan.id}`}
                 initial={{ opacity: 0, y: 12, filter: 'blur(6px)' }}
                 animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
                 exit={{ opacity: 0, y: -8, filter: 'blur(6px)' }}
                 transition={{ duration: 0.35, ease: EASE }}
               >
                 <p className="mt-4 max-w-md text-[15px] leading-relaxed text-neutral-600">{plan.desc}</p>
-
-                {plan.note && (
-                  <div className="mt-6 rounded-2xl bg-neutral-100 px-4 py-3.5">
-                    <div className="text-[12px] text-neutral-500">{plan.noteLabel}</div>
-                    <div className="mt-1 text-sm leading-relaxed text-neutral-800">{plan.note}</div>
-                  </div>
-                )}
 
                 <ul className="mt-6 space-y-2.5">
                   {plan.features.map((f, i) => (
@@ -554,7 +508,7 @@ export default function PricingPlans({ isLoggedIn = false, showPricingHubLink = 
 
             <div className="mt-8 flex flex-col gap-4 sm:flex-row sm:items-center">
               <Link
-                href={targetUrl}
+                href={checkoutUrl(plan.id)}
                 className="group inline-flex items-center justify-center gap-2 rounded-full bg-neutral-950 px-7 py-3.5 text-sm font-bold text-white transition-[background-color,transform] duration-300 hover:bg-neutral-800 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 focus-visible:ring-offset-2"
               >
                 <span suppressHydrationWarning>{plan.cta}</span>

@@ -74,6 +74,8 @@ apps/web/AGENTS.md
 audit-out/
 apps/api/audit-folder/
 docs/artifact/
+docs/morphic-e2e-retest.md
+docs/2026-11-22-e2e-web-fixes.md
 .skills/
 
 .projectmem/events.jsonl

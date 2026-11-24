@@ -2,6 +2,8 @@
 
 import { useRouter } from 'next/navigation';
 import { useTranslation } from '@/lib/i18n';
+import { useNextPath } from '@/lib/use-next-path';
+import { withNext } from '@/lib/safe-next';
 import { AuthCard } from '@/components/AuthCard';
 import { OtpCodeForm } from '@/components/OtpCodeForm';
 
@@ -11,12 +13,13 @@ import { OtpCodeForm } from '@/components/OtpCodeForm';
 export default function LoginOtpPage() {
   const { t } = useTranslation();
   const router = useRouter();
+  const nextPath = useNextPath();
 
   return (
-    <AuthCard backHref="/login/email" backLabel={t.login.backToOtherOptions} title={t.login.otpTitle} description={t.login.otpDesc}>
+    <AuthCard backHref={withNext('/login/email', nextPath)} backLabel={t.login.backToOtherOptions} title={t.login.otpTitle} description={t.login.otpDesc}>
       <OtpCodeForm
         onVerified={() => {
-          router.push('/dashboard');
+          router.push(nextPath);
           router.refresh();
         }}
       />
