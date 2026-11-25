@@ -23,7 +23,6 @@
     "sync-fallback": "tsx src/cli-sync.ts",
     "sync-to-primary": "tsx src/cli-sync-to-primary.ts",
     "setup:manual": "tsx scripts/setup-manual-test.ts",
-    "pool:chutes-inceptron": "tsx scripts/pool-chutes-inceptron.ts",
     "packages:tokenomics": "tsx scripts/tokenomics-packages.ts",
     "typecheck": "tsc --noEmit"
   },
