@@ -59,6 +59,24 @@ export function fmtPrice(pkg: Pick<BillingPackage, 'priceCents' | 'currency'>, e
   return format(value);
 }
 
+/**
+ * The undiscounted price, struck through next to a promo price: what the package is worth at the
+ * base rate (token packs at Rp400 per 1M, balance at its Rupiah value). Null when the package is not
+ * cheaper than that in the viewer's currency, e.g. both sit on the $1.00 PayPal floor.
+ */
+export function fmtListPrice(
+  pkg: Pick<BillingPackage, 'kind' | 'creditAllowance' | 'priceCents' | 'currency'>,
+  en: boolean,
+): string | null {
+  const listIdr =
+    pkg.kind === 'tokens' ? Math.round((pkg.creditAllowance / 1_000_000) * IDR_PER_1M_BASE_TOKENS)
+    : pkg.kind === 'balance' ? balanceIdr(pkg.creditAllowance)
+    : 0;
+  const list = priceParts({ priceCents: listIdr, currency: 'IDR' }, en);
+  const price = priceParts(pkg, en);
+  return listIdr > 0 && list.value > price.value ? list.format(list.value) : null;
+}
+
 /** One line on what the buyer gets and how it is charged. */
 export function packageSummary(pkg: BillingPackage, en: boolean): string {
   const tokens = fmtTokens(pkg.creditAllowance, en);

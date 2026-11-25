@@ -52,9 +52,3 @@ test('kind and model must agree', () => {
   const r = parsePackageForm(form({ ...ok, kind: 'bogus', modelId: '' }));
   assert.equal(r.values!.kind, 'tokens');
 });
-
-test('balance package credits must equal what its price buys', () => {
-  const bal = { ...ok, kind: 'balance', modelId: '', durationHours: '', priceCents: '2000' };
-  assert.ok('error' in parsePackageForm(form({ ...bal, creditAllowance: '8000000' })), 'Rp2.000 cannot grant Rp4.000 of balance');
-  assert.ok('values' in parsePackageForm(form({ ...bal, creditAllowance: '4000000' })));
-});

@@ -22,7 +22,7 @@ import { useTranslation } from '@/lib/i18n';
 import { formatCredits, API_BASE_URL, cn } from '@/lib/utils';
 import dynamic from 'next/dynamic';
 import { provisionPostPaymentKey } from '@/lib/actions';
-import { packageSummary, type BillingPackage } from '@/lib/billing-format';
+import { fmtListPrice, packageSummary, type BillingPackage } from '@/lib/billing-format';
 import { apiFetch, isSessionExpiredError } from '@/lib/browser-api';
 import { packagePriceIdr, packagePriceUsdCents } from '@morphic/shared/credits';
 
@@ -492,6 +492,8 @@ export function CheckoutModal({ pkg, existingPayment, provider, giftCard, sample
   };
   const en = locale === 'en';
   const priceLabel = isUSD ? `$${usdPrice}` : `Rp${idrPrice.toLocaleString('id-ID')}`;
+  // Promo: the base-rate price, struck through beside what is actually charged.
+  const listPrice = pkg.kind ? fmtListPrice(pkg as BillingPackage, isUSD) : null;
   const resolving = status === 'waiting' || status === 'pending_paypal' || status === 'creating';
   const focusRing = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 focus-visible:ring-offset-2';
   const sampleKey = provisionedToken || 'mp-live-...';
@@ -570,7 +572,10 @@ export function CheckoutModal({ pkg, existingPayment, provider, giftCard, sample
           {status !== 'paid' && (
             <div className="space-y-1">
               <p className="text-sm text-neutral-600">{pkgName}</p>
-              <p className="font-heading text-3xl font-bold tracking-tight text-neutral-950 tabular-nums">{priceLabel}</p>
+              <p className="flex items-baseline gap-2 tabular-nums">
+                {listPrice && <s className="text-lg text-neutral-500">{listPrice}</s>}
+                <span className="font-heading text-3xl font-bold tracking-tight text-neutral-950">{priceLabel}</span>
+              </p>
               {pkg.kind && <p className="text-sm text-neutral-600">{packageSummary(pkg as BillingPackage, en)}</p>}
             </div>
           )}

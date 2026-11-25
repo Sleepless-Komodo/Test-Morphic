@@ -8,7 +8,7 @@ import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { Download, Loader2, FileText } from 'lucide-react';
 import { TOKEN_PACK_HOURS, multiplier, packagePriceIdr, packagePriceUsdCents } from '@morphic/shared/credits';
-import { fmtBalance, fmtCompact, fmtDuration, fmtMultiplier, fmtPrice, fmtTokens, type BillingPackage, type PackageKind } from '@/lib/billing-format';
+import { fmtBalance, fmtCompact, fmtDuration, fmtListPrice, fmtMultiplier, fmtPrice, fmtTokens, type BillingPackage, type PackageKind } from '@/lib/billing-format';
 import { ModelProviderLogo } from '@/components/ProviderLogos';
 import { getActivePassesPageAction, getLedgerExportPageAction, getLedgerPageAction, getPaymentsExportPageAction, getPaymentsPageAction } from '@/lib/actions';
 import { KeysetListPager, NumberedPager, useKeysetPages, useNumberedPages } from '../numbered-pages';
@@ -246,7 +246,10 @@ export function BillingView({
                     onClick={() => buy(p)}
                     className="inline-flex min-h-8 items-center rounded-full bg-white/10 px-3.5 text-[13px] font-semibold tabular-nums text-white transition-colors hover:bg-white hover:text-neutral-950 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-neutral-950"
                   >
-                    <span suppressHydrationWarning>+ {fmtPrice(p, usd)}</span>
+                    <span suppressHydrationWarning>
+                      + {fmtListPrice(p, usd) && <s className="mr-1 font-normal text-neutral-400">{fmtListPrice(p, usd)}</s>}
+                      {fmtPrice(p, usd)}
+                    </span>
                   </button>
                 ))}
               </div>
@@ -280,7 +283,10 @@ export function BillingView({
                         {fmtDuration(p.durationHours ?? TOKEN_PACK_HOURS, en)}
                       </p>
                       <div className="mt-6 flex items-center justify-between gap-3">
-                        <span suppressHydrationWarning className="font-heading text-lg font-bold tabular-nums text-neutral-950">{fmtPrice(p, usd)}</span>
+                        <span suppressHydrationWarning className="flex items-baseline gap-2 tabular-nums">
+                          {fmtListPrice(p, usd) && <s className="text-sm text-neutral-500">{fmtListPrice(p, usd)}</s>}
+                          <span className="font-heading text-lg font-bold text-neutral-950">{fmtPrice(p, usd)}</span>
+                        </span>
                         <button
                           id={`buy-pkg-${p.id}`}
                           type="button"

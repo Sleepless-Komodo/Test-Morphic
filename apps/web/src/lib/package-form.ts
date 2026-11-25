@@ -1,5 +1,4 @@
 // Validation for the admin package create/edit form. Pure so it can be unit tested.
-import { BALANCE_CREDITS_PER_IDR } from '@morphic/shared/credits';
 
 export function parsePackageForm(formData: FormData, en = true) {
   const str = (k: string) => String(formData.get(k) ?? '').trim();
@@ -28,15 +27,5 @@ export function parsePackageForm(formData: FormData, en = true) {
     return { error: en ? 'Duration must be a whole number of hours above 0, or empty.' : 'Durasi harus bilangan bulat jam lebih dari 0, atau dikosongkan.' };
   if (values.priceCents !== null && (!Number.isSafeInteger(values.priceCents) || values.priceCents < 0))
     return { error: en ? 'Price must be a whole number, 0 or more, or empty.' : 'Harga harus bilangan bulat 0 atau lebih, atau dikosongkan.' };
-  // Billing shows a balance package as the Rupiah its credits are worth, and Duitku charges the price.
-  // The two must match, or the buyer picks "Rp4.000" and pays Rp2.000.
-  if (kind === 'balance' && values.priceCents && values.creditAllowance !== values.priceCents * BALANCE_CREDITS_PER_IDR) {
-    const want = (values.priceCents * BALANCE_CREDITS_PER_IDR).toLocaleString('en-US');
-    return {
-      error: en
-        ? `A balance package must grant what its price buys: Rp${values.priceCents.toLocaleString('id-ID')} = ${want} credits.`
-        : `Paket saldo harus memberi kredit seharga harganya: Rp${values.priceCents.toLocaleString('id-ID')} = ${want} kredit.`,
-    };
-  }
   return { values };
 }

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildPricingMatrix, fmtBalance, fmtMultiplier, fmtPrice, packageFeatures, packageHeadline, priceParts, type BillingPackage } from './billing-format.ts';
+import { buildPricingMatrix, fmtBalance, fmtListPrice, fmtMultiplier, fmtPrice, packageFeatures, packageHeadline, priceParts, type BillingPackage } from './billing-format.ts';
 
 test('fmtMultiplier keeps sub-0.1x prices visible instead of rounding them to 0x', () => {
   assert.equal(fmtMultiplier(100, true), '0.0001x');
@@ -65,4 +65,14 @@ test('buildPricingMatrix: omits kinds that are not for sale and states the share
   assert.deepEqual(shared.find((r) => r.name === 'API keys per account')!.cells, ['5']);
   assert.deepEqual(shared.find((r) => r.name === 'Rate limit per key')!.cells, ['120 RPM']);
   assert.deepEqual(m.groups[0]!.rows.find((r) => r.name === 'Valid for')!.cells, ['30 days']);
+});
+
+test('fmtListPrice strikes the base-rate price only when the package is cheaper', () => {
+  const promo = { kind: 'tokens' as const, creditAllowance: 10_000_000, priceCents: 2_000, currency: 'IDR' };
+  assert.equal(fmtListPrice(promo, false), 'Rp4.000');
+  assert.equal(fmtListPrice({ ...promo, priceCents: 4_000 }, false), null);
+  // Both Rp4.000 and Rp2.000 sit on the $1.00 PayPal floor: nothing to strike.
+  assert.equal(fmtListPrice(promo, true), null);
+  assert.equal(fmtListPrice({ kind: 'balance', creditAllowance: 8_000_000, priceCents: 2_000, currency: 'IDR' }, false), 'Rp4.000');
+  assert.equal(fmtListPrice({ kind: 'unlimited', creditAllowance: 20_000_000, priceCents: 5_000, currency: 'IDR' }, false), null);
 });
