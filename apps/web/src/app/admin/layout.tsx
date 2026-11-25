@@ -1,5 +1,6 @@
 import { requireAdminForStepUp } from '@/lib/actions';
 import { AdminShell } from './admin-shell';
+import { ApiStatusBanner } from './api-status-banner';
 import { StepUpWatcher } from './step-up-watcher';
 
 // The step-up itself is enforced by `requireAdmin` in every admin page and action; the layout
@@ -16,6 +17,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       }}
     >
       <StepUpWatcher />
+      <ApiStatusBanner />
       {children}
     </AdminShell>
   );

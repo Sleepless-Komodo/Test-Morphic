@@ -10,19 +10,21 @@ const API_URL = (
 
 export async function GET() {
   const started = Date.now();
+  let reason: 'unreachable' | 'error' = 'unreachable';
   try {
     const res = await fetch(`${API_URL}/health`, {
       cache: 'no-store',
       signal: AbortSignal.timeout(3000),
     });
+    reason = 'error';
     if (!res.ok) {
-      return NextResponse.json({ ok: false, status: 'degraded', latencyMs: Date.now() - started }, { status: 503 });
+      return NextResponse.json({ ok: false, status: 'degraded', reason, latencyMs: Date.now() - started }, { status: 503 });
     }
     const data = await res.json();
     // Whitelist: whatever else the gateway adds to /health stays internal.
     const ok = Boolean(data?.ok);
-    return NextResponse.json({ ok, status: ok ? 'operational' : 'degraded', latencyMs: Date.now() - started });
+    return NextResponse.json({ ok, status: ok ? 'operational' : 'degraded', ...(ok ? {} : { reason }), latencyMs: Date.now() - started });
   } catch {
-    return NextResponse.json({ ok: false, status: 'degraded', latencyMs: Date.now() - started }, { status: 503 });
+    return NextResponse.json({ ok: false, status: 'degraded', reason, latencyMs: Date.now() - started }, { status: 503 });
   }
 }
