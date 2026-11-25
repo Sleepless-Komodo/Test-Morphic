@@ -6,6 +6,8 @@ import { lt } from 'drizzle-orm';
 
 import { checkProviderHealth } from './lib/alert';
 import { reconcileProviderCircuitStates } from './domain/circuit-breaker';
+import { dbSyncIntervalMs, intervalFromEnv } from './lib/interval-env';
+import { setStaggeredInterval } from './lib/staggered-interval';
 import { reconcilePaypalPayments, sweepStaleDuitkuPayments } from './lib/paypal-reconcile';
 import { assertDuitkuConfig } from './lib/duitku';
 import { assertPaypalConfig } from './lib/paypal';
@@ -37,13 +39,17 @@ serve({ fetch: app.fetch, port }, (info) => {
   console.log(`morphic api listening on :${info.port}`);
 });
 
-// All five jobs run through runLeased: one node wins each interval (see
+// Every job runs through runLeased: one node wins each interval (see
 // lib/job-lease.ts). Same intervals, same job bodies, same per-job logging.
 // `JOB_LEASE_ENABLED=false` restores single-node behavior (still no local overlap).
 
+// Offsets within the minute. They keep the jobs apart as long as intervals are whole minutes, as the defaults
+// are. The sync gets the widest gap because it runs longest (about 24s).
+const JOB_OFFSET_MS = { sweep: 0, duitku: 10_000, alert: 15_000, dbSync: 25_000, purge: 55_000, paypal: 57_000 };
+
 // Crash-safety sweep: release reservations that never settled
 const SWEEP_INTERVAL_MS = 60_000;
-const sweepInterval = setInterval(() => {
+setStaggeredInterval(() => {
   void runLeased('sweep-expired-reservations', SWEEP_INTERVAL_MS, () =>
     sweepExpiredReservations()
       .then((n: number) => {
@@ -51,13 +57,12 @@ const sweepInterval = setInterval(() => {
       })
       .catch((e: unknown) => console.error('sweep error', e)),
   );
-}, SWEEP_INTERVAL_MS);
-sweepInterval.unref();
+}, SWEEP_INTERVAL_MS, JOB_OFFSET_MS.sweep);
 
 // Log retention purge job: delete request logs older than threshold (default 30 days) every 24h
 const LOG_RETENTION_DAYS = Number(process.env.LOG_RETENTION_DAYS ?? 30);
 const LOG_PURGE_INTERVAL_MS = 24 * 60 * 60_000;
-const purgeInterval = setInterval(() => {
+setStaggeredInterval(() => {
   void runLeased('request-log-retention', LOG_PURGE_INTERVAL_MS, async () => {
     const cutoff = new Date(Date.now() - LOG_RETENTION_DAYS * 86_400_000);
     await db
@@ -65,16 +70,15 @@ const purgeInterval = setInterval(() => {
       .where(lt(s.requestLogs.createdAt, cutoff))
       .catch((e: unknown) => console.error('[logger] purge error:', e));
   });
-}, LOG_PURGE_INTERVAL_MS);
-purgeInterval.unref();
+}, LOG_PURGE_INTERVAL_MS, JOB_OFFSET_MS.purge);
 
 // Observability alert job: monitor provider error rates every 5 minutes (§5.7).
 // The same tick recomputes the per-provider circuit aggregate (plan 1C), so a
 // transition missed by a crash or Redis eviction self-heals. Both functions share
 // one lease: they are one logical tick, and running either twice is harmless
 // (the alert cooldown is per-process, so one lease also avoids duplicate alerts).
-const ALERT_CHECK_INTERVAL_MS = Number(process.env.ALERT_CHECK_INTERVAL_MS ?? 5 * 60_000);
-const alertInterval = setInterval(() => {
+const ALERT_CHECK_INTERVAL_MS = intervalFromEnv('ALERT_CHECK_INTERVAL_MS', 5 * 60_000);
+setStaggeredInterval(() => {
   void runLeased('provider-health-and-circuits', ALERT_CHECK_INTERVAL_MS, async () => {
     await Promise.all([
       checkProviderHealth().catch((e: unknown) => console.error('[alert] check error:', e)),
@@ -83,12 +87,11 @@ const alertInterval = setInterval(() => {
       ),
     ]);
   });
-}, ALERT_CHECK_INTERVAL_MS);
-alertInterval.unref();
+}, ALERT_CHECK_INTERVAL_MS, JOB_OFFSET_MS.alert);
 
 // Duitku QR lifetime is 5 minutes: cancel (or settle, if paid) anything still pending past it, every minute
 const DUITKU_SWEEP_INTERVAL_MS = 60_000;
-const duitkuSweepInterval = setInterval(() => {
+setStaggeredInterval(() => {
   void runLeased('duitku-stale-sweep', DUITKU_SWEEP_INTERVAL_MS, () =>
     sweepStaleDuitkuPayments()
       .then((n: number) => {
@@ -96,14 +99,13 @@ const duitkuSweepInterval = setInterval(() => {
       })
       .catch((e: unknown) => console.error('[duitku] sweep error:', e)),
   );
-}, DUITKU_SWEEP_INTERVAL_MS);
-duitkuSweepInterval.unref();
+}, DUITKU_SWEEP_INTERVAL_MS, JOB_OFFSET_MS.duitku);
 
 // PayPal reconciliation: scan pending payments >30min, poll getOrder(), grant if COMPLETED
-const PAYPAL_RECONCILE_MS = Number(process.env.PAYPAL_RECONCILE_INTERVAL_MS ?? 15 * 60_000);
+const PAYPAL_RECONCILE_MS = intervalFromEnv('PAYPAL_RECONCILE_INTERVAL_MS', 15 * 60_000);
 // Pre-existing per-process guard kept on top of the lease's own in-flight Set.
 let reconcileRunning = false;
-const reconcileInterval = setInterval(() => {
+setStaggeredInterval(() => {
   if (reconcileRunning) return;
   reconcileRunning = true;
   void runLeased('paypal-reconcile', PAYPAL_RECONCILE_MS, () =>
@@ -115,17 +117,15 @@ const reconcileInterval = setInterval(() => {
   ).finally(() => {
     reconcileRunning = false;
   });
-}, PAYPAL_RECONCILE_MS);
-reconcileInterval.unref();
+}, PAYPAL_RECONCILE_MS, JOB_OFFSET_MS.paypal);
 
 // Periodic fallback DB sync: keeps local Termux PostgreSQL synced with Neon while primary is active.
 // Every run logs one `[db-sync] ok kind=full trigger=periodic ...` line, or `[db-sync] FAIL ...`
 // (Telegram alert after 3 consecutive failures). See lib/db-failover-monitor.ts.
-const DB_SYNC_INTERVAL_MS = Number(process.env.DB_SYNC_INTERVAL_MS ?? 10 * 60_000);
-if (process.env.DATABASE_URL_FALLBACK && Number.isFinite(DB_SYNC_INTERVAL_MS) && DB_SYNC_INTERVAL_MS > 0) {
-  const dbSyncInterval = setInterval(() => {
+const DB_SYNC_INTERVAL_MS = dbSyncIntervalMs();
+if (process.env.DATABASE_URL_FALLBACK && DB_SYNC_INTERVAL_MS > 0) {
+  setStaggeredInterval(() => {
     void runLeased('db-fallback-sync', DB_SYNC_INTERVAL_MS, () => runFallbackSyncJob('periodic'));
-  }, DB_SYNC_INTERVAL_MS);
-  dbSyncInterval.unref();
+  }, DB_SYNC_INTERVAL_MS, JOB_OFFSET_MS.dbSync);
 }
 

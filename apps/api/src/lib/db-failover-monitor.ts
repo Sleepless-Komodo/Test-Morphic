@@ -15,6 +15,7 @@ import {
 } from '@morphic/db';
 import { sendOpsAlert } from './alert';
 import { runLeased } from './job-lease';
+import { DEFAULT_DB_SYNC_INTERVAL_MS, dbSyncIntervalMs } from './interval-env';
 import { runExclusiveSync } from './db-sync-queue';
 import {
   consoleSyncLogger,
@@ -236,8 +237,8 @@ export function logStartupConfig(log: SyncLogger = consoleSyncLogger): void {
   const primaryUrl = process.env.DATABASE_URL ?? 'postgresql://unset:unset@localhost:5432/unset';
   const state = getDbFailoverState();
   const syncOnWrite = process.env.DB_SYNC_ON_WRITE !== 'false';
-  const interval = Number(process.env.DB_SYNC_INTERVAL_MS ?? 10 * 60_000);
-  const periodicOn = Number.isFinite(interval) && interval > 0;
+  const interval = dbSyncIntervalMs(process.env, () => {});
+  const periodicOn = interval > 0;
   const debounce = Number(process.env.DB_SYNC_ON_WRITE_DEBOUNCE_MS ?? 1500);
   const syncOnBoot = process.env.DB_SYNC_ON_BOOT !== 'false';
 
@@ -284,7 +285,7 @@ export function logStartupConfig(log: SyncLogger = consoleSyncLogger): void {
     );
   }
   if (!periodicOn) {
-    log.warn('[db-sync] startup WARNING: DB_SYNC_INTERVAL_MS is 0/invalid — periodic fallback sync is OFF');
+    log.warn('[db-sync] startup WARNING: DB_SYNC_INTERVAL_MS is 0 or negative — periodic fallback sync is OFF');
   }
 }
 
@@ -297,8 +298,7 @@ export interface StartupCheckDeps {
 }
 
 async function defaultBootSync(): Promise<void> {
-  const interval = Number(process.env.DB_SYNC_INTERVAL_MS ?? 10 * 60_000);
-  const leaseMs = Number.isFinite(interval) && interval > 0 ? interval : 10 * 60_000;
+  const leaseMs = dbSyncIntervalMs(process.env, () => {}) || DEFAULT_DB_SYNC_INTERVAL_MS;
   const outcome = await runLeased('db-fallback-sync', leaseMs, () => runFallbackSyncJob('boot'));
   if (outcome === 'skipped_lease_held') {
     consoleSyncLogger.info('[db-sync] boot catch-up sync skipped: another node already synced within the lease window');

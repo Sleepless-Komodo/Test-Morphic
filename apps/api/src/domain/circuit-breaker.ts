@@ -1,4 +1,4 @@
-import { db, schema as s } from '@morphic/db';
+import { db, isNeonFailoverError, schema as s } from '@morphic/db';
 import { eq, or } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
 import { redis } from '../lib/redis';
@@ -357,17 +357,26 @@ async function providerModelIdsFor(providerId: string): Promise<string[]> {
   return Array.from(new Set([...poolRows, ...legacyRows].map((r) => r.providerModelId)));
 }
 
-async function persistAggregate(providerId: string, aggregate: ProviderCircuitAggregate): Promise<void> {
+type AggregateWriter = (providerId: string, aggregate: ProviderCircuitAggregate) => Promise<unknown>;
+
+const writeAggregate: AggregateWriter = (providerId, aggregate) =>
+  db.update(s.providers).set({ circuitBreakerState: aggregate }).where(eq(s.providers.id, providerId));
+
+/** Returns false only when the database could not be reached. */
+async function persistAggregate(
+  providerId: string,
+  aggregate: ProviderCircuitAggregate,
+  write: AggregateWriter = writeAggregate,
+): Promise<boolean> {
   const serialized = JSON.stringify(aggregate);
-  if (lastWrittenAggregate.get(providerId) === serialized) return;
+  if (lastWrittenAggregate.get(providerId) === serialized) return true;
   try {
-    await db
-      .update(s.providers)
-      .set({ circuitBreakerState: aggregate })
-      .where(eq(s.providers.id, providerId));
+    await write(providerId, aggregate);
     lastWrittenAggregate.set(providerId, serialized);
+    return true;
   } catch (e) {
     console.error(`[circuit-breaker] failed to persist aggregate for provider ${providerId}:`, e);
+    return !isNeonFailoverError(e);
   }
 }
 
@@ -398,14 +407,19 @@ function latestTimestamp(values: (string | null)[]): string | null {
  * so callers can skip the write instead of publishing a false `closed`.
  */
 export async function computeProviderAggregate(providerId: string): Promise<ProviderCircuitAggregate | null> {
-  let states: CircuitBreakerState[];
+  let aggregate: ProviderCircuitAggregate;
   try {
-    const modelIds = await providerModelIdsFor(providerId);
-    states = await Promise.all(modelIds.map((id) => readCircuitState(providerId, id)));
+    aggregate = await rollUpCircuits(providerId, await providerModelIdsFor(providerId));
   } catch (e) {
     console.error(`[circuit-breaker] failed to compute aggregate for provider ${providerId}:`, e);
     return null;
   }
+  await persistAggregate(providerId, aggregate);
+  return aggregate;
+}
+
+async function rollUpCircuits(providerId: string, modelIds: string[]): Promise<ProviderCircuitAggregate> {
+  const states = await Promise.all(modelIds.map((id) => readCircuitState(providerId, id)));
 
   const openStates = states.filter((x) => x.state === 'open');
   const state: CBState =
@@ -415,7 +429,7 @@ export async function computeProviderAggregate(providerId: string): Promise<Prov
         ? 'half-open'
         : 'closed';
 
-  const aggregate: ProviderCircuitAggregate = {
+  return {
     state,
     failures: states.reduce((max, x) => Math.max(max, x.failures), 0),
     openUntil: latestTimestamp(openStates.map((x) => x.openUntil)),
@@ -423,9 +437,6 @@ export async function computeProviderAggregate(providerId: string): Promise<Prov
     openModels: openStates.length,
     totalModels: states.length,
   };
-
-  await persistAggregate(providerId, aggregate);
-  return aggregate;
 }
 
 /** Fire-and-forget aggregate refresh after a state transition. */
@@ -433,17 +444,58 @@ function refreshProviderAggregate(providerId: string): void {
   void computeProviderAggregate(providerId);
 }
 
+/** Test seams: limit the pass to some providers, replace the row write. */
+export interface ReconcileDeps {
+  onlyProviderIds?: readonly string[];
+  write?: AggregateWriter;
+}
+
 /**
  * Self-healing pass for `checkProviderHealth`'s tick: recompute every provider
  * row so a missed transition (crash, Redis eviction) is corrected.
  */
-export async function reconcileProviderCircuitStates(): Promise<void> {
-  let rows: { id: string }[];
+export async function reconcileProviderCircuitStates(deps: ReconcileDeps = {}): Promise<void> {
+  const modelIds = new Map<string, Set<string>>();
   try {
-    rows = await db.select({ id: s.providers.id }).from(s.providers);
+    const [providers, poolRows, legacyRows] = await Promise.all([
+      db.select({ id: s.providers.id }).from(s.providers),
+      db
+        .select({
+          providerId: s.modelProviderPool.providerId,
+          providerModelId: s.modelProviderPool.providerModelId,
+        })
+        .from(s.modelProviderPool),
+      db
+        .select({
+          providerId: s.models.providerId,
+          fallbackProviderId: s.models.fallbackProviderId,
+          providerModelId: s.models.providerModelId,
+        })
+        .from(s.models),
+    ]);
+    for (const { id } of providers) {
+      if (!deps.onlyProviderIds || deps.onlyProviderIds.includes(id)) modelIds.set(id, new Set());
+    }
+    for (const row of poolRows) modelIds.get(row.providerId)?.add(row.providerModelId);
+    for (const row of legacyRows) {
+      modelIds.get(row.providerId)?.add(row.providerModelId);
+      if (row.fallbackProviderId) modelIds.get(row.fallbackProviderId)?.add(row.providerModelId);
+    }
   } catch (e) {
-    console.error('[circuit-breaker] failed to list providers for reconciliation:', e);
+    console.error('[circuit-breaker] failed to load providers for reconciliation:', e);
     return;
   }
-  await Promise.all(rows.map((row) => computeProviderAggregate(row.id)));
+
+  // One at a time: each write opens its own connection, and after a restart every provider is written.
+  for (const [providerId, ids] of modelIds) {
+    let aggregate: ProviderCircuitAggregate;
+    try {
+      aggregate = await rollUpCircuits(providerId, [...ids]);
+    } catch (e) {
+      console.error(`[circuit-breaker] failed to compute aggregate for provider ${providerId}:`, e);
+      continue;
+    }
+    // Unreachable: each further write would spend its own retry budget. The next tick tries again.
+    if (!(await persistAggregate(providerId, aggregate, deps.write))) return;
+  }
 }

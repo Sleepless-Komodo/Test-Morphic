@@ -1,7 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import http from 'node:http';
+import https from 'node:https';
 import net from 'node:net';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
 import {
   createNeonFetch,
@@ -10,6 +15,7 @@ import {
   isReadOnlyBody,
   isReadOnlySql,
   onDbConnectionIssue,
+  retryDelayMs,
   schema as s,
   type DbConnectionIssue,
 } from '@morphic/db';
@@ -258,4 +264,74 @@ test('a loopback fallback is ignored on Vercel only', () => {
   assert.equal(getFallbackConnectionString(env({ DATABASE_URL_FALLBACK: local, VERCEL: '1' })), null);
   const remote = 'postgresql://a:b@db.example.com:5432/m';
   assert.equal(getFallbackConnectionString(env({ DATABASE_URL_FALLBACK: remote, VERCEL: '1' })), remote);
+});
+
+/** Throwaway self-signed certificate, so no private key lives in the repository. */
+function makeTestCert(): { key: string; cert: string } | null {
+  const dir = mkdtempSync(join(tmpdir(), 'neon-fetch-test-'));
+  try {
+    const key = join(dir, 'key.pem');
+    const cert = join(dir, 'cert.pem');
+    execFileSync(
+      'openssl',
+      ['req', '-x509', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:prime256v1', '-nodes', '-days', '1', '-subj', '/CN=localhost', '-keyout', key, '-out', cert],
+      { stdio: 'ignore' },
+    );
+    return { key: readFileSync(key, 'utf8'), cert: readFileSync(cert, 'utf8') };
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw err;
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test('queued reads on a freed keep-alive socket do not hit the connect timeout or leak listeners', async (t) => {
+  const tlsFiles = makeTestCert();
+  if (!tlsFiles) return t.skip('openssl is not installed');
+  const warnings: string[] = [];
+  const onWarning = (w: Error) => void warnings.push(w.name);
+  const previousTls = process.env.NODE_TLS_REJECT_UNAUTHORIZED;
+  process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+  process.on('warning', onWarning);
+  let delayMs = 5;
+  const server = https.createServer(tlsFiles, (req, res) => {
+    req.resume();
+    setTimeout(() => res.end('{}'), delayMs);
+  });
+  server.keepAliveTimeout = 60_000;
+  await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+  try {
+    // Real handshakes get plenty of time on a busy machine; only the warm phase has the short timeout.
+    const warmUp = createNeonFetch({ connectTimeoutMs: 20_000, idleTimeoutMs: 30_000, maxAttempts: 1 });
+    const f = createNeonFetch({ connectTimeoutMs: 1_500, idleTimeoutMs: 30_000, maxAttempts: 1 });
+    const url = `https://localhost:${(server.address() as AddressInfo).port}/sql`;
+    await Promise.all(Array.from({ length: 600 }, () => warmUp(url, post(READ))));
+    delayMs = 2_500;
+    const results = await Promise.allSettled(Array.from({ length: 64 }, () => f(url, post(READ))));
+    assert.equal(results.filter((r) => r.status === 'rejected').length, 0);
+    assert.ok(!warnings.includes('MaxListenersExceededWarning'));
+  } finally {
+    process.off('warning', onWarning);
+    if (previousTls === undefined) delete process.env.NODE_TLS_REJECT_UNAUTHORIZED;
+    else process.env.NODE_TLS_REJECT_UNAUTHORIZED = previousTls;
+    server.closeAllConnections();
+    await new Promise((r) => server.close(r));
+  }
+});
+
+test('retry delays are spread out and never push a request past its budget', async () => {
+  assert.deepEqual([1, 2].map((a) => retryDelayMs(a, () => 0)), [200, 400]);
+  assert.deepEqual([1, 2].map((a) => retryDelayMs(a, () => 0.999)), [399, 799]);
+  assert.ok(new Set(Array.from({ length: 50 }, () => retryDelayMs(1))).size > 10);
+
+  await withServer(
+    (_hit, req) => req.socket.destroy(),
+    async (url, hits) => {
+      const started = Date.now();
+      await assert.rejects(createNeonFetch({ budgetMs: 150 })(url, post(READ)));
+      assert.equal(hits(), 1, 'no retry fits in the budget');
+      assert.ok(Date.now() - started < 150);
+    },
+  );
 });

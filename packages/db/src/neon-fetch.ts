@@ -12,6 +12,10 @@ export const MAX_ATTEMPTS = 3;
 // while this process was frozen fails the request after it was sent, and only a read may be resent.
 const readAgent = new https.Agent({ keepAlive: true, maxSockets: 32, timeout: 120_000 });
 
+// Node leaves `req.reusedSocket` false when a queued request is handed a freed keep-alive socket,
+// and such a socket never emits `secureConnect` again.
+const establishedSockets = new WeakSet<object>();
+
 /** `connect`: the request never left this host. `request`: the server may have executed it. */
 export type NeonFailurePhase = 'connect' | 'request';
 
@@ -150,14 +154,17 @@ export function sendOnce(
     );
 
     req.on('socket', (socket) => {
-      if (req.reusedSocket) {
+      if (req.reusedSocket || establishedSockets.has(socket)) {
         markConnected();
         return;
       }
       connectTimer = setTimeout(() => {
         req.destroy(Object.assign(new Error('Connection timeout'), { code: 'ETIMEDOUT' }));
       }, opts.connectTimeoutMs);
-      socket.once(secure ? 'secureConnect' : 'connect', markConnected);
+      socket.once(secure ? 'secureConnect' : 'connect', () => {
+        establishedSockets.add(socket);
+        markConnected();
+      });
     });
     req.on('error', fail);
     req.on('timeout', () => {
@@ -174,6 +181,12 @@ export interface NeonFetchOptions {
   idleTimeoutMs?: number;
   budgetMs?: number;
   maxAttempts?: number;
+}
+
+/** Randomised so queries that failed together do not all reconnect together. */
+export function retryDelayMs(attempt: number, random: () => number = Math.random): number {
+  const base = 200 * attempt;
+  return base + Math.floor(random() * base);
 }
 
 /**
@@ -200,7 +213,7 @@ export function createNeonFetch(options: NeonFetchOptions = {}) {
         });
       } catch (err) {
         const phase = err instanceof NeonRequestError ? err.phase : 'request';
-        const delay = 200 * attempt;
+        const delay = retryDelayMs(attempt);
         const retryable = readOnly || phase === 'connect';
         if (!retryable || attempt >= maxAttempts || Date.now() + delay >= deadline) {
           emitDbConnectionIssue({ source: 'http', kind: readOnly ? 'read' : 'write', attempts: attempt, error: err });

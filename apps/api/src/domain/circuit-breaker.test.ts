@@ -24,6 +24,7 @@ const {
   releaseTrial,
   getCircuitState,
   computeProviderAggregate,
+  reconcileProviderCircuitStates,
   setCircuitStoreForTests,
 } = await import('./circuit-breaker.js');
 
@@ -292,4 +293,60 @@ test('1C: one half-open circuit makes the provider aggregate half-open, not open
   assert.equal(aggregate?.state, 'half-open');
   assert.equal(aggregate?.openModels, 1, 'x is half-open; only y is still open');
   assert.equal(aggregate?.totalModels, 2);
+});
+
+test('1C: reconcile writes the same aggregate from pool, legacy and fallback models', async () => {
+  const primary = await mkProvider('rec-primary');
+  const other = await mkProvider('rec-other');
+  const bare = await mkProvider('rec-bare');
+  const a = await mkModel(primary.id, `rec-a-${uid()}`);
+  await mkModel(other.id, `rec-b-${uid()}`, primary.id);
+  const poolOnly = await mkModel(other.id, `rec-c-${uid()}`);
+  await mkPoolRow(poolOnly.id, primary.id, poolOnly.providerModelId);
+  await openCircuit({ providerId: primary.id, providerModelId: a.providerModelId });
+
+  // Test files run in parallel on one database: never touch another file's providers.
+  const untouched = await mkProvider('rec-untouched');
+  await reconcileProviderCircuitStates({ onlyProviderIds: [primary.id, other.id, bare.id] });
+
+  const rows = await db
+    .select({ id: s.providers.id, cb: s.providers.circuitBreakerState })
+    .from(s.providers)
+    .where(inArray(s.providers.id, [primary.id, other.id, bare.id, untouched.id]));
+  const counts = (id: string) => {
+    const cb = rows.find((r) => r.id === id)!.cb as { state: string; openModels?: number; totalModels?: number };
+    return [cb.state, cb.openModels, cb.totalModels];
+  };
+  assert.deepEqual(counts(primary.id), ['closed', 1, 3]);
+  assert.deepEqual(counts(other.id), ['closed', 0, 2]);
+  assert.deepEqual(counts(bare.id), ['closed', 0, 0]);
+  assert.equal(counts(untouched.id)[2], undefined);
+});
+
+test('1C: reconcile skips a provider whose write is rejected, but stops when the database is unreachable', async () => {
+  const ids = [(await mkProvider('rec-w1')).id, (await mkProvider('rec-w2')).id, (await mkProvider('rec-w3')).id];
+  const attemptsWhenFirstWriteFails = async (code: string) => {
+    let attempts = 0;
+    await reconcileProviderCircuitStates({
+      onlyProviderIds: ids,
+      write: async () => {
+        attempts += 1;
+        if (attempts === 1) throw Object.assign(new Error('write failed'), { code });
+      },
+    });
+    return attempts;
+  };
+
+  assert.equal(await attemptsWhenFirstWriteFails('ETIMEDOUT'), 1, 'unreachable: stop');
+  assert.equal(await attemptsWhenFirstWriteFails('23514'), 3, 'rejected row: carry on');
+});
+
+test('1C: reconcile reads with three queries however many providers there are', async (t) => {
+  const ids: string[] = [];
+  for (let i = 0; i < 6; i++) ids.push((await mkProvider(`rec-q${i}`)).id);
+  // The session prototype is shared by every query this process sends.
+  const proto = Object.getPrototypeOf((db as unknown as { session: object }).session);
+  const prepare = t.mock.method(proto, 'prepareQuery');
+  await reconcileProviderCircuitStates({ onlyProviderIds: ids, write: async () => {} });
+  assert.equal(prepare.mock.callCount(), 3);
 });
