@@ -29,6 +29,8 @@ interface BillingViewProps {
   /** An active model from the database, for the setup snippets shown after payment. */
   sampleModelId?: string | null;
   initialTab?: 'packages' | 'payments' | 'ledger';
+  /** Package to open the checkout for on arrival, from a pricing card's `?pkg=`. */
+  initialPackageId?: string;
 }
 
 const EXPORT_BATCH = 500;
@@ -55,10 +57,13 @@ export function BillingView({
   showcase,
   sampleModelId,
   initialTab = 'packages',
+  initialPackageId,
 }: BillingViewProps) {
   const { t, locale } = useTranslation();
   const [balance, setBalance] = useState(initialBalance);
-  const [selectedPkg, setSelectedPkg] = useState<any>(null);
+  const [selectedPkg, setSelectedPkg] = useState<any>(
+    () => (initialPackageId ? initialPackages.find((pkg) => pkg.id === initialPackageId) ?? null : null),
+  );
   const [resumePayment, setResumePayment] = useState<any>(null);
   const passesPages = useNumberedPages(initialEntitlements, getActivePassesPageAction);
   // Payments and the ledger only grow and are read newest first, so they page Newer/Older (one
@@ -71,6 +76,14 @@ export function BillingView({
   const [exporting, setExporting] = useState<'payments' | 'ledger' | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'packages' | 'payments' | 'ledger'>(initialTab);
+
+  // The checkout is already open from the initial state; drop `?pkg=` so a refresh does not reopen it.
+  useEffect(() => {
+    if (!initialPackageId) return;
+    const url = new URL(window.location.href);
+    url.searchParams.delete('pkg');
+    window.history.replaceState(null, '', url.toString());
+  }, [initialPackageId]);
 
   const handleTabChange = (tab: 'packages' | 'payments' | 'ledger') => {
     setActiveTab(tab);

@@ -6,6 +6,8 @@ import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { signIn, signUp, useSession } from '@/lib/auth-client';
 import { useTranslation } from '@/lib/i18n';
+import { useNextPath } from '@/lib/use-next-path';
+import { withNext } from '@/lib/safe-next';
 import {
   ArrowLeft,
   Eye,
@@ -22,6 +24,7 @@ export default function EmailAuthPage() {
   const { t, locale, setLocale } = useTranslation();
   const router = useRouter();
   const { data: session } = useSession();
+  const nextPath = useNextPath();
 
   const [isSignUpMode, setIsSignUpMode] = useState(false);
   const [name, setName] = useState('');
@@ -134,7 +137,7 @@ export default function EmailAuthPage() {
           email: trimmedEmail,
           password,
           // Used by the fresh verification link sent on EMAIL_NOT_VERIFIED.
-          callbackURL: '/dashboard',
+          callbackURL: nextPath,
           fetchOptions: {
             headers: fetchHeaders,
           },
@@ -162,13 +165,13 @@ export default function EmailAuthPage() {
 
         // Email OTP is on for this account: no session yet, finish on the code step.
         if ((res?.data as { twoFactorRedirect?: boolean } | null)?.twoFactorRedirect) {
-          router.push('/login/otp');
+          router.push(withNext('/login/otp', nextPath));
           return;
         }
       }
 
       setFailCount(0);
-      router.push('/dashboard');
+      router.push(nextPath);
       router.refresh();
     } catch {
       handleAuthFail(t.login.authGenericError);
@@ -183,7 +186,7 @@ export default function EmailAuthPage() {
       {/* Top bar: Back to /login + Language Switcher */}
       <div className="max-w-md w-full mx-auto flex items-center justify-between">
         <Link
-          href="/login"
+          href={withNext('/login', nextPath)}
           className="inline-flex items-center gap-2 text-xs font-semibold text-neutral-500 hover:text-neutral-950 transition-colors"
         >
           <ArrowLeft className="h-4 w-4" />

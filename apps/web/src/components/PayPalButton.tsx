@@ -3,8 +3,8 @@
 import { PayPalButtons, PayPalScriptProvider } from '@paypal/react-paypal-js';
 import { useState } from 'react';
 import { Loader2 } from 'lucide-react';
+import { apiFetch, isSessionExpiredError } from '@/lib/browser-api';
 
-const API_URL = '/api/backend';
 
 interface PayPalButtonProps {
   packageId: string;
@@ -75,9 +75,8 @@ export function PayPalButton({
               }
               setLoading(true);
               try {
-                const res = await fetch(`${API_URL}/v1/payments/paypal/create-order`, {
+                const res = await apiFetch('/v1/payments/paypal/create-order', {
                   method: 'POST',
-                  credentials: 'include',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ packageId, giftCard: giftCard ?? undefined }),
                 });
@@ -93,6 +92,7 @@ export function PayPalButton({
                 return data.orderId;
               } catch (err: unknown) {
                 setLoading(false);
+                if (isSessionExpiredError(err)) throw err;
                 const msg = err instanceof Error ? err.message : 'An error occurred initializing payment';
                 onError(msg);
                 throw err;
@@ -102,9 +102,8 @@ export function PayPalButton({
               if (!paymentId || isVerifying) return;
               setLoading(true);
               try {
-                const res = await fetch(`${API_URL}/v1/payments/paypal/capture`, {
+                const res = await apiFetch('/v1/payments/paypal/capture', {
                   method: 'POST',
-                  credentials: 'include',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ orderId: orderID, paymentId }),
                 });
@@ -150,9 +149,7 @@ export function PayPalButton({
                   // 409 -> "Payment state changed, refreshing", re-check status once; no retry loop
                   onError('Payment state changed, refreshing...');
                   try {
-                    const verifyRes = await fetch(`${API_URL}/v1/payments/paypal/verify/${paymentId}`, {
-                      credentials: 'include',
-                    });
+                    const verifyRes = await apiFetch(`/v1/payments/paypal/verify/${paymentId}`);
                     const verifyData = (await verifyRes.json().catch(() => ({}))) as {
                       status?: string;
                       credits?: number;
@@ -177,6 +174,7 @@ export function PayPalButton({
                 onError(data.error?.message ?? 'Capture failed. Please check payment status.');
               } catch (err: unknown) {
                 setLoading(false);
+                if (isSessionExpiredError(err)) return;
                 const msg = err instanceof Error ? err.message : 'Failed to complete PayPal payment capture';
                 onError(msg);
               }
