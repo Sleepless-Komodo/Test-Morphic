@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { config } from 'dotenv';
 import { checkDatabaseParity, formatParityReportCli, safeHostLabel } from './parity.ts';
+import { startAudit } from './audit-report.ts';
 import { SYNC_PLAN, syncFallbackToPrimary } from './sync.ts';
 import { getConnectionString, getFallbackConnectionString, sanitizeErrorForLog } from './index.ts';
 
@@ -20,6 +21,7 @@ Options:
   --dry-run      Count rows without writing to Neon primary
   --skip-logs    Skip request_logs table
   --force-full   Ignore append watermarks and scan all rows
+  --allow-extra  Write even when the destination has rows the local database lacks
   --json         Output JSON report (requires --yes for live writes)
   --yes          Skip interactive confirmation prompt
   -h, --help     Show this help (via pnpm: pnpm db:sync-to-primary -- --help)`;
@@ -37,6 +39,7 @@ try {
       'dry-run': { type: 'boolean', default: false },
       'skip-logs': { type: 'boolean', default: false },
       'force-full': { type: 'boolean', default: false },
+      'allow-extra': { type: 'boolean', default: false },
       json: { type: 'boolean', default: false },
       yes: { type: 'boolean', default: false },
       help: { type: 'boolean', short: 'h', default: false },
@@ -56,13 +59,14 @@ if (parsed.values.help) {
 const dryRun = parsed.values['dry-run'];
 const skipLogs = parsed.values['skip-logs'];
 const forceFull = parsed.values['force-full'];
+const allowExtra = parsed.values['allow-extra'];
 const jsonMode = parsed.values.json;
 const skipConfirm = parsed.values.yes;
 
 const UPSERT_TABLES = new Set(SYNC_PLAN.filter((t) => t.mode === 'upsert').map((t) => t.tableName));
 const APPEND_TABLES = new Set(SYNC_PLAN.filter((t) => t.mode === 'append_watermark').map((t) => t.tableName));
 
-function askConfirmation(question: string): Promise<boolean> {
+function askConfirmation(question: string, expected: string): Promise<boolean> {
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
@@ -76,7 +80,7 @@ function askConfirmation(question: string): Promise<boolean> {
       done(ok);
     };
     rl.on('close', () => finish(false));
-    rl.question(question, (answer) => finish(answer.trim().toLowerCase() === 'yes'));
+    rl.question(question, (answer) => finish(answer.trim() === expected));
   });
 }
 
@@ -158,6 +162,18 @@ async function main(): Promise<void> {
     return;
   }
 
+  // A destination with rows local lacks was seeded or holds older data; a copy would mix the two.
+  const extraOnDestination = preParity.tables.filter((t) => t.deltaRows > 0 && t.tableName !== 'job_leases');
+  if (extraOnDestination.length > 0 && !allowExtra) {
+    const list = extraOnDestination.map((t) => `${t.tableName} (+${t.deltaRows})`).join(', ');
+    const message = `Destination has rows the local database lacks: ${list}. Use an empty, migrated destination, or pass --allow-extra.`;
+    if (!dryRun) {
+      console.error(`[db:sync-to-primary] ERROR: ${message}`);
+      process.exit(1);
+    }
+    console.error(`[db:sync-to-primary] WARNING: ${message} A live run would be refused.`);
+  }
+
   // 3) Interactive confirmation for live writes
   if (!dryRun && !skipConfirm) {
     const extraFallbackUpserts = preParity.tables.filter(
@@ -179,7 +195,7 @@ async function main(): Promise<void> {
     console.log('   - Append tables: new local rows will be INSERTED (existing rows untouched).');
     console.log('   - No rows will be DELETED from Neon.');
     console.log('');
-    const confirmed = await askConfirmation('Type "yes" to proceed: ');
+    const confirmed = await askConfirmation(`Type the destination host (${primaryHost}) to proceed: `, primaryHost);
     if (!confirmed) {
       console.log('[db:sync-to-primary] Aborted by user.');
       return;
@@ -193,11 +209,26 @@ async function main(): Promise<void> {
     console.log('');
   }
 
-  const report = await syncFallbackToPrimary({
-    dryRun,
-    skipLogs,
-    forceFull,
-  });
+  const audit = dryRun
+    ? null
+    : startAudit({
+        operation: 'sync-to-primary',
+        flags: { skipLogs, forceFull, allowExtra },
+        sourceUrl: fallbackUrl,
+        destinationUrl: primaryUrl,
+      });
+  let report;
+  try {
+    report = await syncFallbackToPrimary({ dryRun, skipLogs, forceFull });
+    audit?.finish(report.parityAfterSync.isCriticalMatch ? 'succeeded' : 'failed', {
+      tables: Object.fromEntries(report.tablesSynced.map((t) => [t.tableName, t.rowsUpserted])),
+      criticalMatch: report.parityAfterSync.isCriticalMatch,
+      driftedTables: report.parityAfterSync.driftedTables.map((t) => t.tableName),
+    });
+  } catch (err) {
+    audit?.finish('failed', { error: sanitizeErrorForLog(err) });
+    throw err;
+  }
 
   if (jsonMode) {
     console.log(JSON.stringify({ preParity, syncReport: report }, null, 2));

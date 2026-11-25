@@ -6,6 +6,7 @@ import {
   getConnectionString,
   getFallbackConnectionString,
 } from './index.ts';
+import { startAudit } from './audit-report.ts';
 import * as s from './schema.ts';
 import { checkDatabaseParity, type DatabaseParityReport } from './parity.ts';
 
@@ -14,6 +15,20 @@ export class SyncAbortedError extends Error {
   constructor() {
     super('[db-sync] aborted: primary is no longer the active database');
     this.name = 'SyncAbortedError';
+  }
+}
+
+/**
+ * Thrown before anything is written when the primary looks older than the local copy, e.g. after
+ * DATABASE_URL was pointed at an empty or stale database. Copying would overwrite newer local data.
+ */
+export class PrimaryBehindError extends Error {
+  readonly reasons: string[];
+
+  constructor(reasons: string[]) {
+    super(`[db-sync] primary is behind the local database: ${reasons.join('; ')}`);
+    this.name = 'PrimaryBehindError';
+    this.reasons = reasons;
   }
 }
 
@@ -131,6 +146,21 @@ export interface SyncOptions {
   overlapMinutes?: number;
   /** Checked before every write batch; return true to stop (e.g. failover happened). */
   abortIf?: () => boolean;
+  /** Primary -> fallback only: copy even when the primary looks older than the local copy. */
+  allowBehind?: boolean;
+  /** Primary -> fallback only: delete local rows of PRUNE_TABLES that no longer exist on the primary. */
+  pruneDeleted?: boolean;
+  /** Let a prune empty a local table because the primary table is empty. */
+  allowEmptyPrune?: boolean;
+}
+
+export interface TablePruneResult {
+  tableName: string;
+  candidates: number;
+  deleted: number;
+  /** Primary keys only. */
+  ids: string[];
+  skippedReason?: string;
 }
 
 export interface TableSyncResult {
@@ -148,6 +178,7 @@ export interface DatabaseSyncReport {
   tablesSynced: TableSyncResult[];
   totalRowsFetched: number;
   totalRowsUpserted: number;
+  pruned?: TablePruneResult[];
   warnings: string[];
   parityAfterSync: DatabaseParityReport;
 }
@@ -171,6 +202,139 @@ async function listPublicTables(handle: ReturnType<typeof createDbHandle>): Prom
     `),
   );
   return new Set(rows.map((r) => r.table_name));
+}
+
+interface FreshnessSnapshot {
+  users: number;
+  ledgerCount: number;
+  ledgerLatestMs: number;
+  usageCount: number;
+  usageLatestMs: number;
+}
+
+async function readFreshness(handle: ReturnType<typeof createDbHandle>): Promise<FreshnessSnapshot> {
+  const tables = await listPublicTables(handle);
+  const one = async (tableName: string, withTs: boolean) => {
+    if (!tables.has(tableName)) return { cnt: 0, ms: 0 };
+    const ts = withTs ? `coalesce(floor(max(extract(epoch from created_at)) * 1000), 0)` : '0';
+    const [row] = extractExecuteRows<{ cnt: string | number; ms: string | number }>(
+      await handle.db.execute(sql.raw(`SELECT count(*)::bigint AS cnt, ${ts}::bigint AS ms FROM "public"."${tableName}"`)),
+    );
+    return { cnt: Number(row?.cnt ?? 0), ms: Number(row?.ms ?? 0) };
+  };
+  const users = await one('users', false);
+  const ledger = await one('credit_ledger', true);
+  const usage = await one('usage_records', true);
+  return {
+    users: users.cnt,
+    ledgerCount: ledger.cnt,
+    ledgerLatestMs: ledger.ms,
+    usageCount: usage.cnt,
+    usageLatestMs: usage.ms,
+  };
+}
+
+/**
+ * Ledger and usage rows are never deleted and only ever flow primary -> local, so a local surplus
+ * means the primary is not the database this copy came from. Payment statuses are not compared:
+ * a refund legitimately lowers the paid count.
+ */
+async function assertPrimaryNotBehind(
+  primaryHandle: ReturnType<typeof createDbHandle>,
+  fallbackHandle: ReturnType<typeof createDbHandle>,
+): Promise<void> {
+  // Local first: rows committed between the two reads can only make the primary look newer.
+  const local = await readFreshness(fallbackHandle);
+  const primary = await readFreshness(primaryHandle);
+  const reasons: string[] = [];
+  if (primary.users === 0 && local.users > 0) reasons.push(`primary has no users, local has ${local.users}`);
+  if (local.ledgerCount > primary.ledgerCount) reasons.push(`credit_ledger primary=${primary.ledgerCount} local=${local.ledgerCount}`);
+  if (local.usageCount > primary.usageCount) reasons.push(`usage_records primary=${primary.usageCount} local=${local.usageCount}`);
+  if (local.ledgerLatestMs > primary.ledgerLatestMs) reasons.push('newest credit_ledger row is local');
+  if (local.usageLatestMs > primary.usageLatestMs) reasons.push('newest usage_records row is local');
+  if (reasons.length > 0) throw new PrimaryBehindError(reasons);
+}
+
+/** Tables whose deleted rows would restore access if they were copied to another primary. */
+export const PRUNE_TABLES: readonly string[] = ['api_keys', 'sessions', 'verifications', 'accounts', 'two_factor'];
+const PRUNE_BATCH = 200;
+
+async function readAllPks(handle: ReturnType<typeof createDbHandle>, spec: TableSyncSpec): Promise<string[]> {
+  const db = handle.db as any;
+  const ids: string[] = [];
+  while (true) {
+    const last = ids[ids.length - 1];
+    const base = db.select({ pk: spec.pkCol }).from(spec.table);
+    const rows: Array<{ pk: string }> = await (last === undefined ? base : base.where(gt(spec.pkCol, last)))
+      .orderBy(asc(spec.pkCol))
+      .limit(1000);
+    for (const row of rows) ids.push(String(row.pk));
+    if (rows.length < 1000) return ids;
+  }
+}
+
+async function pruneDeletedRows(args: {
+  primaryHandle: ReturnType<typeof createDbHandle>;
+  fallbackHandle: ReturnType<typeof createDbHandle>;
+  primaryUrl: string;
+  fallbackUrl: string;
+  dryRun: boolean;
+  allowEmptyPrune: boolean;
+  abortIf?: () => boolean;
+  warnings: string[];
+}): Promise<TablePruneResult[]> {
+  // Every candidate is collected before the first delete, so a failed read deletes nothing.
+  const plan: Array<{ spec: TableSyncSpec; result: TablePruneResult }> = [];
+  for (const tableName of PRUNE_TABLES) {
+    const spec = SYNC_PLAN.find((t) => t.tableName === tableName)!;
+    const localIds = await readAllPks(args.fallbackHandle, spec);
+    const primaryIds = new Set(await readAllPks(args.primaryHandle, spec));
+    const ids = localIds.filter((id) => !primaryIds.has(id));
+    const result: TablePruneResult = { tableName, candidates: ids.length, deleted: 0, ids };
+    if (primaryIds.size === 0 && ids.length > 0 && !args.allowEmptyPrune) {
+      result.skippedReason = 'primary_table_empty';
+      args.warnings.push(`Prune skipped ${tableName}: primary table is empty but local has ${ids.length} row(s)`);
+    }
+    plan.push({ spec, result });
+  }
+
+  const results = plan.map((p) => p.result);
+  const work = plan.filter((p) => p.result.candidates > 0 && !p.result.skippedReason);
+  if (args.dryRun || work.length === 0) return results;
+
+  const audit = startAudit({
+    operation: 'prune',
+    flags: { allowEmptyPrune: args.allowEmptyPrune },
+    sourceUrl: args.primaryUrl,
+    destinationUrl: args.fallbackUrl,
+    details: { planned: Object.fromEntries(work.map((p) => [p.result.tableName, p.result.ids])) },
+  });
+  const deletedCounts = () => Object.fromEntries(results.map((x) => [x.tableName, x.deleted]));
+  try {
+    for (const { spec, result } of work) {
+      for (let i = 0; i < result.ids.length; i += PRUNE_BATCH) {
+        if (args.abortIf?.()) throw new SyncAbortedError();
+        const chunk = result.ids.slice(i, i + PRUNE_BATCH);
+        const still: Array<{ pk: string }> = await (args.primaryHandle.db as any)
+          .select({ pk: spec.pkCol })
+          .from(spec.table)
+          .where(inArray(spec.pkCol, chunk));
+        const keep = new Set(still.map((x) => String(x.pk)));
+        const gone = chunk.filter((id) => !keep.has(id));
+        if (gone.length === 0) continue;
+        const removed: unknown[] = await (args.fallbackHandle.db as any)
+          .delete(spec.table)
+          .where(inArray(spec.pkCol, gone))
+          .returning({ pk: spec.pkCol });
+        result.deleted += removed.length;
+      }
+    }
+    audit.finish('succeeded', { deleted: deletedCounts() });
+  } catch (err) {
+    audit.finish('failed', { deleted: deletedCounts(), error: err instanceof Error ? err.name : 'unknown' });
+    throw err;
+  }
+  return results;
 }
 
 async function syncUpsertTable(
@@ -329,8 +493,18 @@ async function runFullSync(
   const tablesSynced: TableSyncResult[] = [];
   let totalRowsFetched = 0;
   let totalRowsUpserted = 0;
+  let pruned: TablePruneResult[] | undefined;
 
   try {
+    if (!isReverse && !options.allowBehind) {
+      try {
+        await assertPrimaryNotBehind(sourceHandle, destinationHandle);
+      } catch (err) {
+        if (!(dryRun && err instanceof PrimaryBehindError)) throw err;
+        warnings.push(`${err.message} (a live run would be refused)`);
+      }
+    }
+
     const [sourceTables, destinationTables] = await Promise.all([
       listPublicTables(sourceHandle),
       listPublicTables(destinationHandle),
@@ -405,6 +579,19 @@ async function runFullSync(
         rowsUpserted: res.rowsUpserted,
       });
     }
+
+    if (!isReverse && options.pruneDeleted) {
+      pruned = await pruneDeletedRows({
+        primaryHandle: sourceHandle,
+        fallbackHandle: destinationHandle,
+        primaryUrl,
+        fallbackUrl,
+        dryRun,
+        allowEmptyPrune: options.allowEmptyPrune ?? false,
+        abortIf: options.abortIf,
+        warnings,
+      });
+    }
   } finally {
     await Promise.all([
       sourceHandle.close().catch(() => {}),
@@ -422,6 +609,7 @@ async function runFullSync(
     tablesSynced,
     totalRowsFetched,
     totalRowsUpserted,
+    ...(pruned ? { pruned } : {}),
     warnings,
     parityAfterSync,
   };
@@ -544,6 +732,8 @@ export async function syncTargetedToFallback(
   const tables: TargetedSyncResult['tables'] = [];
 
   try {
+    await assertPrimaryNotBehind(primaryHandle, fallbackHandle);
+
     // 2) Resolve userId (from the payment if needed).
     let userId = input.userId ?? null;
     if (!userId && input.paymentId) {

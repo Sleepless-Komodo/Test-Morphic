@@ -55,6 +55,9 @@ export interface TargetedSyncQueueDeps {
   sleep: (ms: number) => Promise<void>;
 }
 
+// Retrying or escalating cannot help while DATABASE_URL points at an older database.
+const isPrimaryBehind = (err: unknown): boolean => err instanceof Error && err.name === 'PrimaryBehindError';
+
 const SKIP_LOG_INTERVAL_MS = 10 * 60_000;
 
 const summarizeTables = (tables?: Array<{ tableName: string; rowsUpserted: number }>): string =>
@@ -121,6 +124,10 @@ export function createTargetedSyncQueue(deps: TargetedSyncQueueDeps) {
         return;
       } catch (err) {
         lastErr = err;
+        if (isPrimaryBehind(err)) {
+          deps.tracker.block('kind=targeted', ids, err);
+          return;
+        }
         if (isAbort(err)) {
           logAbort('targeted', ids);
           return;
@@ -150,6 +157,10 @@ export function createTargetedSyncQueue(deps: TargetedSyncQueueDeps) {
       );
       return;
     } catch (fullErr) {
+      if (isPrimaryBehind(fullErr)) {
+        deps.tracker.block('kind=full', { trigger: 'escalation' }, fullErr);
+        return;
+      }
       if (isAbort(fullErr)) {
         logAbort('full', ids);
         return;

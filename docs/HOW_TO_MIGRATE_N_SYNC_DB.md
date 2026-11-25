@@ -4,6 +4,77 @@ Dokumen ini dibagi menjadi dua skenario utama agar jelas dari awal hingga akhir:
 1. **[Section 1 — Primary (Neon) → Fallback (PostgreSQL Lokal)](#section-1--primary-neon--fallback-postgresql-lokal)**: dipakai sebagai cadangan harian dan saat Neon terkena kuota limit.
 2. **[Section 2 — Fallback (PostgreSQL Lokal) → Primary (Neon)](#section-2--fallback-postgresql-lokal--primary-neon-saat-limit-selesai)**: dipakai untuk memulihkan data transaksi ke Neon ketika kuota/limit sudah reset.
 
+> [!IMPORTANT]
+> **Setup saat ini: web di Vercel, API + Postgres lokal di HP.** Pakai [Section 0](#section-0--pindah-neon-a--lokal--neon-b-web-di-vercel).
+> Di Vercel `127.0.0.1` bukan HP, jadi web tidak bisa memakai Postgres lokal. `DB_FAILOVER_ENABLED=false` dan `DB_FORCE_FALLBACK=false` wajib; langkah `DB_FORCE_FALLBACK=true` di Section 1.5 dan 2 hanya untuk web dan API di satu mesin. Variabel `DATABASE_URL_FALLBACK` tidak perlu ada di Vercel.
+
+---
+
+## Section 0 — Pindah Neon A → lokal → Neon B (web di Vercel)
+
+### 0.1 Pengaman
+
+- Query baca Neon diulang maksimal 3 kali. Tulis yang mungkin sudah sampai **tidak diulang**. Alert Telegram maksimal sekali per 10 menit.
+- Sync Neon → lokal ditolak (`[db-sync] BLOCKED reason=primary-behind`) bila Neon kosong, atau ledger/usage lokal lebih banyak atau lebih baru. Data lokal tidak diubah.
+- `db:sync-to-primary` ditolak bila tujuan punya baris yang tidak ada di lokal. Operator mengetik host tujuan.
+- Setiap prune, sync-to-primary, dan deep parity menulis laporan ke `DB_AUDIT_DIR` (default `~/.morphic-audit`).
+
+Batasan pengaman: perubahan yang tidak menambah ledger atau usage (misalnya profil user) tidak terdeteksi sebagai "lokal lebih baru".
+
+### 0.2 Persiapan, Neon A masih sehat
+
+1. Ganti password `morphic_app`. Simpan kredensial pg di `~/.pgpass` (izin 0600).
+2. B baru dan kosong: `DATABASE_URL='<B>' pnpm db:migrate`. **Jangan `db:seed`.** Migrasi lokal juga harus sama.
+3. `pnpm db:sync-fallback --prune-deleted --dry-run`, periksa ID-nya, lalu jalankan tanpa `--dry-run`.
+4. Bereskan baris yang hanya ada di lokal, per ID. Payment `expired`: cek Duitku dulu. Tidak dibayar, hapus dari lokal. Sudah dibayar, salin baris itu ke A dan proses lewat webhook.
+5. Buat backup (0.4) dan lulus uji restore.
+6. Latihan sekali dengan B sekali pakai.
+
+### 0.3 Hari pindah
+
+Sejak langkah 1 sampai pengujian selesai, jangan membuat refund di PayPal/Duitku, dan matikan semua mesin dev yang memakai Neon A.
+
+1. Vercel: `MAINTENANCE_MODE=true`, redeploy, pastikan situs membalas 503. URL deployment lama tetap memakai env lama, jadi aktifkan Deployment Protection.
+2. Tunggu stream selesai, stop API.
+3. `pnpm db:sync-fallback --prune-deleted`, lalu `pnpm db:parity --deep`. Harus `MATCH`. Bila A tidak bisa diakses, langkah ini dilewati dan dicatat sebagai tidak terverifikasi.
+4. Backup lokal dan uji restore (0.4).
+5. Di HP ganti `DATABASE_URL` ke B. **API tetap mati.**
+6. `pnpm db:sync-to-primary --dry-run`, lalu `pnpm db:sync-to-primary --force-full`.
+7. `pnpm db:parity --deep`. Selain `MATCH`, berhenti: jangan lepas maintenance.
+8. Vercel: `DATABASE_URL` ke B, redeploy, maintenance masih aktif.
+9. Start API. Log: host B, `activeTarget=primary`, tanpa `BLOCKED`.
+10. Salin `~/.morphic-audit` ke luar HP. Hapus `MAINTENANCE_MODE`, redeploy. Uji login, saldo, satu request API, satu checkout kecil.
+11. Cek refund/dispute PayPal selama maintenance dan kirim ulang webhook yang belum masuk. Cocokkan order dan refund Duitku.
+
+Rollback sebelum langkah 9: kembalikan `DATABASE_URL` ke A di HP dan Vercel, start API, lalu lepas maintenance. Setelah API menulis ke B, kembali ke A hanya lewat B → lokal → A dengan A yang sudah dikosongkan.
+
+`BETTER_AUTH_SECRET` dan kunci enkripsi tidak boleh berubah.
+
+### 0.4 Backup terenkripsi dan uji restore
+
+```bash
+set -o pipefail; umask 077
+F=morphic-$(date +%Y%m%d-%H%M).dump.gpg
+pg_dump -Fc -h 127.0.0.1 -U morphic_app -d morphic \
+  | gpg --pinentry-mode loopback --no-symkey-cache --symmetric --cipher-algo AES256 -o "$F"
+echo "hasil: $?"   # harus 0
+
+# Uji restore. Buat database uji sebagai superuser, pemiliknya morphic_app.
+gpg --pinentry-mode loopback --no-symkey-cache -d "$F" \
+  | pg_restore --no-owner --no-privileges -h 127.0.0.1 -U morphic_app -d morphic_restore_test
+echo "hasil: $?"   # harus 0
+DATABASE_URL='postgresql://morphic_app:<password>@127.0.0.1:5432/morphic_restore_test?sslmode=disable' \
+  pnpm db:parity --deep   # harus MATCH
+```
+
+Simpan passphrase dan satu salinan backup di luar HP. Hapus database uji setelah selesai, dan backup setelah 14 hari.
+
+### 0.5 Bila `--deep` tidak cocok
+
+- **Baris hanya ada di lokal:** lihat 0.2 langkah 4.
+- **`usage_records` atau `payment_events` berbeda isi:** tabel append tidak ditimpa. Bila model atau provider dihapus di A, kolom terkait di A menjadi kosong sedangkan lokal masih terisi. Hapus model/provider yang sama di lokal (periksa FK-nya), lalu ulangi.
+- **Ledger berbeda:** jangan lanjut. Cari user yang tercantum sebelum memindahkan apa pun.
+
 ---
 
 ## Section 1 — Primary (Neon) → Fallback (PostgreSQL Lokal)
@@ -35,7 +106,7 @@ Selama sistem berjalan normal dengan Neon sebagai database utama (`activeTarget=
 **Cara copy per jenis tabel (`SYNC_PLAN` di `packages/db/src/sync.ts`):**
 - **Tabel `upsert`** (`users`, `balances`, `payments`, `entitlements`, `reservations`, `packages`, `models`, `providers`, dll): disalin berdasarkan PK dengan `ON CONFLICT (pk) DO UPDATE`.
 - **Tabel `append_watermark`** (`admin_audit_log`, `usage_records`, `payment_events`, `credit_ledger`, `request_logs`): membaca `max(created_at)` di tujuan, mundur 60 menit (*overlap window*), lalu `INSERT ... ON CONFLICT DO NOTHING`.
-- **Tidak pernah menghapus row:** sync `primary → fallback` tidak menjalankan `DELETE` pada tabel tujuan.
+- **Default tidak menghapus row.** Sync `primary → fallback` hanya menghapus bila `--prune-deleted` atau `DB_SYNC_PRUNE=true`, dan hanya di `api_keys`, `sessions`, `verifications`, `accounts`, `two_factor`. Payment, ledger, dan usage tidak pernah dihapus.
 
 ---
 
@@ -50,6 +121,7 @@ Selama sistem berjalan normal dengan Neon sebagai database utama (`activeTarget=
 | `DB_SYNC_ON_BOOT` | `true` *(default aktif)* | Jalankan parity self-check + sync awal 3 detik setelah boot (`false` untuk matikan boot sync) |
 | `DB_SYNC_ON_WRITE` | `true` *(default aktif)* | Mirror payment & redeem secara langsung setelah commit (`false` untuk matikan) |
 | `DB_SYNC_ON_WRITE_DEBOUNCE_MS` | `1500` *(default `1500`)* | Jeda debounce antrean targeted sync dalam milidetik |
+| `DB_SYNC_PRUNE` | `false` *(default mati)* | `true`: sync periodik ikut menghapus baris akses lokal yang sudah dihapus di Neon |
 | `DB_SYNC_INTERVAL_MS` | `600000` *(default `600000` = 10 menit)* | Interval sync periodik (`0` untuk mematikan sync periodik) |
 
 > [!IMPORTANT]
@@ -87,6 +159,8 @@ Memeriksa konektivitas kedua DB, permission lokal, kecocokan migrasi Drizzle, 26
 |---|---|
 | `pnpm db:parity` | Tampilkan laporan tabel & finansial lengkap; **exit 1** jika `isCriticalMatch` = `false` (DRIFT) |
 | `pnpm db:parity --no-fail` | Sama, namun tetap **exit 0** walaupun masih DRIFT (cocok untuk monitoring manual / saat Neon offline) |
+| `pnpm db:parity --deep` | Bandingkan **isi baris** dan saldo terhadap ledger. Jalankan saat web maintenance dan API berhenti; **exit 1** bila berbeda |
+| `pnpm db:parity --verify-audit` | Periksa rantai laporan audit |
 | `pnpm db:parity --json` | Output laporan dalam format JSON |
 
 #### B. `pnpm db:sync-fallback` (`packages/db/src/cli-sync.ts`)
@@ -98,6 +172,9 @@ Menyalin data secara manual satu arah **Neon Primary → Local Fallback**, lalu 
 | `--dry-run` | Simulasi: hanya menghitung row yang akan dibaca, **tidak menulis** ke Postgres lokal |
 | `--skip-logs` | Lewati tabel `request_logs` (lebih cepat karena log request paling besar) |
 | `--force-full` | Abaikan watermark pada tabel append; scan seluruh row dari awal untuk menambal gap lama |
+| `--prune-deleted` | Hapus baris lokal `api_keys`, `sessions`, `verifications`, `accounts`, `two_factor` yang sudah tidak ada di Neon |
+| `--allow-empty-prune` | Izinkan prune saat tabel di Neon kosong |
+| `--allow-behind` | Tetap salin walau Neon tampak lebih lama (**menimpa data lokal**) |
 | `--json` | Output ringkasan sync + parity sesudah sync dalam format JSON |
 
 ---
@@ -182,7 +259,8 @@ Ketika kuota Neon sudah reset bulan depan, data transaksi yang menumpuk di Postg
 | `--dry-run` | `false` | Pre-sync parity + hitung jumlah row yang akan ditarik **tanpa menulis ke Neon** |
 | `--skip-logs` | `false` | Lewati tabel `request_logs` agar sinkronisasi tabel auth & finansial selesai cepat |
 | `--force-full` | `false` | Abaikan watermark `max(created_at)` pada tabel append (menambal gap historis) & tetap jalankan sync walau hitungan row `EXACT MATCH` |
-| `--yes` | `false` | Lewati prompt konfirmasi `"Type 'yes' to proceed"` |
+| `--allow-extra` | `false` | Tetap tulis walau tujuan punya baris yang tidak ada di lokal |
+| `--yes` | `false` | Lewati prompt konfirmasi mengetik host tujuan |
 | `--json` | `false` | Output JSON (`preParity` + `syncReport`); untuk live write **wajib** digabung dengan `--yes` |
 | `-- --help` | `false` | Menampilkan ringkasan bantuan CLI (gunakan `--` agar tidak dicegat oleh `pnpm`) |
 

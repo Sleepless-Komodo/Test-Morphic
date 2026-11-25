@@ -13,6 +13,7 @@ import { db, schema as s } from '@morphic/db';
 import { and, eq } from 'drizzle-orm';
 import {
   extractPaymentRefs,
+  handlePostPaymentEvent,
   isPostPaymentEvent,
   parseMinorUnits,
   redactPaypalPayload,
@@ -221,6 +222,33 @@ test('T3: isPostPaymentEvent matches exactly the four post-payment types', () =>
   assert.equal(isPostPaymentEvent('CUSTOMER.DISPUTE.RESOLVED'), true);
   assert.equal(isPostPaymentEvent('PAYMENT.CAPTURE.COMPLETED'), false);
   assert.equal(isPostPaymentEvent('CHECKOUT.ORDER.APPROVED'), false);
+});
+
+// ── Local copy ───────────────────────────────────────────────────────────────
+
+test('refund and dispute schedule one targeted sync; duplicates and unmapped events do not', async () => {
+  const calls: Array<{ paymentId?: string; userId?: string }> = [];
+  const deps = { scheduleSync: (i: { paymentId?: string; userId?: string }) => void calls.push(i) };
+  await withMocks(async () => {
+    for (const eventType of ['PAYMENT.CAPTURE.REFUNDED', 'CUSTOMER.DISPUTE.CREATED']) {
+      const cap = capId('CAPSYNC');
+      const { user, payment } = await mkPayment({ status: 'paid', amountCents: 1000, captureId: cap });
+      const payload =
+        eventType === 'PAYMENT.CAPTURE.REFUNDED'
+          ? refundPayload(cap, '10.00')
+          : { resource: { disputed_transactions: [{ seller_transaction_id: cap }] } };
+      const event = { eventId: `WH-SYNC-${runId()}`, eventType, payload };
+      await handlePostPaymentEvent(event, deps);
+      const again = await handlePostPaymentEvent(event, deps);
+      assert.equal(again.duplicate, true);
+      assert.deepEqual(calls.splice(0), [{ paymentId: payment.id, userId: user.id }]);
+    }
+    await handlePostPaymentEvent(
+      { eventId: `WH-NONE-${runId()}`, eventType: 'PAYMENT.CAPTURE.REFUNDED', payload: refundPayload(capId('NONE'), '1.00') },
+      deps,
+    );
+    assert.equal(calls.length, 0);
+  });
 });
 
 // ── Exit gate: refunds ───────────────────────────────────────────────────────

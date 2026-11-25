@@ -32,10 +32,12 @@ export function parityVerdict(
 }
 
 export function describeFullSyncReport(report: DatabaseSyncReport): Record<string, KvValue> {
+  const pruned = report.pruned?.reduce((sum, p) => sum + p.deleted, 0);
   return {
     rowsFetched: report.totalRowsFetched,
     rowsUpserted: report.totalRowsUpserted,
     tablesTouched: report.tablesSynced.filter((t) => !t.skipped && t.rowsUpserted > 0).length,
+    ...(pruned !== undefined ? { pruned } : {}),
     parity: parityVerdict(report.parityAfterSync),
     maxLagSec: report.parityAfterSync.maxLagSeconds,
     driftedTables: report.parityAfterSync.driftedTables.length,
@@ -68,6 +70,7 @@ export function createSyncTracker(deps: SyncTrackerDeps) {
   let lastAlertAt = Number.NEGATIVE_INFINITY;
   let failureAlertSent = false;
   let suppressed = 0;
+  let blocked = false;
 
   const iso = (t: number | null) => (t === null ? null : new Date(t).toISOString());
 
@@ -79,6 +82,7 @@ export function createSyncTracker(deps: SyncTrackerDeps) {
 
   function ok(label: string, fields: Record<string, KvValue>, level: 'info' | 'warn' = 'info'): void {
     const previousFailures = consecutiveFailures;
+    blocked = false;
     lastOkAt = deps.now();
     consecutiveFailures = 0;
     deps.log[level](`[db-sync] ok ${label} ${kv(fields)}`);
@@ -127,6 +131,18 @@ export function createSyncTracker(deps: SyncTrackerDeps) {
     );
   }
 
+  /** The primary looks older than local. Logged every time, alerted once until a sync succeeds. */
+  function block(label: string, fields: Record<string, KvValue>, err: unknown): void {
+    const detail = sanitizeErrorForLog(err);
+    deps.log.error(`[db-sync] BLOCKED reason=primary-behind ${label} ${kv({ ...fields, error: JSON.stringify(detail) })}`);
+    if (blocked) return;
+    blocked = true;
+    dispatch(
+      `🚨 [DB SYNC] Sync ke Postgres lokal DIBLOKIR: database utama lebih tertinggal daripada lokal. Data lokal tidak diubah. Periksa DATABASE_URL sebelum lanjut.`,
+      { type: 'db_sync_blocked', label, ...fields, detail },
+    );
+  }
+
   function status(): DbSyncStatus {
     return {
       lastOkAt: iso(lastOkAt),
@@ -136,7 +152,7 @@ export function createSyncTracker(deps: SyncTrackerDeps) {
     };
   }
 
-  return { ok, fail, status };
+  return { ok, fail, block, status };
 }
 
 export type SyncTracker = ReturnType<typeof createSyncTracker>;

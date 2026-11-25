@@ -42,8 +42,25 @@ const BLOCKED_TOOLS_REGEX =
 const PROBING_PATHS_REGEX =
   /(\.php|\.env|\.git|\.aws|\.well-known\/security|wp-admin|wp-login|xmlrpc|cgi-bin|actuator|config\.json)/i;
 
+// Closes every page, server action and /api route so nothing writes to the database while it is moved.
+function maintenanceResponse(pathname: string): NextResponse {
+  const headers = { 'Retry-After': '600', 'Cache-Control': 'no-store' };
+  if (pathname.startsWith('/api')) {
+    return NextResponse.json(
+      { error: { message: 'Morphic is under maintenance. Please try again shortly.', code: 'maintenance' } },
+      { status: 503, headers },
+    );
+  }
+  return new NextResponse(
+    'Morphic sedang dalam pemeliharaan. Coba lagi sebentar lagi.\nMorphic is under maintenance. Please try again shortly.\n',
+    { status: 503, headers: { ...headers, 'Content-Type': 'text/plain; charset=utf-8' } },
+  );
+}
+
 export function middleware(req: NextRequest) {
   const pathname = req.nextUrl.pathname;
+
+  if (process.env.MAINTENANCE_MODE === 'true') return maintenanceResponse(pathname);
 
   // 1. Immediately drop common vulnerability probing / scanner paths
   if (PROBING_PATHS_REGEX.test(pathname)) {

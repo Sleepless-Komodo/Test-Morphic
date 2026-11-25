@@ -3,12 +3,14 @@ import {
   formatParitySummaryAlert,
   getDbFailoverState,
   getFallbackConnectionString,
+  onDbConnectionIssue,
   onDbFailover,
   safeHostLabel,
   sanitizeErrorForLog,
   syncPrimaryToFallback,
   type DatabaseParityReport,
   type DatabaseSyncReport,
+  type DbConnectionIssue,
   type DbFailoverEvent,
 } from '@morphic/db';
 import { sendOpsAlert } from './alert';
@@ -26,6 +28,42 @@ import {
 
 let lastParitySnapshot: DatabaseParityReport | null = null;
 let unsubscribeFailover: (() => void) | null = null;
+
+const CONNECTION_ALERT_COOLDOWN_MS = 10 * 60_000;
+
+export interface ConnectionIssueDeps {
+  sendAlert?: (message: string, payload: Record<string, unknown>) => Promise<void>;
+  log?: SyncLogger;
+  now?: () => number;
+}
+
+/** Every issue is logged; at most one alert per 10 minutes. Nothing switches database here. */
+export function createConnectionIssueHandler(deps: ConnectionIssueDeps = {}) {
+  const sendAlert = deps.sendAlert ?? sendOpsAlert;
+  const log = deps.log ?? consoleSyncLogger;
+  const now = deps.now ?? (() => Date.now());
+  let lastAlertAt = Number.NEGATIVE_INFINITY;
+  let suppressed = 0;
+
+  return async (issue: DbConnectionIssue): Promise<void> => {
+    const detail = sanitizeErrorForLog(issue.error);
+    const fields = { source: issue.source, kind: issue.kind, attempts: issue.attempts };
+    log.warn(`[db] primary connection issue ${kv({ ...fields, error: JSON.stringify(detail) })}`);
+    if (now() - lastAlertAt < CONNECTION_ALERT_COOLDOWN_MS) {
+      suppressed += 1;
+      return;
+    }
+    lastAlertAt = now();
+    const extra = suppressed > 0 ? ` (+${suppressed} sejak alert terakhir)` : '';
+    suppressed = 0;
+    const outcome =
+      issue.kind === 'write' ? 'Operasi tulis tidak diulang; cek hasilnya bila menyangkut payment.' : 'Query baca gagal.';
+    await sendAlert(`⚠️ [DB] Koneksi ke database utama bermasalah: ${detail}. ${outcome}${extra}`, {
+      type: 'db_connection_issue',
+      ...fields,
+    });
+  };
+}
 
 export function resetFailoverMonitorForTests(): void {
   lastParitySnapshot = null;
@@ -119,7 +157,11 @@ export async function runPeriodicFallbackSync(): Promise<DatabaseSyncReport | nu
 
   const report = await runExclusiveSync(async () => {
     if (!isPrimaryActive()) return null;
-    return syncPrimaryToFallback({ skipLogs: true, abortIf: () => !isPrimaryActive() });
+    return syncPrimaryToFallback({
+      skipLogs: true,
+      pruneDeleted: process.env.DB_SYNC_PRUNE === 'true',
+      abortIf: () => !isPrimaryActive(),
+    });
   });
   if (report) lastParitySnapshot = report.parityAfterSync;
   return report;
@@ -163,6 +205,10 @@ export async function runFallbackSyncJob(
       log.warn(
         `[db-sync] abort kind=full trigger=${trigger} — failover activated mid-sync; local DB is authoritative, nothing was overwritten`,
       );
+      return;
+    }
+    if (err instanceof Error && err.name === 'PrimaryBehindError') {
+      tracker.block('kind=full', { trigger }, err);
       return;
     }
     tracker.fail('kind=full', { trigger, durationMs: now() - started }, err, {
@@ -320,7 +366,7 @@ export async function runStartupSelfCheck(deps: StartupCheckDeps = {}): Promise<
     return;
   }
   if (verdict === 'DRIFT') {
-    log.warn('[db-sync] startup: local fallback is behind the primary — running catch-up sync now');
+    log.warn('[db-sync] startup: local fallback and primary differ — running catch-up sync now');
   }
   await (deps.runBootSync ?? defaultBootSync)();
 }
@@ -344,11 +390,16 @@ export function initDbFailoverMonitor(): () => void {
     console.warn(`[db-monitor] booted directly in fallback mode (${state.failoverReason ?? 'forced'})`);
   }
 
-  unsubscribeFailover = onDbFailover((event) => {
+  const offFailover = onDbFailover((event) => {
     void handleFailoverEvent(event).catch((err) => {
       console.error(`[db-monitor] failed to process failover alert: ${sanitizeErrorForLog(err)}`);
     });
   });
+  const offIssue = onDbConnectionIssue(createConnectionIssueHandler());
+  unsubscribeFailover = () => {
+    offFailover();
+    offIssue();
+  };
 
   return unsubscribeFailover;
 }

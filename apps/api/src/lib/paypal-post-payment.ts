@@ -14,6 +14,7 @@ import { db, schema as s } from '@morphic/db';
 import { and, eq, isNull, type SQL } from 'drizzle-orm';
 import { getCapture } from './paypal';
 import { sendOpsAlert } from './alert';
+import { scheduleTargetedSync } from './db-sync-queue';
 import { notifyAccountSuspended } from './notify';
 import {
   accrueRefund,
@@ -416,11 +417,11 @@ async function applyDisputeResolved(
   };
 }
 
-export async function handlePostPaymentEvent(input: {
-  eventId: string;
-  eventType: string;
-  payload: any;
-}): Promise<PostPaymentResult> {
+export async function handlePostPaymentEvent(
+  input: { eventId: string; eventType: string; payload: any },
+  deps: { scheduleSync?: typeof scheduleTargetedSync } = {},
+): Promise<PostPaymentResult> {
+  const scheduleSync = deps.scheduleSync ?? scheduleTargetedSync;
   const { eventId, eventType, payload } = input;
   const redacted = redactPaypalPayload(payload);
   const refs = extractPaymentRefs(eventType, payload);
@@ -465,6 +466,9 @@ export async function handlePostPaymentEvent(input: {
     }
     return applyDisputeResolved(tx, payment, payload);
   });
+
+  // Without this the local copy keeps the pre-refund status (and an unsuspended user) until the next full sync.
+  if (!outcome.duplicate) scheduleSync({ paymentId: payment.id, userId: payment.userId });
 
   if (outcome.suspendedUserId) {
     void notifyAccountSuspended(

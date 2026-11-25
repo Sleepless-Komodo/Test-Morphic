@@ -1,6 +1,4 @@
 import dns from 'node:dns';
-import http from 'node:http';
-import https from 'node:https';
 import { setDefaultAutoSelectFamilyAttemptTimeout } from 'node:net';
 import { drizzle, type NeonHttpDatabase } from 'drizzle-orm/neon-http';
 import { drizzle as drizzleServerless, type NeonDatabase } from 'drizzle-orm/neon-serverless';
@@ -9,6 +7,7 @@ import { drizzle as drizzlePostgres, type PostgresJsDatabase } from 'drizzle-orm
 import postgres from 'postgres';
 import ws from 'ws';
 import * as schema from './schema.ts';
+import { createNeonFetch, emitDbConnectionIssue } from './neon-fetch.ts';
 
 try {
   dns.setDefaultResultOrder('ipv4first');
@@ -57,7 +56,19 @@ export function getConnectionString(env: NodeJS.ProcessEnv = process.env): strin
 
 export function getFallbackConnectionString(env: NodeJS.ProcessEnv = process.env): string | null {
   const val = env.DATABASE_URL_FALLBACK?.trim();
-  return val ? val : null;
+  if (!val) return null;
+  // On Vercel, loopback is the function's own sandbox, never the host that runs local Postgres.
+  if (env.VERCEL && isLoopbackUrl(val)) return null;
+  return val;
+}
+
+function isLoopbackUrl(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.replace(/^\[|\]$/g, '');
+    return host === '127.0.0.1' || host === 'localhost' || host === '::1';
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -78,117 +89,7 @@ export function isFailoverEnabled(env: NodeJS.ProcessEnv = process.env): boolean
   return env.DB_FAILOVER_ENABLED !== 'false' && Boolean(getFallbackConnectionString(env));
 }
 
-// Reused TLS sockets to Neon's HTTP endpoint. Node's default agent drops idle sockets after 5s,
-// so every page opened after a short pause paid a fresh TCP + TLS handshake per parallel query
-// (about 2.6s for six queries from Indonesia vs 0.3s warm). Neon keeps idle sockets open for at
-// least 2 minutes; a socket it closes first fails fast and resilientFetch retries on a new one.
-const neonAgent = new https.Agent({ keepAlive: true, maxSockets: 32, timeout: 120_000 });
-
-function nativeIPv4Fetch(urlInput: string | URL | Request, init?: RequestInit): Promise<Response> {
-  return new Promise((resolve, reject) => {
-    try {
-      const urlStr = typeof urlInput === 'string' ? urlInput : urlInput instanceof URL ? urlInput.toString() : urlInput.url;
-      const u = new URL(urlStr);
-      const transport = u.protocol === 'https:' ? https : http;
-
-      const headers: Record<string, string> = {};
-      if (init?.headers) {
-        if (init.headers instanceof Headers) {
-          init.headers.forEach((value, key) => {
-            headers[key] = value;
-          });
-        } else if (Array.isArray(init.headers)) {
-          init.headers.forEach(([key, value]) => {
-            headers[key] = value;
-          });
-        } else {
-          Object.assign(headers, init.headers);
-        }
-      }
-
-      const bodyStr = typeof init?.body === 'string' ? init.body : init?.body ? String(init.body) : undefined;
-      if (bodyStr && !headers['Content-Length'] && !headers['content-length']) {
-        headers['Content-Length'] = String(Buffer.byteLength(bodyStr));
-      }
-
-      const req = transport.request(
-        u,
-        {
-          method: init?.method || 'GET',
-          headers,
-          agent: u.protocol === 'https:' ? neonAgent : undefined,
-          family: 4, // 100% FORCE IPv4 Socket at OS level
-          timeout: 15000,
-        },
-        (res) => {
-          const chunks: Buffer[] = [];
-          res.on('data', (c) => chunks.push(c));
-          res.on('end', () => {
-            const bodyBuffer = Buffer.concat(chunks);
-            const responseHeaders = new Headers();
-            for (const [key, val] of Object.entries(res.headers)) {
-              if (Array.isArray(val)) {
-                val.forEach((v) => responseHeaders.append(key, v));
-              } else if (val) {
-                responseHeaders.set(key, val);
-              }
-            }
-            resolve(
-              new Response(bodyBuffer, {
-                status: res.statusCode || 200,
-                statusText: res.statusMessage || '',
-                headers: responseHeaders,
-              }),
-            );
-          });
-        },
-      );
-
-      req.on('error', reject);
-      req.on('timeout', () => {
-        req.destroy(new Error('Connection timeout'));
-      });
-
-      if (bodyStr) {
-        req.write(bodyStr);
-      }
-      req.end();
-    } catch (err) {
-      reject(err);
-    }
-  });
-}
-
-/**
- * Resilient fetch wrapper for Neon HTTP queries.
- * Automatically retries transient network drops up to 4 times with backoff before throwing.
- * Uses native node:https with family: 4 to force IPv4 OS sockets directly.
- */
-async function resilientFetch(urlInput: string | URL | Request, init?: RequestInit): Promise<Response> {
-  const maxRetries = isFailoverEnabled() ? 2 : 4;
-  let lastError: unknown;
-
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      const res = await nativeIPv4Fetch(urlInput, init);
-      // Do not burn retries on explicit quota/rate-limit/unavailable HTTP responses when fallback is configured
-      if (isFailoverEnabled() && (res.status === 402 || res.status === 429 || res.status === 502 || res.status === 503 || res.status === 504)) {
-        return res;
-      }
-      return res;
-    } catch (err: unknown) {
-      lastError = err;
-      if (attempt < maxRetries) {
-        await new Promise((resolve) => setTimeout(resolve, attempt * 200 * Math.pow(1.5, attempt - 1)));
-        continue;
-      }
-      throw err;
-    }
-  }
-  throw lastError;
-}
-
-neonConfig.fetchFunction = resilientFetch;
+neonConfig.fetchFunction = createNeonFetch();
 
 // ---------------------------------------------------------------------------
 // Error classification & Sticky Auto-Failover state (Neon -> Fallback PG)
@@ -717,6 +618,9 @@ export async function withTransaction<T>(
   try {
     return await getPoolDb().transaction(fn);
   } catch (err) {
+    if (isNeonFailoverError(err)) {
+      emitDbConnectionIssue({ source: 'transaction', kind: 'write', attempts: 1, error: err });
+    }
     if (isFailoverEnabled() && isNeonFailoverError(err)) {
       triggerManualFailover('neon_transaction_error', err);
       return (getFallbackDb() as unknown as NeonDatabase<typeof schema>).transaction(fn);
@@ -754,5 +658,8 @@ export const db = new Proxy({} as NeonHttpDatabase<typeof schema>, {
 
 export { schema };
 export * from './schema.ts';
+export * from './neon-fetch.ts';
 export * from './parity.ts';
 export * from './sync.ts';
+export * from './audit-report.ts';
+export * from './deep-parity.ts';
