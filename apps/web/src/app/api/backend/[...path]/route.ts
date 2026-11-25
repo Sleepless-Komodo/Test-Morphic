@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
+import { sessionExpiredResponse } from '@/lib/session-expired-response';
+import { MAX_API_KEYS_PER_USER } from '@/lib/gateway-limits';
 
 interface AllowedRoute {
   prefix: string;
@@ -127,10 +129,17 @@ async function proxyRequest(req: NextRequest) {
   reqHeaders.delete('cookie');
   reqHeaders.delete('authorization');
 
+  // Reads may trust the 5-minute signed cookie cache. Writes always ask the database, so a
+  // session that was revoked or expired is refused at once instead of up to 5 minutes later.
+  const isWrite = NON_GET_METHODS.includes(req.method);
+
   let sessionToken: string | undefined;
   let authedUserId: string | undefined;
   try {
-    const session = await auth.api.getSession({ headers: req.headers });
+    const session = await auth.api.getSession({
+      headers: req.headers,
+      query: isWrite ? { disableCookieCache: true } : undefined,
+    });
     sessionToken = session?.session?.token;
     authedUserId = session?.user?.id;
   } catch {
@@ -138,15 +147,12 @@ async function proxyRequest(req: NextRequest) {
   }
 
   if (!sessionToken) {
-    return NextResponse.json(
-      { error: { message: 'Unauthorized', code: 'unauthorized' } },
-      { status: 401 }
-    );
+    return sessionExpiredResponse(req);
   }
 
   reqHeaders.set('authorization', `Bearer ${sessionToken}`);
 
-  // Enforce max 5 API keys per user on creation
+  // Enforce the per-account API key cap on creation
   if (rawPath === '/v1/keys' && req.method === 'POST' && authedUserId) {
     try {
       const { db, schema: s } = await import('@morphic/db');
@@ -155,11 +161,11 @@ async function proxyRequest(req: NextRequest) {
         .select({ count: sql<number>`count(*)::int` })
         .from(s.apiKeys)
         .where(eq(s.apiKeys.userId, authedUserId));
-      if ((kc?.count ?? 0) >= 5) {
+      if ((kc?.count ?? 0) >= MAX_API_KEYS_PER_USER) {
         return NextResponse.json(
           {
             error: {
-              message: 'Batas maksimal 5 API key telah tercapai (5/5). Hapus key lama yang tidak terpakai untuk membuat key baru.',
+              message: `Batas maksimal ${MAX_API_KEYS_PER_USER} API key telah tercapai (${MAX_API_KEYS_PER_USER}/${MAX_API_KEYS_PER_USER}). Hapus key lama yang tidak terpakai untuk membuat key baru.`,
               code: 'max_keys_exceeded',
             },
           },
@@ -199,6 +205,13 @@ async function proxyRequest(req: NextRequest) {
       cache: 'no-store',
       signal: AbortSignal.timeout(15000),
     });
+
+    // The bearer token comes from a session this proxy just accepted, so a 401 here means the
+    // gateway no longer honours it. Treat it like any other expired session.
+    if (res.status === 401) {
+      void res.body?.cancel();
+      return sessionExpiredResponse(req);
+    }
 
     const resHeaders = new Headers(res.headers);
     resHeaders.delete('content-encoding');

@@ -4,7 +4,7 @@
 'use server';
 
 import { headers } from 'next/headers';
-import { redirect } from 'next/navigation';
+import { redirect, unstable_rethrow } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { eq, and, desc, sql, gt, gte, lte, ne, isNotNull, inArray } from 'drizzle-orm';
 import { createHash, randomInt, timingSafeEqual } from 'node:crypto';
@@ -32,6 +32,7 @@ import {
 import { sendEmail } from '@morphic/shared/email';
 import { auth } from '@/lib/auth';
 import { fetchBackendApi } from './api-client';
+import { loginUrlForCurrentPage } from './login-redirect';
 import { softDeleteUser } from './account-deletion';
 import { loadNotifications } from './notifications';
 import { PAGE_SIZE, cursorAt, decodeCursor, olderThan, toPage } from './pagination';
@@ -108,7 +109,7 @@ export const getOwnTokenPackRemaining = cache(async (): Promise<number> => {
 
 async function requireUser() {
   const session = await getSessionWithRetry();
-  if (!session) redirect('/login');
+  if (!session) redirect(await loginUrlForCurrentPage());
   return session.user;
 }
 
@@ -232,7 +233,7 @@ async function requireAdminBase(shouldThrow: boolean) {
   const session = await getSessionWithRetry();
   if (!session) {
     if (shouldThrow) throw new Error('Unauthorized: sign-in required.');
-    redirect('/login');
+    redirect(await loginUrlForCurrentPage());
   }
   const check = await adminCheck();
   if (!check) {
@@ -358,7 +359,7 @@ export interface ActiveSession {
  */
 export async function listActiveSessions(): Promise<ActiveSession[]> {
   const session = await getSessionWithRetry();
-  if (!session) redirect('/login');
+  if (!session) redirect(await loginUrlForCurrentPage());
 
   const rows = await db
     .select({
@@ -435,6 +436,7 @@ export async function deleteApiKey(id: string): Promise<{ ok: boolean; error?: s
   try {
     // 1. Call backend API first so delete + key.revoked audit log + revocation email execute atomically there.
     const apiRes = await fetchBackendApi(`/v1/keys/${id}`, { method: 'DELETE' });
+    if (apiRes.status === 401) redirect(await loginUrlForCurrentPage());
     if (!apiRes.error) {
       revalidatePath('/dashboard/keys');
       revalidatePath('/dashboard');
@@ -478,6 +480,7 @@ export async function deleteApiKey(id: string): Promise<{ ok: boolean; error?: s
     revalidatePath('/dashboard');
     return { ok: true };
   } catch (err: any) {
+    unstable_rethrow(err);
     console.error('[deleteApiKey] Failed to delete API key:', err);
     return { ok: false, error: 'Failed to delete API key' };
   }
@@ -506,6 +509,8 @@ export async function redeemCodeDirect(
     method: 'POST',
     body: JSON.stringify({ code: cleanCode }),
   });
+
+  if (apiRes.status === 401) redirect(await loginUrlForCurrentPage());
 
   if (apiRes.status === 200 && apiRes.data?.ok) {
     failedRedeemAttempts.delete(user.id);
@@ -603,7 +608,7 @@ export async function simulatePaymentWebhook(formData: FormData) {
 
 export async function createPaymentAction(packageId: string, paymentMethod?: string) {
   const session = await getSessionWithRetry();
-  if (!session) redirect('/login');
+  if (!session) redirect(await loginUrlForCurrentPage());
 
   const res = await fetchBackendApi<{
     paymentId: string;
@@ -622,6 +627,8 @@ export async function createPaymentAction(packageId: string, paymentMethod?: str
     body: JSON.stringify({ packageId, paymentMethod }),
   });
 
+  if (res.status === 401) redirect(await loginUrlForCurrentPage());
+
   if (res.error || !res.data) {
     throw new Error(res.error ?? 'Gagal membuat transaksi pembayaran');
   }
@@ -631,7 +638,7 @@ export async function createPaymentAction(packageId: string, paymentMethod?: str
 
 export async function checkPaymentStatusAction(paymentId: string) {
   const session = await getSessionWithRetry();
-  if (!session) redirect('/login');
+  if (!session) redirect(await loginUrlForCurrentPage());
 
   const res = await fetchBackendApi<{ status: string; credits?: number }>(
     `/v1/payments/${paymentId}`,
@@ -641,6 +648,8 @@ export async function checkPaymentStatusAction(paymentId: string) {
       },
     }
   );
+
+  if (res.status === 401) redirect(await loginUrlForCurrentPage());
 
   if (res.error || !res.data) {
     throw new Error(res.error ?? 'Gagal memeriksa status');
@@ -659,7 +668,7 @@ export async function getUsageLogsAction(params: {
   status?: 'all' | 'success' | 'error';
 } = {}) {
   const session = await getSessionWithRetry();
-  if (!session) redirect('/login');
+  if (!session) redirect(await loginUrlForCurrentPage());
 
   // Up to 500 so the CSV export can walk the range in a few large batches.
   const limit = Math.min(500, Math.max(1, Math.trunc(Number(params.limit)) || PAGE_SIZE));

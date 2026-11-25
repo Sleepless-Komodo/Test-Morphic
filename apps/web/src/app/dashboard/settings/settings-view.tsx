@@ -17,6 +17,7 @@ import { signOut } from '@/lib/auth-client';
 import { timeAgo } from '@/lib/utils';
 import { LoginOtpCard } from './login-otp-card';
 import { downloadBlob } from '@/lib/csv';
+import { apiFetch, isSessionExpiredError } from '@/lib/browser-api';
 import {
   User,
   Mail,
@@ -152,10 +153,11 @@ export function SettingsView({ user, sessions, loginOtp }: SettingsViewProps) {
     setExporting(true);
     setExportError(null);
     try {
-      const res = await fetch('/api/backend/v1/account/export', { cache: 'no-store' });
+      const res = await apiFetch('/v1/account/export', { cache: 'no-store' });
       if (!res.ok) throw new Error(String(res.status));
       downloadBlob(await res.blob(), `morphic-data-${new Date().toISOString().slice(0, 10)}.json`);
-    } catch {
+    } catch (err) {
+      if (isSessionExpiredError(err)) return;
       setExportError(isId ? 'Gagal menyiapkan data. Coba lagi sebentar lagi.' : 'Could not prepare your data. Try again shortly.');
     } finally {
       setExporting(false);

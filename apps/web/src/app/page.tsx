@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic';
 
 import { getSessionSafe } from '@/lib/auth';
+import { loadPublicPackages } from '@/lib/public-packages';
 import { headers } from 'next/headers';
 import Navbar from '@/components/Navbar';
 import HeroOpening from '@/components/HeroOpening';
@@ -18,6 +19,10 @@ export default async function Home() {
   } catch (err) {
     console.warn('[Home] Session check failed, rendering as guest:', err);
   }
+  const packages = await loadPublicPackages().catch((err) => {
+    console.warn('[Home] Package catalogue read failed:', err);
+    return [];
+  });
 
   return (
     <main className="min-h-screen bg-[#fafafa] text-neutral-900 selection:bg-neutral-900 selection:text-white relative flex flex-col justify-between overflow-x-clip">
@@ -34,7 +39,7 @@ export default async function Home() {
       <FeatureShowcase />
 
       {/* 5.5 Transparent Pricing & Token Packs */}
-      <PricingPlans isLoggedIn={!!session} />
+      <PricingPlans packages={packages} isLoggedIn={!!session} />
 
       {/* 6. Editorial FAQ with Sticky Header */}
       <MarketingFaq />

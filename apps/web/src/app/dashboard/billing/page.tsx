@@ -1,9 +1,10 @@
-import { eq, asc } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { db, schema as s } from '@morphic/db';
 import { getActivePassesPageAction, getLedgerPageAction, getOwnBalance, getPaymentsPageAction, requireUser } from '@/lib/actions';
 import { readyModelIds } from '@morphic/shared/model-readiness';
 import { BillingView } from './billing-view';
 import { hasStoredCredentials, loadPublicModels } from '@/lib/models-data';
+import { loadActivePackages } from '@/lib/public-packages';
 import { memo } from '@/lib/memo';
 import { LIVE_TTL_MS } from '@/lib/refresh';
 
@@ -44,14 +45,18 @@ const loadShowcase = () => memo('dashboard:model-showcase', LIVE_TTL_MS, async (
   return picks.map((m) => ({ id: m.publicModelId, name: m.name, out: m.out }));
 });
 
+const PACKAGE_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export default async function BillingPage(props: {
-  searchParams?: Promise<{ tab?: string }>;
+  searchParams?: Promise<{ tab?: string; pkg?: string }>;
 }) {
   const searchParams = await props.searchParams;
   const initialTab =
     searchParams?.tab === 'payments' || searchParams?.tab === 'ledger'
       ? searchParams.tab
       : 'packages';
+  // From a pricing card: `?pkg=<id>` opens that package's checkout once the page is up.
+  const initialPackageId = PACKAGE_ID_PATTERN.test(searchParams?.pkg ?? '') ? searchParams!.pkg : undefined;
   const user = await requireUser();
 
   // Read straight from Postgres. These reads used to go through the gateway, whose
@@ -63,29 +68,10 @@ export default async function BillingPage(props: {
       console.warn('[BillingPage] Balance read failed:', err);
       return 0;
     }),
-    db
-      .select({
-        id: s.packages.id,
-        name: s.packages.name,
-        kind: s.packages.kind,
-        description: s.packages.description,
-        creditAllowance: s.packages.creditAllowance,
-        modelId: s.packages.modelId,
-        durationHours: s.packages.durationHours,
-        priceCents: s.packages.priceCents,
-        currency: s.packages.currency,
-        status: s.packages.status,
-        modelDisplayName: s.models.displayName,
-        modelPublicId: s.models.publicModelId,
-      })
-      .from(s.packages)
-      .leftJoin(s.models, eq(s.packages.modelId, s.models.id))
-      .where(eq(s.packages.status, 'active'))
-      .orderBy(asc(s.packages.priceCents))
-      .catch((err) => {
-        console.warn('[BillingPage] Package catalogue read failed:', err);
-        return [] as any[];
-      }),
+    loadActivePackages().catch((err) => {
+      console.warn('[BillingPage] Package catalogue read failed:', err);
+      return [];
+    }),
     getActivePassesPageAction().catch((err) => {
       console.warn('[BillingPage] Entitlement read failed:', err);
       return EMPTY_PAGE;
@@ -117,6 +103,7 @@ export default async function BillingPage(props: {
       showcase={showcase}
       sampleModelId={sampleModelId}
       initialTab={initialTab}
+      initialPackageId={initialPackageId}
     />
   );
 }
