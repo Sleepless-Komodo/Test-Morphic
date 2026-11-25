@@ -31,7 +31,6 @@ catalog.get('/models', async (c) => {
         capabilities: s.models.capabilities,
         inputCreditsPer1m: s.models.inputCreditsPer1m,
         outputCreditsPer1m: s.models.outputCreditsPer1m,
-        providerName: s.providers.name,
         circuitBreakerState: s.providers.circuitBreakerState,
       })
       .from(s.models)

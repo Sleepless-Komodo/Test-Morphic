@@ -2,7 +2,6 @@ export const dynamic = 'force-dynamic';
 
 import { headers } from 'next/headers';
 import { and, asc, eq, sql } from 'drizzle-orm';
-import { alias } from 'drizzle-orm/pg-core';
 import { db, schema as s } from '@morphic/db';
 import { getSessionSafe } from '@/lib/auth';
 import Navbar from '@/components/Navbar';
@@ -10,7 +9,6 @@ import ModelsExplorer from '@/components/ModelsExplorer';
 import Footer from '@/components/Footer';
 import { AutoRefresh } from '@/components/AutoRefresh';
 import { memo } from '@/lib/memo';
-import { providerBrand } from '@/lib/gateway-providers';
 import { makerFromId } from '@/lib/model-maker';
 import { joinNames, loadPublicModels, makersOf } from '@/lib/models-data';
 import { buildCatalog, type CatalogModel, type SnapshotModel } from '@/lib/model-catalog';
@@ -34,8 +32,7 @@ const HOURS = 24;
 
 /** Our active models with their real traffic: 7-day tokens and 24 hourly success buckets. */
 async function loadCatalog(): Promise<CatalogModel[]> {
-  const fallback = alias(s.providers, 'fallback_provider');
-  const [models, volume, hourly, pool] = await Promise.all([
+  const [models, volume, hourly] = await Promise.all([
     db
       .select({
         id: s.models.id,
@@ -47,14 +44,9 @@ async function loadCatalog(): Promise<CatalogModel[]> {
         capabilities: s.models.capabilities,
         inputCreditsPer1m: s.models.inputCreditsPer1m,
         outputCreditsPer1m: s.models.outputCreditsPer1m,
-        providerName: s.providers.name,
-        providerBaseUrl: s.providers.baseUrl,
-        fallbackName: fallback.name,
-        fallbackBaseUrl: fallback.baseUrl,
       })
       .from(s.models)
       .innerJoin(s.providers, eq(s.models.providerId, s.providers.id))
-      .leftJoin(fallback, eq(s.models.fallbackProviderId, fallback.id))
       .where(eq(s.models.status, 'active')),
     db
       .select({
@@ -76,17 +68,7 @@ async function loadCatalog(): Promise<CatalogModel[]> {
       .from(s.requestLogs)
       .where(sql`${s.requestLogs.createdAt} > now() - interval '${sql.raw(String(HOURS))} hours'`)
       .groupBy(sql`1, 2`),
-    // Enabled pool entries are the routes actually tried, in order.
-    db
-      .select({ modelId: s.modelProviderPool.modelId, name: s.providers.name, baseUrl: s.providers.baseUrl })
-      .from(s.modelProviderPool)
-      .innerJoin(s.providers, eq(s.modelProviderPool.providerId, s.providers.id))
-      .where(and(eq(s.modelProviderPool.isEnabled, true), eq(s.providers.status, 'active')))
-      .orderBy(asc(s.modelProviderPool.priority)),
   ]);
-  const poolBy = new Map<string, { name: string; baseUrl: string }[]>();
-  for (const p of pool) poolBy.set(p.modelId, [...(poolBy.get(p.modelId) ?? []), p]);
-
   const tokensBy = new Map(volume.map((v) => [v.modelId, Number(v.tokens)]));
   const bucketsBy = new Map<string, { total: number; errors: number }[]>();
   for (const h of hourly) {
@@ -96,18 +78,11 @@ async function loadCatalog(): Promise<CatalogModel[]> {
     bucketsBy.set(h.modelId, buckets);
   }
 
-  // Base URLs stay on the server; only the recognised brand (label + logo) goes to the page.
-  const live = models.map(({ id, providerName, providerBaseUrl, fallbackName, fallbackBaseUrl, ...m }) => ({
+  // Upstream providers stay on the server; the page only learns about the model.
+  const live = models.map(({ id, ...m }) => ({
     ...m,
     capabilities: m.capabilities ?? [],
     maker: makerFromId(m.publicModelId),
-    providers: [
-      { name: providerName, baseUrl: providerBaseUrl },
-      ...(poolBy.get(id) ?? []),
-      ...(fallbackName ? [{ name: fallbackName, baseUrl: fallbackBaseUrl! }] : []),
-    ]
-      .filter((p, i, all) => all.findIndex((q) => q.name === p.name) === i)
-      .map((p) => providerBrand(p.name, p.baseUrl)),
     tokens7d: tokensBy.get(id) ?? 0,
     hourly: bucketsBy.get(id) ?? Array.from({ length: HOURS }, () => ({ total: 0, errors: 0 })),
   }));

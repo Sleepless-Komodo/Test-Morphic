@@ -204,15 +204,7 @@ function ModelCell({ m, en }: { m: CatalogModel; en: boolean }) {
       <div className="mt-auto pt-5">
         <div className="grid grid-cols-2 items-end gap-4 border-t border-neutral-200 pt-4">
           <div className="min-w-0 text-xs text-neutral-700">
-            {en ? `Available on ${m.providers.length} provider${m.providers.length > 1 ? 's' : ''}` : `Tersedia di ${m.providers.length} provider`}
-            <ul className="mt-1.5 flex flex-wrap items-center gap-1.5" aria-label={en ? 'Providers' : 'Provider'}>
-              {m.providers.map((p) => (
-                <li key={p.label} title={p.label}>
-                  <Logo src={p.logo} name={p.label} className="h-4 w-4" />
-                  <span className="sr-only">{p.label}</span>
-                </li>
-              ))}
-            </ul>
+            <span className="font-semibold text-neutral-950 tabular-nums">{compact.format(m.tokens7d)}</span> {en ? 'tokens · 7d' : 'token · 7h'}
           </div>
           <UptimeBars hourly={m.hourly} en={en} />
         </div>
@@ -235,7 +227,6 @@ export default function ModelsExplorer({ models }: { models: CatalogModel[] }) {
   const [ctxStep, setCtxStep] = useState(0);
   const [inputs, setInputs] = useState<Set<string>>(new Set());
   const [makers, setMakers] = useState<Set<string>>(new Set());
-  const [providers, setProviders] = useState<Set<string>>(new Set());
   const [shown, setShown] = useState(PAGE);
 
   const toggle = (set: Set<string>, setter: (s: Set<string>) => void) => (v: string) => {
@@ -248,16 +239,13 @@ export default function ModelsExplorer({ models }: { models: CatalogModel[] }) {
   const outputList = useMemo(() => byFrequency(models, (m) => m.output), [models]);
   const inputList = useMemo(() => byFrequency(models, (m) => m.input), [models]);
   const makerList = useMemo(() => byFrequency(models, (m) => [m.maker]), [models]);
-  const providerList = useMemo(() => byFrequency(models, (m) => m.providers.map((p) => p.label)), [models]);
   const makerLogo = useMemo(() => new Map(models.map((m) => [m.maker, m.makerLogo])), [models]);
-  const providerLogo = useMemo(() => new Map(models.flatMap((m) => m.providers.map((p) => [p.label, p.logo] as const))), [models]);
 
   const matches = (m: CatalogModel, skipTab = false) =>
     (skipTab || tab === 'all' || m.output.includes(tab)) &&
     (m.contextLength ?? 0) >= CONTEXT_STEPS[ctxStep]! &&
     (!inputs.size || [...inputs].every((i) => m.input.includes(i))) &&
-    (!makers.size || makers.has(m.maker)) &&
-    (!providers.size || m.providers.some((p) => providers.has(p.label)));
+    (!makers.size || makers.has(m.maker));
 
   // Busiest first.
   const filtered = models.filter((m) => matches(m)).sort((a, b) => b.tokens7d - a.tokens7d);
@@ -268,7 +256,6 @@ export default function ModelsExplorer({ models }: { models: CatalogModel[] }) {
     setCtxStep(0);
     setInputs(new Set());
     setMakers(new Set());
-    setProviders(new Set());
     setShown(PAGE);
   };
 
@@ -301,9 +288,6 @@ export default function ModelsExplorer({ models }: { models: CatalogModel[] }) {
       </FilterGroup>
       <FilterGroup title="Maker">
         <CheckList items={makerList} selected={makers} onToggle={toggle(makers, setMakers)} logoOf={(mk) => <Logo src={makerLogo.get(mk) ?? null} name={mk} className="h-4 w-4" />} moreLabel={more} />
-      </FilterGroup>
-      <FilterGroup title="Providers">
-        <CheckList items={providerList} selected={providers} onToggle={toggle(providers, setProviders)} logoOf={(l) => <Logo src={providerLogo.get(l) ?? null} name={l} className="h-4 w-4" />} moreLabel={more} />
       </FilterGroup>
     </>
   );

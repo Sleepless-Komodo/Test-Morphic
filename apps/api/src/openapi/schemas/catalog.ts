@@ -57,10 +57,6 @@ export const CatalogModelItemSchema = z
       description: 'Billing cost in atomic credits per 1,000,000 completion tokens',
       example: 15000,
     }),
-    providerName: z.string().openapi({
-      description: 'Primary provider name serving this model',
-      example: 'anthropic',
-    }),
     circuitBreakerState: CircuitBreakerStateSchema.nullable().openapi({
       description: 'Real-time upstream health status',
     }),

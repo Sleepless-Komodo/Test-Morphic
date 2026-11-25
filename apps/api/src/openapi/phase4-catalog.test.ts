@@ -92,7 +92,6 @@ test('3. GET /v1/catalog/models returns active model catalog', async () => {
       capabilities: string[];
       inputCreditsPer1m: number;
       outputCreditsPer1m: number;
-      providerName: string;
       circuitBreakerState: unknown;
     }[];
   };
@@ -103,7 +102,7 @@ test('3. GET /v1/catalog/models returns active model catalog', async () => {
     assert.ok(typeof first.publicModelId === 'string');
     assert.ok(typeof first.displayName === 'string');
     assert.ok(typeof first.contextLength === 'number');
-    assert.ok(typeof first.providerName === 'string');
+    assert.ok(!('providerName' in first), 'catalog must not expose the upstream provider');
   }
 });
 

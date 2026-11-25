@@ -15,12 +15,10 @@ export async function GET() {
       .select({
         id: s.models.publicModelId,
         name: s.models.displayName,
-        provider: s.providers.name,
         contextLength: s.models.contextLength,
         capabilities: s.models.capabilities,
       })
       .from(s.models)
-      .innerJoin(s.providers, eq(s.models.providerId, s.providers.id))
       .where(eq(s.models.status, 'active')));
     return NextResponse.json({ data: rows }, { headers: { 'cache-control': 'public, max-age=60' } });
   } catch (err) {

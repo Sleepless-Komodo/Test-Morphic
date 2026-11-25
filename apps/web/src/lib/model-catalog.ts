@@ -1,7 +1,5 @@
 // Public catalog = the active models in our database. The static snapshot (src/data/model-catalog.json,
 // see scripts/sync-model-catalog.mjs) only adds metadata we do not store: maker logo, modalities, max output.
-import type { ProviderBrand } from './gateway-providers.ts';
-
 export interface SnapshotModel {
   slug: string;
   name: string;
@@ -30,7 +28,6 @@ export interface LiveModel {
   inputCreditsPer1m: number;
   outputCreditsPer1m: number;
   maker: string;
-  providers: ProviderBrand[];
   tokens7d: number;
   hourly: { total: number; errors: number }[];
 }
@@ -48,7 +45,6 @@ export interface CatalogModel {
   maxOutput: number | null;
   /** What Morphic bills, in credits per 1M tokens. */
   price: { input: number; output: number };
-  providers: { label: string; logo: string | null }[];
   tokens7d: number;
   /** Oldest → newest, one bucket per hour over the last 24h. */
   hourly: { total: number; errors: number }[];
@@ -66,7 +62,7 @@ export function matchSnapshot(live: Pick<LiveModel, 'publicModelId' | 'providerM
 
 /** One entry per model in the database. The snapshot only fills in metadata we do not store. */
 export function buildCatalog(snapshot: SnapshotModel[], live: LiveModel[]): CatalogModel[] {
-  const logoByName = new Map(snapshot.flatMap((m) => [[key(m.maker), m.makerLogo] as const, ...m.providers.map((p) => [key(p.name), p.logo] as const)]));
+  const logoByName = new Map(snapshot.flatMap((m) => [[key(m.maker), m.makerLogo] as const]));
   return live.map((l) => {
     const snap = matchSnapshot(l, snapshot);
     return {
@@ -80,8 +76,6 @@ export function buildCatalog(snapshot: SnapshotModel[], live: LiveModel[]): Cata
       contextLength: l.contextLength,
       maxOutput: snap?.maxOutput ?? null,
       price: { input: l.inputCreditsPer1m, output: l.outputCreditsPer1m },
-      // The routes we really use; borrow the snapshot's logo when our brand list has none.
-      providers: l.providers.map((p) => ({ label: p.label, logo: p.logo ?? logoByName.get(key(p.label)) ?? null })),
       tokens7d: l.tokens7d,
       hourly: l.hourly,
     };

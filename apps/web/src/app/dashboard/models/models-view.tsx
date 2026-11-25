@@ -37,7 +37,7 @@ export function ModelsView({ initialModels }: { initialModels: any[] }) {
   const indexedModels = useMemo(() => {
     return initialModels.map((m) => {
       const lowerCaps = (m.capabilities ?? []).map((c: string) => c.toLowerCase());
-      const haystack = [m.displayName, m.publicModelId, m.providerName, m.description, m.descriptionEn, ...lowerCaps]
+      const haystack = [m.displayName, m.publicModelId, m.description, m.descriptionEn, ...lowerCaps]
         .filter(Boolean)
         .join(' ')
         .toLowerCase();
@@ -173,7 +173,7 @@ export function ModelsView({ initialModels }: { initialModels: any[] }) {
             >
               <div className="flex items-start gap-3 min-w-0">
                 <div className="w-10 h-10 rounded-xl bg-neutral-100 border border-neutral-200 flex items-center justify-center shrink-0">
-                  <ModelProviderLogo provider={m.publicModelId || m.providerName} className="w-6 h-6" />
+                  <ModelProviderLogo provider={m.publicModelId} className="w-6 h-6" />
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="font-heading font-bold text-base text-neutral-950 leading-snug">{m.displayName}</div>
@@ -222,7 +222,7 @@ export function ModelsView({ initialModels }: { initialModels: any[] }) {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="border-b border-neutral-200 bg-neutral-50/80 text-[11px] font-mono uppercase text-neutral-500 tracking-wider select-none">
-                <th className="py-3.5 px-4 sm:px-5 font-semibold">{locale === 'en' ? 'Model & Provider' : 'Model & Provider'}</th>
+                <th className="py-3.5 px-4 sm:px-5 font-semibold">Model</th>
                 <th className="py-3.5 px-4 font-semibold">{locale === 'en' ? 'Capabilities' : 'Kemampuan'}</th>
                 <th className="py-3.5 px-4 font-semibold">{locale === 'en' ? 'Status' : 'Status'}</th>
                 <th className="py-3.5 px-4 font-semibold">{locale === 'en' ? 'Context' : 'Konteks'}</th>
@@ -243,19 +243,16 @@ export function ModelsView({ initialModels }: { initialModels: any[] }) {
                       isSelected ? 'bg-neutral-50/80 ring-1 ring-inset ring-neutral-900/10' : ''
                     }`}
                   >
-                    {/* Model & Provider */}
+                    {/* Model */}
                     <td className="py-3 px-4 sm:px-5">
                       <div className="flex items-center gap-3">
                         <div className="w-9 h-9 rounded-xl bg-neutral-100/90 border border-neutral-200/90 flex items-center justify-center shrink-0 shadow-2xs group-hover:border-neutral-300 transition-colors">
-                          <ModelProviderLogo provider={m.publicModelId || m.providerName} className="w-5 h-5" />
+                          <ModelProviderLogo provider={m.publicModelId} className="w-5 h-5" />
                         </div>
                         <div className="min-w-0 max-w-xs">
                           <div className="flex items-center gap-2">
                             <span className="font-heading font-bold text-sm text-neutral-950 truncate" title={m.displayName}>
                               {m.displayName}
-                            </span>
-                            <span className="text-[10px] text-neutral-500 font-mono uppercase tracking-wider font-semibold">
-                              ({m.providerName ?? (locale === 'en' ? 'Official' : 'Resmi')})
                             </span>
                           </div>
                           <div className="flex items-center gap-1.5 mt-0.5">

@@ -1,8 +1,7 @@
 // apps/web/src/lib/model-detail.ts
 // TypeScript / Next.js Server Module / Node.js / Linux x86_64
-import { and, asc, eq, ne, sql } from 'drizzle-orm';
+import { and, eq, ne, sql } from 'drizzle-orm';
 import { db, schema as s } from '@morphic/db';
-import { providerBrand, type ProviderBrand } from './gateway-providers';
 import type { SnapshotModel } from './model-catalog';
 import { providerUsable } from '@morphic/shared/model-readiness';
 import { hasStoredCredentials } from './models-data';
@@ -10,26 +9,12 @@ import { hasStoredCredentials } from './models-data';
 export interface ProviderBucket {
   /** ISO start of the hour (1D/72H) or WIB day (1W/30D) */
   at: string;
-  provider: string;
   total: number;
   errors: number;
   /** P50 end-to-end latency, ms */
   p50LatencyMs: number | null;
   /** P50 output tokens per second over the whole request */
   p50Tps: number | null;
-}
-
-export interface ModelProviderInfo extends ProviderBrand {
-  role: 'primary' | 'fallback';
-  /** Active with a key right now, so the gateway can route to it. Catalog-only pages leave it unset. */
-  ready?: boolean;
-  supportsTools?: boolean;
-  supportsParallelTools?: boolean;
-  supportsReasoning?: boolean;
-  supportsVision?: boolean;
-  contextLength?: number | null;
-  maxOutputTokens?: number | null;
-  apiFormat?: 'openai' | 'anthropic';
 }
 
 export interface ModelDetail {
@@ -45,16 +30,13 @@ export interface ModelDetail {
     replacementModelAlias: string | null;
     createdAt: string;
   };
-  /** Primary first, then the fallback route if configured. */
-  providers: ModelProviderInfo[];
-  /** Label + logo for every provider name that appears in the stats. */
-  brands: Record<string, ProviderBrand>;
+  /** A route with a key exists right now, so the gateway can serve this model. Which upstream it is never leaves the server. */
+  ready: boolean;
   hourly: ProviderBucket[];
   daily: ProviderBucket[];
-  /** Tokens per WIB day per provider, last 30 days. */
+  /** Tokens per WIB day, last 30 days, across every route. */
   activity: {
     day: string;
-    provider: string;
     tokens: number;
     promptTokens?: number;
     completionTokens?: number;
@@ -76,7 +58,6 @@ function bucketQuery(modelId: string, unit: 'hour' | 'day', interval: string) {
   return db
     .select({
       at,
-      provider: sql<string>`coalesce(${s.requestLogs.providerName}, 'unknown')`,
       total: sql<number>`count(*)::int`,
       errors: sql<number>`count(*) filter (where ${s.requestLogs.status} = 'error')::int`,
       p50LatencyMs: sql<number | null>`percentile_cont(0.5) within group (order by ${s.requestLogs.latencyMs}) filter (where ${s.requestLogs.status} = 'success')`,
@@ -84,12 +65,11 @@ function bucketQuery(modelId: string, unit: 'hour' | 'day', interval: string) {
     })
     .from(s.requestLogs)
     .where(and(eq(s.requestLogs.resolvedModelId, modelId), sql`${s.requestLogs.createdAt} > now() - ${sql.raw(`interval '${interval}'`)}`))
-    .groupBy(sql`1, 2`);
+    .groupBy(sql`1`);
 }
 
-const toBucket = (r: { at: string; provider: string; total: number; errors: number; p50LatencyMs: number | null; p50Tps: number | null }): ProviderBucket => ({
+const toBucket = (r: { at: string; total: number; errors: number; p50LatencyMs: number | null; p50Tps: number | null }): ProviderBucket => ({
   at: r.at,
-  provider: r.provider,
   total: Number(r.total),
   errors: Number(r.errors),
   p50LatencyMs: r.p50LatencyMs === null ? null : Number(r.p50LatencyMs),
@@ -125,33 +105,20 @@ export async function loadModelDetail(publicModelId: string): Promise<(ModelDeta
     db
       .select({
         id: s.providers.id,
-        name: s.providers.name,
-        baseUrl: s.providers.baseUrl,
         status: s.providers.status,
         encryptedCredentials: hasStoredCredentials,
         credentialReference: s.providers.credentialReference,
       })
       .from(s.providers),
     db
-      .select({
-        providerId: s.modelProviderPool.providerId,
-        supportsTools: s.modelProviderPool.supportsTools,
-        supportsParallelTools: s.modelProviderPool.supportsParallelTools,
-        supportsReasoning: s.modelProviderPool.supportsReasoning,
-        supportsVision: s.modelProviderPool.supportsVision,
-        contextLength: s.modelProviderPool.contextLength,
-        maxOutputTokens: s.modelProviderPool.maxOutputTokens,
-        apiFormat: s.modelProviderPool.apiFormat,
-      })
+      .select({ providerId: s.modelProviderPool.providerId })
       .from(s.modelProviderPool)
-      .where(and(eq(s.modelProviderPool.modelId, row.id), eq(s.modelProviderPool.isEnabled, true)))
-      .orderBy(asc(s.modelProviderPool.priority)),
+      .where(and(eq(s.modelProviderPool.modelId, row.id), eq(s.modelProviderPool.isEnabled, true))),
     bucketQuery(row.id, 'hour', '72 hours'),
     bucketQuery(row.id, 'day', '30 days'),
     db
       .select({
         day: sql<string>`to_char(${s.requestLogs.createdAt} at time zone 'Asia/Jakarta', 'YYYY-MM-DD')`,
-        provider: sql<string>`coalesce(${s.requestLogs.providerName}, 'unknown')`,
         // Tokens only count when a request succeeded; a failed call processed nothing.
         tokens: sql<number>`coalesce(sum(coalesce(${s.requestLogs.promptTokens},0) + coalesce(${s.requestLogs.completionTokens},0)) filter (where ${s.requestLogs.status} = 'success'),0)::bigint`,
         promptTokens: sql<number>`coalesce(sum(coalesce(${s.requestLogs.promptTokens},0)) filter (where ${s.requestLogs.status} = 'success'),0)::bigint`,
@@ -160,7 +127,7 @@ export async function loadModelDetail(publicModelId: string): Promise<(ModelDeta
       })
       .from(s.requestLogs)
       .where(and(eq(s.requestLogs.resolvedModelId, row.id), sql`${s.requestLogs.createdAt} > now() - interval '30 days'`))
-      .groupBy(sql`1, 2`),
+      .groupBy(sql`1`),
     db
       .select({
         publicModelId: s.models.publicModelId,
@@ -172,41 +139,15 @@ export async function loadModelDetail(publicModelId: string): Promise<(ModelDeta
       .where(and(eq(s.models.status, 'active'), ne(s.models.id, row.id))),
   ]);
 
-  // Base URLs never leave the server; only the recognised brand does.
-  const brands = Object.fromEntries(providerRows.map((p) => [p.name, providerBrand(p.name, p.baseUrl)]));
-  const byId = new Map(providerRows.map((p) => [p.id, brands[p.name]!]));
+  // Which upstream serves a request is never sent to the page; it only learns whether any route can.
   // Credentials only decide readiness; they never leave this function.
   const usable = new Set(providerRows.filter((p) => providerUsable(p)).map((p) => p.id));
-  const poolByProviderId = new Map(pool.map((p) => [p.providerId, p]));
   const { id: _id, providerId, fallbackProviderId, providerModelId, ...model } = row;
-
-  const enrichProvider = (id: string, role: 'primary' | 'fallback'): ModelProviderInfo => {
-    const base = byId.get(id)!;
-    const poolEntry = poolByProviderId.get(id);
-    return {
-      ...base,
-      role,
-      ready: usable.has(id),
-      supportsTools: poolEntry?.supportsTools ?? true,
-      supportsParallelTools: poolEntry?.supportsParallelTools ?? true,
-      supportsReasoning: poolEntry?.supportsReasoning ?? (model.capabilities ?? []).includes('reasoning'),
-      supportsVision: poolEntry?.supportsVision ?? (model.capabilities ?? []).some((c) => c === 'vision' || c === 'multimodal'),
-      contextLength: poolEntry?.contextLength ?? model.contextLength,
-      maxOutputTokens: poolEntry?.maxOutputTokens ?? null,
-      apiFormat: poolEntry?.apiFormat ?? 'openai',
-    };
-  };
+  const ready = [providerId, fallbackProviderId, ...pool.map((p) => p.providerId)].some((id) => !!id && usable.has(id));
 
   return {
     model: { ...model, capabilities: model.capabilities ?? [], createdAt: model.createdAt.toISOString() },
-    providers: [
-      ...(byId.get(providerId) ? [enrichProvider(providerId, 'primary')] : []),
-      // Pool entries are the backup routes tried in priority order after the primary.
-      ...[...pool.map((p) => p.providerId), fallbackProviderId]
-        .filter((id, i, all): id is string => Boolean(id) && id !== providerId && all.indexOf(id) === i && byId.has(id!))
-        .map((id) => enrichProvider(id, 'fallback')),
-    ],
-    brands,
+    ready,
     hourly: hourly.map(toBucket),
     daily: daily.map(toBucket),
     activity: activity.map((a) => ({

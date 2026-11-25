@@ -9,7 +9,7 @@ const snap = (slug: string, aliases: string[] = []): SnapshotModel => ({
 });
 const live = (publicModelId: string, description: string | null = null): LiveModel => ({
   publicModelId, providerModelId: 'x', displayName: `DB ${publicModelId}`, description, contextLength: 64, capabilities: [],
-  inputCreditsPer1m: 100, outputCreditsPer1m: 200, maker: 'DeepSeek', providers: [{ name: 'deepseek', label: 'DeepSeek', logo: null }],
+  inputCreditsPer1m: 100, outputCreditsPer1m: 200, maker: 'DeepSeek',
   tokens7d: 5, hourly: [{ total: 2, errors: 1 }],
 });
 
@@ -24,7 +24,8 @@ test('buildCatalog lists database models only, enriched by exact snapshot matche
   assert.equal(byId['ds-flash'].description, 'from snapshot');
   assert.deepEqual(byId['ds-flash'].input, ['text', 'image']);
   assert.equal(byId['ds-flash'].maxOutput, 10);
-  assert.equal(byId['ds-flash'].providers[0].logo, '/logos/catalog/deepseek.svg');
+  assert.equal(byId['ds-flash'].makerLogo, '/logos/catalog/deepseek.svg');
+  assert.ok(!('providers' in byId['ds-flash']), 'catalog must not carry upstream providers');
   // deepseek-v4 must not swallow deepseek-v4-pro; it keeps its own DB description and text-only defaults
   assert.equal(byId['deepseek-v4'].description, 'from db');
   assert.deepEqual(byId['deepseek-v4'].input, ['text']);

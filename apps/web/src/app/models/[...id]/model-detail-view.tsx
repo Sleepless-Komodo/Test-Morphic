@@ -8,10 +8,9 @@ import { ArrowLeft, Check, ChevronRight, Copy, X } from 'lucide-react';
 import { useTranslation } from '@/lib/i18n';
 import { CHAT_COMPLETIONS_URL } from '@/lib/utils';
 import { GatewayProviderLogo, ModelProviderLogo } from '@/components/ProviderLogos';
-import { providerBrand, type ProviderBrand } from '@/lib/gateway-providers';
 import { makerFromId } from '@/lib/model-maker';
 import { fmtIdrPer1m, fmtMultiplier } from '@/lib/billing-format';
-import type { ModelDetail, ModelProviderInfo, ProviderBucket } from '@/lib/model-detail';
+import type { ModelDetail, ProviderBucket } from '@/lib/model-detail';
 
 const focusRing = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 focus-visible:ring-offset-2';
 const compact = new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 2 });
@@ -192,10 +191,10 @@ function LineChart({
   );
 }
 
-/** One provider's series: uptime as a full-height status strip, other metrics as a line
+/** One series: uptime as a full-height status strip, other metrics as a line
  *  scaled to the window's max. Values in the headline on hover and in a hidden table. */
-function ProviderStrip({
-  brand,
+function MetricStrip({
+  title,
   headline,
   stamp,
   values,
@@ -206,7 +205,7 @@ function ProviderStrip({
   colorOf,
   fullHeight,
 }: {
-  brand: ProviderBrand;
+  title: string;
   headline: string;
   stamp?: string;
   values: (number | null)[];
@@ -235,11 +234,7 @@ function ProviderStrip({
           {displayStamp}
         </div>
       )}
-      <div className="mb-2 flex items-center justify-between gap-3 text-sm">
-        <span className="flex items-center gap-2 font-medium text-neutral-950">
-          <GatewayProviderLogo brand={brand} className="h-4 w-4" />
-          {brand.label}
-        </span>
+      <div className="mb-2 flex items-center justify-end gap-3 text-sm">
         <span className="font-semibold text-neutral-950 tabular-nums">{displayHeadline}</span>
       </div>
       <div className="flex gap-2">
@@ -274,7 +269,7 @@ function ProviderStrip({
         )}
       </div>
       <table className="sr-only">
-        <caption>{brand.label}</caption>
+        <caption>{title}</caption>
         <tbody>
           {values.map((v, i) => (
             <tr key={keys[i]}>
@@ -294,7 +289,6 @@ function MetricSection({
   detail,
   en,
   metric,
-  onlyProvider,
   compactCard,
 }: {
   title: string;
@@ -302,14 +296,11 @@ function MetricSection({
   detail: ModelDetail;
   en: boolean;
   metric: 'uptime' | 'tps' | 'latency';
-  onlyProvider?: string;
   compactCard?: boolean;
 }) {
   const [span, setSpan] = useState<Span>('1d');
   const rows = span === '1d' ? detail.hourly : detail.daily;
   const keys = bucketKeys(span);
-  const allProviders = [...new Set([...detail.providers.map((p) => p.name), ...rows.map((r) => r.provider)])];
-  const providers = onlyProvider ? allProviders.filter((p) => p === onlyProvider) : allProviders;
   const pick = (b: ProviderBucket | undefined): number | null =>
     !b ? null : metric === 'uptime' ? (b.total ? ((b.total - b.errors) / b.total) * 100 : null) : metric === 'tps' ? b.p50Tps : b.p50LatencyMs;
   const format = (v: number | null) =>
@@ -327,10 +318,10 @@ function MetricSection({
 
   const body = (
     <div className="space-y-5">
-      {providers.map((p) => {
-        const byKey = new Map(rows.filter((r) => r.provider === p).map((r) => [r.at, r]));
+      {(() => {
+        const byKey = new Map(rows.map((r) => [r.at, r]));
         const values = keys.map((k) => pick(byKey.get(k)));
-        const mine = rows.filter((r) => r.provider === p && keys.includes(r.at));
+        const mine = rows.filter((r) => keys.includes(r.at));
         const total = mine.reduce((a, r) => a + r.total, 0);
         const errors = mine.reduce((a, r) => a + r.errors, 0);
         const latest = [...values].reverse().find((v) => v !== null) ?? null;
@@ -343,9 +334,8 @@ function MetricSection({
                 : 'Tidak ada trafik'
             : format(latest);
         return (
-          <ProviderStrip
-            key={p}
-            brand={detail.brands[p] ?? detail.providers.find((x) => x.name === p) ?? providerBrand(p)}
+          <MetricStrip
+            title={title}
             headline={headline}
             stamp={compactCard ? fullStampLabel(keys[keys.length - 1]!, span, en) : undefined}
             values={values}
@@ -361,7 +351,7 @@ function MetricSection({
             }
           />
         );
-      })}
+      })()}
       <div aria-hidden="true" className={`flex justify-between text-[11px] text-neutral-600 ${metric === 'uptime' ? '' : 'pr-16'}`}>
         <span>{keyLabel(keys[0]!, span, en)}</span>
         <span>{keyLabel(keys[keys.length - 1]!, span, en)}</span>
@@ -402,232 +392,18 @@ function MetricSection({
   );
 }
 
-/** 72-hour uptime bar + 24h / 7d / 30d summary inside the Provider Slide-Over Drawer. */
-function ProviderUptime72h({
-  providerName,
-  detail,
-  en,
-}: {
-  providerName: string;
-  detail: ModelDetail;
-  en: boolean;
-}) {
-  const keys72 = bucketKeys('72h');
-  const keys24 = new Set(keys72.slice(-24));
-  const keys7d = new Set(bucketKeys('1w'));
-  const keys30d = new Set(bucketKeys('30d'));
-
-  const hourlyMine = detail.hourly.filter((r) => r.provider === providerName);
-  const dailyMine = detail.daily.filter((r) => r.provider === providerName);
-  const byHour = new Map(hourlyMine.map((r) => [r.at, r]));
-
-  const values = keys72.map((k) => {
-    const b = byHour.get(k);
-    if (!b || b.total === 0) return null;
-    return ((b.total - b.errors) / b.total) * 100;
-  });
-
-  const calcRate = (rows: ProviderBucket[]) => {
-    const tot = rows.reduce((a, r) => a + r.total, 0);
-    const err = rows.reduce((a, r) => a + r.errors, 0);
-    // No requests means nothing was measured, not 100%.
-    return tot > 0 ? ((tot - err) / tot) * 100 : null;
-  };
-  const pctLabel = (v: number | null) => (v === null ? '—' : `${v.toFixed(2)}%`);
-
-  const rate24h = calcRate(hourlyMine.filter((r) => keys24.has(r.at)));
-  const rate7d = calcRate(dailyMine.filter((r) => keys7d.has(r.at)));
-  const rate30d = calcRate(dailyMine.filter((r) => keys30d.has(r.at)));
-
-  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
-  const activeIdx = hoverIdx ?? keys72.length - 1;
-  const activeKey = keys72[activeIdx]!;
-  const activeVal = values[activeIdx] ?? rate24h;
-
-  return (
-    <section className="rounded-2xl border border-neutral-200 bg-white p-5 space-y-4">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <h3 className="font-heading text-base font-bold text-neutral-950">Uptime</h3>
-          <span className="rounded-md bg-neutral-100 px-2 py-0.5 font-mono text-[11px] font-semibold text-neutral-600">
-            {en ? '72 hours' : '72 jam'}
-          </span>
-        </div>
-        <div className="flex items-center gap-2 text-xs font-mono tabular-nums">
-          <span className="text-neutral-500">
-            {new Date(activeKey).toLocaleString(en ? 'en-US' : 'id-ID', {
-              month: 'short',
-              day: 'numeric',
-              year: 'numeric',
-              hour: 'numeric',
-              minute: '2-digit',
-              timeZone: 'Asia/Jakarta',
-            })}
-          </span>
-          <span className={`font-bold ${activeVal === null ? 'text-neutral-500' : 'text-emerald-700'}`}>{activeVal === null ? (en ? 'no traffic' : 'tidak ada trafik') : `${activeVal.toFixed(2)}%`}</span>
-        </div>
-      </div>
-
-      <div
-        aria-hidden="true"
-        onMouseLeave={() => setHoverIdx(null)}
-        className="flex h-10 items-end gap-[2px]"
-      >
-        {values.map((v, i) => {
-          const pct = v ?? 0;
-          const color =
-            v === null
-              ? 'bg-neutral-200 hover:bg-neutral-300'
-              : pct >= 99.5
-                ? 'bg-emerald-500 hover:bg-emerald-600'
-                : pct >= 95
-                  ? 'bg-amber-400 hover:bg-amber-500'
-                  : 'bg-red-500 hover:bg-red-600';
-          return (
-            <div
-              key={keys72[i]}
-              onMouseEnter={() => setHoverIdx(i)}
-              className={`h-full flex-1 rounded-[2px] transition-colors ${color}`}
-            />
-          );
-        })}
-      </div>
-
-      <div className="grid grid-cols-3 gap-2 pt-1 border-t border-neutral-100 text-xs font-mono tabular-nums">
-        <div className="flex items-center justify-between rounded-lg bg-neutral-50 px-3 py-2">
-          <span className="text-neutral-500">{en ? '24h' : '24 jam'}</span>
-          <span className="font-bold text-neutral-950">{pctLabel(rate24h)}</span>
-        </div>
-        <div className="flex items-center justify-between rounded-lg bg-neutral-50 px-3 py-2">
-          <span className="text-neutral-500">{en ? '7d' : '7 hari'}</span>
-          <span className="font-bold text-neutral-950">{pctLabel(rate7d)}</span>
-        </div>
-        <div className="flex items-center justify-between rounded-lg bg-neutral-50 px-3 py-2">
-          <span className="text-neutral-500">{en ? '30d' : '30 hari'}</span>
-          <span className="font-bold text-neutral-950">{pctLabel(rate30d)}</span>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-/** Token usage (7D / 30D): prompt and completion tokens per day, both straight from request logs. */
-function ProviderTokenUsageSection({
-  providerName,
-  detail,
-  en,
-}: {
-  providerName: string;
-  detail: ModelDetail;
-  en: boolean;
-}) {
-  const [span, setSpan] = useState<UsageSpan>('7d');
-  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
-  const days = bucketKeys(span === '7d' ? '1w' : '30d');
-  const byDay = new Map(detail.activity.filter((a) => a.provider === providerName).map((a) => [a.day, a]));
-  const prompt = days.map((d) => byDay.get(d)?.promptTokens ?? 0);
-  const completion = days.map((d) => byDay.get(d)?.completionTokens ?? 0);
-  const sum = (v: number[]) => v.reduce((a, b) => a + b, 0);
-  const max = Math.max(0, ...prompt, ...completion);
-  const dayFmt = (d: string) =>
-    new Date(`${d}T00:00:00+07:00`).toLocaleDateString(en ? 'en-US' : 'id-ID', { month: 'short', day: 'numeric', timeZone: 'Asia/Jakarta' });
-  const at = hoverIdx ?? null;
-  const lines = [
-    { label: 'Prompt', values: prompt, stroke: 'stroke-neutral-950', dot: 'bg-neutral-950', fill: '#0a0a0a' },
-    { label: 'Completion', values: completion, stroke: 'stroke-sky-600', dot: 'bg-sky-600' },
-  ];
-
-  return (
-    <section className="rounded-2xl border border-neutral-200 bg-white p-5 space-y-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h3 className="font-heading text-base font-bold text-neutral-950">{en ? 'Token usage' : 'Pemakaian token'}</h3>
-          <div className="mt-1 font-heading text-2xl font-bold text-neutral-950 tabular-nums">
-            {compact.format(at === null ? sum(prompt) + sum(completion) : prompt[at]! + completion[at]!)}
-            <span className="ml-1.5 text-sm font-normal text-neutral-500">{at === null ? (span === '7d' ? (en ? '7 days' : '7 hari') : en ? '30 days' : '30 hari') : dayFmt(days[at]!)}</span>
-          </div>
-        </div>
-        <div role="group" aria-label={en ? 'Token usage range' : 'Rentang pemakaian token'} className="inline-flex rounded-full border border-neutral-300 bg-white p-0.5">
-          {(['7d', '30d'] as const).map((sp) => (
-            <button
-              key={sp}
-              type="button"
-              aria-pressed={span === sp}
-              onClick={() => setSpan(sp)}
-              className={`rounded-full px-3 py-1 pointer-coarse:min-h-11 text-xs font-semibold cursor-pointer ${focusRing} ${span === sp ? 'bg-neutral-950 text-white' : 'text-neutral-700 hover:text-neutral-950'}`}
-            >
-              {sp.toUpperCase()}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="flex gap-2">
-        <div className="relative flex-1">
-          <LineChart series={lines} height="h-32" hoverIdx={hoverIdx} onHover={setHoverIdx} />
-          {max === 0 && (
-            <span className="pointer-events-none absolute inset-0 flex items-center justify-center text-xs font-medium text-neutral-700">
-              {en ? 'No traffic yet' : 'Belum ada trafik'}
-            </span>
-          )}
-        </div>
-        <div aria-hidden="true" className="flex h-32 w-12 shrink-0 flex-col justify-between text-right text-[11px] tabular-nums text-neutral-600">
-          <span>{max ? compact.format(max) : '—'}</span>
-          <span>0</span>
-        </div>
-      </div>
-      <div aria-hidden="true" className="flex justify-between pr-14 text-[11px] text-neutral-500">
-        <span>{dayFmt(days[0]!)}</span>
-        <span>{dayFmt(days[days.length - 1]!)}</span>
-      </div>
-
-      <dl className="grid grid-cols-2 gap-2 pt-2 border-t border-neutral-100">
-        {lines.map((l) => (
-          <div key={l.label} className="rounded-xl bg-neutral-50 px-3 py-2">
-            <dt className="flex items-center gap-1.5 text-xs text-neutral-600">
-              <span className={`h-2 w-2 rounded-full ${l.dot}`} />
-              {l.label}
-            </dt>
-            <dd className="mt-0.5 font-mono text-sm font-bold text-neutral-950 tabular-nums">{compact.format(at === null ? sum(l.values) : l.values[at]!)}</dd>
-          </div>
-        ))}
-      </dl>
-      <table className="sr-only">
-        <caption>{en ? 'Tokens per day' : 'Token per hari'}</caption>
-        <tbody>
-          {days.map((d, i) => (
-            <tr key={d}><th scope="row">{dayFmt(d)}</th><td>{prompt[i]} prompt</td><td>{completion[i]} completion</td></tr>
-          ))}
-        </tbody>
-      </table>
-    </section>
-  );
-}
-
 export function ModelDetailView({ detail, isLoggedIn }: { detail: ModelDetail; isLoggedIn: boolean }) {
   const { locale } = useTranslation();
   const en = locale === 'en';
   const { model, meta } = detail;
-  // Live model with no provider holding a key: listed, but nothing can serve it right now.
-  const offline = model.status === 'active' && detail.providers.every((p) => p.ready === false);
+  // Live model with no route holding a key: listed, but nothing can serve it right now.
+  const offline = model.status === 'active' && !detail.ready;
   const maker = meta?.maker ?? makerFromId(model.publicModelId);
   const makerLogo = (cls: string) =>
     meta?.makerLogo ? <GatewayProviderLogo brand={{ label: maker, logo: meta.makerLogo }} className={cls} /> : <ModelProviderLogo provider={model.publicModelId} className={cls} />;
   const modalities = (list: string[] | undefined) => (list?.length ? list.map((m) => m.charAt(0).toUpperCase() + m.slice(1)).join(', ') : 'Text');
   const [copied, setCopied] = useState<string | null>(null);
-  const [selectedProviderName, setSelectedProviderName] = useState<string | null>(null);
   const apiRef = useRef<HTMLDialogElement>(null);
-  const providerDrawerRef = useRef<HTMLDialogElement>(null);
-
-  const openProviderDrawer = (name: string) => {
-    setSelectedProviderName(name);
-    providerDrawerRef.current?.showModal();
-  };
-
-  const closeProviderDrawer = () => {
-    providerDrawerRef.current?.close();
-    setSelectedProviderName(null);
-  };
 
   const copy = async (key: string, text: string) => {
     try {
@@ -649,9 +425,9 @@ export function ModelDetailView({ detail, isLoggedIn }: { detail: ModelDetail; i
 
   const keys24h = new Set(bucketKeys('1d'));
 
-  // 24h headline numbers per provider for the providers table and drawer
-  const providerStats = (name: string) => {
-    const rows = detail.hourly.filter((r) => r.provider === name && keys24h.has(r.at));
+  // 24h headline numbers for the performance table
+  const stats24h = (() => {
+    const rows = detail.hourly.filter((r) => keys24h.has(r.at));
     const total = rows.reduce((a, r) => a + r.total, 0);
     const errors = rows.reduce((a, r) => a + r.errors, 0);
     const weighted = (k: 'p50LatencyMs' | 'p50Tps') => {
@@ -666,16 +442,13 @@ export function ModelDetailView({ detail, isLoggedIn }: { detail: ModelDetail; i
       requests: total,
       errors,
     };
-  };
+  })();
 
-  // Activity: total tokens per WIB day over 30 days, plus each provider's share
+  // Activity: total tokens per WIB day over 30 days
   const days = Array.from({ length: 30 }, (_, i) => new Date(Date.now() + 7 * 3_600_000 - (29 - i) * 86_400_000).toISOString().slice(0, 10));
   const perDay = new Map<string, number>();
-  const perProvider = new Map<string, { tokens: number; requests: number }>();
   for (const a of detail.activity) {
     perDay.set(a.day, (perDay.get(a.day) ?? 0) + a.tokens);
-    const cur = perProvider.get(a.provider) ?? { tokens: 0, requests: 0 };
-    perProvider.set(a.provider, { tokens: cur.tokens + a.tokens, requests: cur.requests + a.requests });
   }
   const dayValues = days.map((d) => perDay.get(d) ?? 0);
   const maxDay = Math.max(0, ...dayValues);
@@ -684,10 +457,6 @@ export function ModelDetailView({ detail, isLoggedIn }: { detail: ModelDetail; i
 
   const th = 'px-4 py-3 text-xs font-semibold text-neutral-700 whitespace-nowrap';
   const td = 'px-4 py-4 whitespace-nowrap tabular-nums text-neutral-900';
-
-  const activeProvider: ModelProviderInfo | undefined =
-    detail.providers.find((p) => p.name === selectedProviderName) ?? detail.providers[0];
-  const activeSt = activeProvider ? providerStats(activeProvider.name) : null;
 
   return (
     <div className="w-full px-4 sm:px-6 pt-28 pb-20 sm:pt-32 sm:pb-24">
@@ -798,24 +567,15 @@ export function ModelDetailView({ detail, isLoggedIn }: { detail: ModelDetail; i
           </dl>
         </header>
 
-        {/* Providers */}
+        {/* Performance */}
         <Section
-          title="Providers"
-          subtitle={
-            detail.providers.length > 1
-                ? en
-                  ? 'Requests go to the primary provider; the fallback takes over when it fails. Click any provider to open the telemetry drawer.'
-                  : 'Request dikirim ke provider utama; cadangan mengambil alih saat utama gagal. Klik provider untuk membuka panel detail di kanan.'
-                : en
-                  ? 'The provider that serves this model. Click the provider row to inspect live telemetry, pricing, and supported parameters.'
-                  : 'Provider yang melayani model ini. Klik baris provider untuk membuka panel performa, harga, dan parameter.'
-          }
+          title={en ? 'Performance' : 'Performa'}
+          subtitle={en ? 'Price and live figures for this model over the last 24 hours.' : 'Harga dan angka live model ini selama 24 jam terakhir.'}
         >
           <div className="-mx-5 sm:-mx-6 overflow-x-auto">
-            <table className="w-full min-w-[720px] text-left text-sm">
+            <table className="w-full min-w-[640px] text-left text-sm">
               <thead className="border-y border-neutral-200 bg-neutral-50">
                 <tr>
-                  <th scope="col" className={th}>Provider</th>
                   <th scope="col" className={`${th} text-right`}>Input / 1M</th>
                   <th scope="col" className={`${th} text-right`}>Output / 1M</th>
                   <th scope="col" className={`${th} text-right`}>{en ? 'Context' : 'Konteks'}</th>
@@ -824,49 +584,15 @@ export function ModelDetailView({ detail, isLoggedIn }: { detail: ModelDetail; i
                   <th scope="col" className={`${th} text-right`}>{en ? 'Success 24h' : 'Sukses 24j'}</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-neutral-100">
-                {detail.providers.map((p) => {
-                  const st = providerStats(p.name);
-                  const isSelected = selectedProviderName === p.name;
-                  return (
-                    <tr
-                      key={p.name}
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => openProviderDrawer(p.name)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          openProviderDrawer(p.name);
-                        }
-                      }}
-                      className={`group cursor-pointer transition-colors hover:bg-neutral-50/90 ${
-                        isSelected ? 'bg-neutral-100/70' : ''
-                      }`}
-                    >
-                      <td className={td}>
-                        <div className="flex items-center gap-2.5">
-                          <GatewayProviderLogo brand={p} className="h-5 w-5" />
-                          <div>
-                            <div className="flex items-center gap-1.5 font-semibold text-neutral-950 group-hover:underline underline-offset-2">
-                              <span>{p.label}</span>
-                              <ChevronRight className="h-3.5 w-3.5 text-neutral-400 transition-transform group-hover:translate-x-0.5 group-hover:text-neutral-950" />
-                            </div>
-                            <div className="text-xs text-neutral-600">
-                              <span className="font-mono">{p.name}</span> · {p.ready === false ? 'offline' : p.role === 'primary' ? (en ? 'primary' : 'utama') : en ? 'fallback' : 'cadangan'}
-                            </div>
-                          </div>
-                        </div>
-                      </td>
-                      <td className={`${td} text-right`}>{fmtMultiplier(model.inputCreditsPer1m, en)} <span className="text-neutral-600">{fmtIdrPer1m(model.inputCreditsPer1m)}</span></td>
-                      <td className={`${td} text-right`}>{fmtMultiplier(model.outputCreditsPer1m, en)} <span className="text-neutral-600">{fmtIdrPer1m(model.outputCreditsPer1m)}</span></td>
-                      <td className={`${td} text-right`}>{model.contextLength ? compact.format(model.contextLength) : '—'}</td>
-                      <td className={`${td} text-right`}>{fmtLatencyCompact(st.latency)}</td>
-                      <td className={`${td} text-right`}>{fmtTps(st.tps)}</td>
-                      <td className={`${td} text-right`}>{st.success === null ? '—' : `${st.success.toFixed(2)}%`}</td>
-                    </tr>
-                  );
-                })}
+              <tbody>
+                <tr>
+                  <td className={`${td} text-right`}>{fmtMultiplier(model.inputCreditsPer1m, en)} <span className="text-neutral-600">{fmtIdrPer1m(model.inputCreditsPer1m)}</span></td>
+                  <td className={`${td} text-right`}>{fmtMultiplier(model.outputCreditsPer1m, en)} <span className="text-neutral-600">{fmtIdrPer1m(model.outputCreditsPer1m)}</span></td>
+                  <td className={`${td} text-right`}>{model.contextLength ? compact.format(model.contextLength) : '—'}</td>
+                  <td className={`${td} text-right`}>{fmtLatencyCompact(stats24h.latency)}</td>
+                  <td className={`${td} text-right`}>{fmtTps(stats24h.tps)}</td>
+                  <td className={`${td} text-right`}>{stats24h.success === null ? '—' : `${stats24h.success.toFixed(2)}%`}</td>
+                </tr>
               </tbody>
             </table>
           </div>
@@ -878,7 +604,7 @@ export function ModelDetailView({ detail, isLoggedIn }: { detail: ModelDetail; i
             detail={detail}
             en={en}
             title="Uptime"
-            subtitle={en ? 'Share of requests that succeeded, per provider.' : 'Persentase request yang sukses, per provider.'}
+            subtitle={en ? 'Share of requests that succeeded.' : 'Persentase request yang sukses.'}
           />
           <MetricSection
             metric="tps"
@@ -943,34 +669,11 @@ export function ModelDetailView({ detail, isLoggedIn }: { detail: ModelDetail; i
             <div>
               <div className="text-sm text-neutral-700">{en ? 'Total, 30 days' : 'Total 30 hari'}</div>
               <div className="mt-1 text-3xl font-heading font-bold text-neutral-950 tabular-nums">{compact.format(totalTokens)}</div>
-              {perProvider.size === 0 && (
+              {totalTokens === 0 && (
                 <p className="mt-3 text-sm text-neutral-700">
                   {en ? 'Counts every request routed through Morphic.' : 'Menghitung tiap request yang lewat Morphic.'}
                 </p>
               )}
-              <ul className="mt-4 space-y-3">
-                {[...perProvider.entries()].sort((a, b) => b[1].tokens - a[1].tokens).map(([p, v]) => (
-                  <li key={p}>
-                    <button
-                      type="button"
-                      onClick={() => openProviderDrawer(p)}
-                      className="w-full text-left group cursor-pointer"
-                    >
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="flex items-center gap-2 text-neutral-950 group-hover:underline">
-                          <GatewayProviderLogo brand={detail.brands[p] ?? providerBrand(p)} className="h-4 w-4" />
-                          {(detail.brands[p] ?? providerBrand(p)).label}
-                        </span>
-                        <span className="tabular-nums text-neutral-900">{compact.format(v.tokens)}</span>
-                      </div>
-                      <div className="mt-1 h-1.5 rounded-full bg-neutral-200" aria-hidden="true">
-                        <div className="h-full rounded-full bg-neutral-900" style={{ width: `${totalTokens ? (v.tokens / totalTokens) * 100 : 0}%` }} />
-                      </div>
-                      <div className="mt-0.5 text-xs text-neutral-600">{(totalTokens ? (v.tokens / totalTokens) * 100 : 0).toFixed(1)}% · {compact.format(v.requests)} request</div>
-                    </button>
-                  </li>
-                ))}
-              </ul>
             </div>
           </div>
         </Section>
@@ -995,124 +698,6 @@ export function ModelDetailView({ detail, isLoggedIn }: { detail: ModelDetail; i
           </section>
         )}
       </div>
-
-      {/* Provider panel: every figure is this provider's own traffic on this model, from request logs. */}
-      <dialog
-        ref={providerDrawerRef}
-        aria-labelledby="provider-drawer-title"
-        onClick={(e) => e.target === providerDrawerRef.current && closeProviderDrawer()}
-        onClose={() => setSelectedProviderName(null)}
-        className="m-0 ml-auto h-dvh max-h-dvh w-full max-w-2xl overflow-hidden bg-neutral-50 p-0 text-neutral-900 shadow-2xl backdrop:bg-neutral-950/40 sm:my-2 sm:mr-2 sm:h-[calc(100dvh-1rem)] sm:max-h-[calc(100dvh-1rem)] sm:rounded-3xl sm:border sm:border-neutral-200/80"
-      >
-        {activeProvider && activeSt && (
-          <div className="flex h-full flex-col">
-            <div className="sticky top-0 z-20 flex items-center justify-between gap-3 border-b border-neutral-200 bg-white px-5 py-4 sm:px-6">
-              <div className="flex items-center gap-3.5 min-w-0">
-                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-neutral-200 bg-neutral-50">
-                  <GatewayProviderLogo brand={activeProvider} className="h-6 w-6" />
-                </span>
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h2 id="provider-drawer-title" className="font-heading text-lg sm:text-xl font-extrabold text-neutral-950 truncate">
-                      {activeProvider.label}
-                    </h2>
-                    <span className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${activeProvider.ready === false ? 'border-neutral-300 bg-neutral-100 text-neutral-700' : 'border-emerald-300 bg-emerald-50 text-emerald-800'}`}>
-                      {activeProvider.ready === false ? 'Offline' : activeProvider.role === 'primary' ? (en ? 'Primary' : 'Utama') : en ? 'Fallback' : 'Cadangan'}
-                    </span>
-                  </div>
-                  <div className="mt-0.5 font-mono text-xs text-neutral-500 truncate">{activeProvider.name.toLowerCase()}</div>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={closeProviderDrawer}
-                aria-label={en ? 'Close provider panel' : 'Tutup panel provider'}
-                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-neutral-100 text-neutral-700 hover:bg-neutral-200 hover:text-neutral-950 cursor-pointer ${focusRing}`}
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto px-5 py-5 sm:px-6 space-y-5">
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                {[
-                  { label: en ? 'Success 24h' : 'Sukses 24j', value: activeSt.success === null ? '—' : `${activeSt.success.toFixed(2)}%`, tone: activeSt.success !== null && activeSt.success < 95 ? 'text-red-700' : 'text-emerald-700' },
-                  { label: en ? 'Latency P50' : 'Latensi P50', value: fmtLatency(activeSt.latency) },
-                  { label: 'Throughput P50', value: fmtTps(activeSt.tps) },
-                  { label: en ? 'Requests 24h' : 'Request 24j', value: compact.format(activeSt.requests), sub: activeSt.errors ? `${compact.format(activeSt.errors)} error` : undefined },
-                ].map((m) => (
-                  <div key={m.label} className="rounded-2xl border border-neutral-200 bg-white p-4">
-                    <div className="text-xs font-medium text-neutral-500">{m.label}</div>
-                    <div className={`mt-1.5 font-heading text-lg sm:text-xl font-extrabold tabular-nums ${m.tone ?? 'text-neutral-950'}`}>{m.value}</div>
-                    {m.sub && <div className="text-xs tabular-nums text-red-700">{m.sub}</div>}
-                  </div>
-                ))}
-              </div>
-
-              <section className="rounded-2xl border border-neutral-200 bg-white p-5 space-y-3.5">
-                <h3 className="font-heading text-base font-bold text-neutral-950">{en ? 'Price' : 'Harga'}</h3>
-                <div className="grid grid-cols-2 gap-3">
-                  {(['input', 'output'] as const).map((k) => {
-                    const per1m = k === 'input' ? model.inputCreditsPer1m : model.outputCreditsPer1m;
-                    return (
-                      <div key={k} className="rounded-xl border border-neutral-200/80 bg-neutral-50/70 p-3.5">
-                        <div className="text-xs text-neutral-500">{k === 'input' ? 'Input' : 'Output'}</div>
-                        <div className="mt-1 font-heading text-lg font-extrabold text-neutral-950 tabular-nums">
-                          {fmtMultiplier(per1m, en)}
-                        </div>
-                        <div className="text-[11px] font-mono text-neutral-500">/ M tokens{per1m > 0 ? ` · ${fmtIdrPer1m(per1m)}` : ''}</div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </section>
-
-              <ProviderUptime72h providerName={activeProvider.name} detail={detail} en={en} />
-
-              <MetricSection
-                metric="latency"
-                detail={detail}
-                en={en}
-                onlyProvider={activeProvider.name}
-                compactCard
-                title={en ? 'Latency' : 'Latensi'}
-                subtitle={en ? 'P50 time to the full response.' : 'P50 waktu sampai respons selesai.'}
-              />
-
-              <MetricSection
-                metric="tps"
-                detail={detail}
-                en={en}
-                onlyProvider={activeProvider.name}
-                compactCard
-                title="Throughput"
-                subtitle={en ? 'P50 output tokens per second, whole request.' : 'P50 token output per detik, seluruh request.'}
-              />
-
-              <ProviderTokenUsageSection providerName={activeProvider.name} detail={detail} en={en} />
-
-              <section className="rounded-2xl border border-neutral-200 bg-white p-5 space-y-3.5">
-                <h3 className="font-heading text-base font-bold text-neutral-950">{en ? 'Route info' : 'Info rute'}</h3>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  {[
-                    { label: en ? 'Context' : 'Konteks', value: activeProvider.contextLength ? compact.format(activeProvider.contextLength) : '—' },
-                    { label: 'Max output', value: activeProvider.maxOutputTokens ? compact.format(activeProvider.maxOutputTokens) : '—' },
-                    { label: 'API', value: activeProvider.apiFormat === 'anthropic' ? 'Anthropic' : 'OpenAI' },
-                    { label: 'Tools', value: activeProvider.supportsTools ? (en ? 'Yes' : 'Ya') : en ? 'No' : 'Tidak' },
-                    { label: 'Reasoning', value: activeProvider.supportsReasoning ? (en ? 'Yes' : 'Ya') : en ? 'No' : 'Tidak' },
-                    { label: 'Vision', value: activeProvider.supportsVision ? (en ? 'Yes' : 'Ya') : en ? 'No' : 'Tidak' },
-                  ].map((c) => (
-                    <div key={c.label} className="rounded-xl border border-neutral-200/80 bg-neutral-50/70 p-3.5">
-                      <div className="text-xs text-neutral-500">{c.label}</div>
-                      <div className="mt-1 font-heading text-base font-extrabold text-neutral-950 tabular-nums">{c.value}</div>
-                    </div>
-                  ))}
-                </div>
-              </section>
-            </div>
-          </div>
-        )}
-      </dialog>
 
       <dialog
         ref={apiRef}

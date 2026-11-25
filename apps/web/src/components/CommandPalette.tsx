@@ -52,7 +52,7 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const [models, setModels] = useState<
-    Array<{ id: string; name: string; provider: string; contextLength: number | null; capabilities: string[] | null }>
+    Array<{ id: string; name: string; contextLength: number | null; capabilities: string[] | null }>
   >([]);
   const modelsRequested = useRef(false);
 
@@ -117,10 +117,10 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
         section: 'models',
         sectionLabel: locale === 'en' ? 'AI Models' : 'Model AI',
         title: m.name,
-        subtitle: [m.provider, ctx].filter(Boolean).join(' · '),
+        subtitle: ctx ?? '',
         badge: m.id,
         icon: Bot,
-        keywords: `${m.name} ${m.provider} ${m.id} ${(m.capabilities ?? []).join(' ')}`,
+        keywords: `${m.name} ${m.id} ${(m.capabilities ?? []).join(' ')}`,
         onSelect: () => {
           copyToClipboard(m.id, `model-${m.id}`);
         },

@@ -3,7 +3,6 @@
 import { eq } from 'drizzle-orm';
 import { db, schema as s } from '@morphic/db';
 import { readyModelIds } from '@morphic/shared/model-readiness';
-import { providerBrand } from '@/lib/gateway-providers';
 import { memo } from '@/lib/memo';
 import { LIVE_TTL_MS } from '@/lib/refresh';
 import { ModelsView } from './models-view';
@@ -23,8 +22,6 @@ async function loadDashboardModels() {
           capabilities: s.models.capabilities,
           inputCreditsPer1m: s.models.inputCreditsPer1m,
           outputCreditsPer1m: s.models.outputCreditsPer1m,
-          providerName: s.providers.name,
-          providerBaseUrl: s.providers.baseUrl,
           circuitBreakerState: s.providers.circuitBreakerState,
           fallbackProviderId: s.models.fallbackProviderId,
         })
@@ -48,11 +45,10 @@ async function loadDashboardModels() {
         .from(s.modelProviderPool),
     ]);
     const ready = readyModelIds(rows, providers, pool);
-    // Admin slugs, base URLs, fallback ids and breaker counters stay on the server; the view needs a
-    // display name and the breaker state only.
-    return rows.map(({ id, providerId: _p, fallbackProviderId: _f, providerName, providerBaseUrl, circuitBreakerState, ...m }) => ({
+    // Provider names, base URLs, fallback ids and breaker counters stay on the server; the view needs the
+    // breaker state only.
+    return rows.map(({ id, providerId: _p, fallbackProviderId: _f, circuitBreakerState, ...m }) => ({
       ...m,
-      providerName: providerBrand(providerName, providerBaseUrl).label,
       circuitBreakerState: { state: (circuitBreakerState as { state?: string } | null)?.state ?? 'closed' },
       ready: ready.has(id),
     }));
